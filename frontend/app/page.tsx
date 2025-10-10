@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import InvoiceForm from '@/components/InvoiceForm';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
+import WalletConnect from '@/components/WalletConnect';
 import { FileText, Zap, Shield, QrCode } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
@@ -24,13 +25,19 @@ export default function HomePage() {
             <div className="w-10 h-10 bg-stellar-600 rounded-lg flex items-center justify-center">
               <Zap className="w-6 h-6 text-white" />
             </div>
-            <h1 className="text-xl font-bold text-gray-900">
+            <h1 className="text-xl font-bold text-gray-900 hidden sm:block">
               One-Click Crypto Invoice
             </h1>
+            <h1 className="text-lg font-bold text-gray-900 sm:hidden">
+              Crypto Invoice
+            </h1>
           </div>
-          <Link href="/dashboard" className="btn btn-outline">
-            Dashboard
-          </Link>
+          <div className="flex items-center gap-3">
+            <WalletConnect />
+            <Link href="/dashboard" className="btn btn-outline">
+              Dashboard
+            </Link>
+          </div>
         </div>
       </header>
 

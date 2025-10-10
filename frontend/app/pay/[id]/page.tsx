@@ -6,6 +6,7 @@ import { invoiceApi } from '@/lib/api';
 import PaymentButton from '@/components/PaymentButton';
 import PaymentStatus from '@/components/PaymentStatus';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
+import WalletConnect from '@/components/WalletConnect';
 import { formatAmount, formatDate, getTimeRemaining, copyToClipboard } from '@/lib/utils';
 import { Copy, ExternalLink, Loader2, Check } from 'lucide-react';
 import { toast } from 'sonner';
@@ -82,7 +83,12 @@ export default function PaymentPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-stellar-50 to-white py-12 px-4">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
+        {/* Header with Wallet Connect */}
+        <div className="flex justify-end mb-6">
+          <WalletConnect />
+        </div>
+
+        {/* Page Title */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">Payment Request</h1>
           <p className="text-gray-600">Complete your payment using Stellar</p>
@@ -208,20 +214,55 @@ export default function PaymentPage() {
                   </p>
                 </div>
 
-                {/* Payment Button */}
-                <div className="card">
-                  <h3 className="text-lg font-semibold mb-4">Pay with Wallet</h3>
-                  <PaymentButton
-                    destination={invoice.sellerPublicKey}
-                    amount={invoice.amount.toString()}
-                    memo={invoice.memo}
-                    assetCode={invoice.assetCode}
-                    assetIssuer={invoice.assetIssuer}
-                    onSuccess={handlePaymentSuccess}
-                  />
-                  <p className="text-xs text-gray-500 text-center mt-4">
-                    Requires Freighter wallet extension
-                  </p>
+                {/* Payment Actions */}
+                <div className="space-y-4">
+                  {/* Wallet Payment */}
+                  <div className="card">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold">Pay with Wallet</h3>
+                      <div className="scale-90">
+                        <WalletConnect />
+                      </div>
+                    </div>
+                    <PaymentButton
+                      destination={invoice.sellerPublicKey}
+                      amount={invoice.amount.toString()}
+                      memo={invoice.memo}
+                      assetCode={invoice.assetCode}
+                      assetIssuer={invoice.assetIssuer}
+                      onSuccess={handlePaymentSuccess}
+                    />
+                    <p className="text-xs text-gray-500 text-center mt-4">
+                      Connect your Freighter wallet above to pay
+                    </p>
+                  </div>
+
+                  {/* Test Payment (MVP) */}
+                  <div className="card bg-gray-50 border-dashed">
+                    <p className="text-xs text-gray-600 mb-3 text-center">
+                      <strong>Testing without wallet?</strong> Simulate payment:
+                    </p>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const response = await fetch(
+                            `${process.env.NEXT_PUBLIC_API_URL}/invoices/${invoice.id}/simulate-payment`,
+                            { method: 'POST' }
+                          );
+                          const result = await response.json();
+                          if (result.success) {
+                            toast.success('Payment simulated successfully!');
+                            setTimeout(() => loadInvoice(), 1000);
+                          }
+                        } catch (error) {
+                          toast.error('Simulation failed');
+                        }
+                      }}
+                      className="btn btn-outline w-full"
+                    >
+                      🧪 Simulate Payment (Test)
+                    </button>
+                  </div>
                 </div>
               </>
             )}

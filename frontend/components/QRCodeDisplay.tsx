@@ -32,6 +32,9 @@ export default function QRCodeDisplay({
     }
   };
 
+  // Check if value is a base64 image (from backend)
+  const isBase64Image = value.startsWith('data:image');
+
   return (
     <div className="flex flex-col items-center gap-4">
       {title && (
@@ -39,12 +42,24 @@ export default function QRCodeDisplay({
       )}
       
       <div className="bg-white p-4 rounded-xl border-2 border-gray-200">
-        <QRCodeSVG
-          value={value}
-          size={size}
-          level="H"
-          includeMargin={true}
-        />
+        {isBase64Image ? (
+          // Display base64 image from backend
+          <img 
+            src={value} 
+            alt="QR Code" 
+            width={size} 
+            height={size}
+            className="block"
+          />
+        ) : (
+          // Generate QR code from URL
+          <QRCodeSVG
+            value={value}
+            size={size}
+            level="H"
+            includeMargin={true}
+          />
+        )}
       </div>
 
       {showCopy && (

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { invoiceApi } from '@/lib/api';
 import InvoiceCard from '@/components/InvoiceCard';
+import WalletConnect from '@/components/WalletConnect';
 import Link from 'next/link';
 import { Loader2, Plus, TrendingUp, DollarSign, FileText } from 'lucide-react';
 import { toast } from 'sonner';
@@ -45,10 +46,13 @@ export default function DashboardPage() {
       <header className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <Link href="/" className="btn btn-primary flex items-center gap-2">
-            <Plus className="w-5 h-5" />
-            New Invoice
-          </Link>
+          <div className="flex items-center gap-3">
+            <WalletConnect />
+            <Link href="/" className="btn btn-primary flex items-center gap-2">
+              <Plus className="w-5 h-5" />
+              <span className="hidden sm:inline">New Invoice</span>
+            </Link>
+          </div>
         </div>
       </header>
 

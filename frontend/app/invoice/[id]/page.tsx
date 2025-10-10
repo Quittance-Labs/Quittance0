@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { invoiceApi } from '@/lib/api';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import PaymentStatus from '@/components/PaymentStatus';
+import WalletConnect from '@/components/WalletConnect';
 import { formatAmount, formatDate, getTimeRemaining, getShareUrl } from '@/lib/utils';
 import { ArrowLeft, Share2, Loader2, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
@@ -95,15 +96,18 @@ export default function InvoiceDetailPage() {
             Back
           </button>
           
-          {invoice.status === 'PENDING' && (
-            <button
-              onClick={handleShare}
-              className="btn btn-primary flex items-center gap-2"
-            >
-              <Share2 className="w-5 h-5" />
-              Share
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            <WalletConnect />
+            {invoice.status === 'PENDING' && (
+              <button
+                onClick={handleShare}
+                className="btn btn-primary flex items-center gap-2"
+              >
+                <Share2 className="w-5 h-5" />
+                Share
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
