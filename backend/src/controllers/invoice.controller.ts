@@ -1,0 +1,277 @@
+import { Request, Response } from 'express';
+import invoiceService from '../services/invoice.service';
+import stellarService from '../services/stellar.service';
+import { createInvoiceSchema } from '../utils/validation';
+import { generatePaymentQR, generateStellarPaymentQR } from '../utils/qrcode';
+import { SELLER_PUBLIC_KEY } from '../config/stellar';
+
+class InvoiceController {
+  /**
+   * Create a new invoice
+   * POST /api/invoices
+   */
+  async createInvoice(req: Request, res: Response) {
+    try {
+      // Validate request body
+      const validatedData = createInvoiceSchema.parse(req.body);
+
+      // Create invoice
+      const invoice = await invoiceService.createInvoice(validatedData);
+
+      // Generate payment URL
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const paymentUrl = `${frontendUrl}/pay/${invoice.id}`;
+
+      // Generate QR codes
+      const qrCodeDataUrl = await generatePaymentQR(paymentUrl);
+      const stellarQrCode = await generateStellarPaymentQR(
+        invoice.sellerPublicKey,
+        invoice.amount.toString(),
+        invoice.assetCode,
+        invoice.memo
+      );
+
+      res.status(201).json({
+        success: true,
+        data: {
+          invoice,
+          paymentUrl,
+          qrCode: qrCodeDataUrl,
+          stellarQrCode,
+        },
+      });
+    } catch (error: any) {
+      console.error('Create invoice error:', error);
+      res.status(400).json({
+        success: false,
+        error: error.message || 'Failed to create invoice',
+      });
+    }
+  }
+
+  /**
+   * Get invoice by ID
+   * GET /api/invoices/:id
+   */
+  async getInvoice(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const invoice = await invoiceService.getInvoiceById(id);
+
+      if (!invoice) {
+        return res.status(404).json({
+          success: false,
+          error: 'Invoice not found',
+        });
+      }
+
+      res.json({
+        success: true,
+        data: invoice,
+      });
+    } catch (error: any) {
+      console.error('Get invoice error:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to get invoice',
+      });
+    }
+  }
+
+  /**
+   * Get all invoices for seller
+   * GET /api/invoices
+   */
+  async getInvoices(req: Request, res: Response) {
+    try {
+      const { status, limit = 50, offset = 0 } = req.query;
+
+      const invoices = await invoiceService.getInvoicesBySeller(
+        SELLER_PUBLIC_KEY,
+        status as string | undefined,
+        parseInt(limit as string),
+        parseInt(offset as string)
+      );
+
+      res.json({
+        success: true,
+        data: invoices,
+        pagination: {
+          limit: parseInt(limit as string),
+          offset: parseInt(offset as string),
+          total: invoices.length,
+        },
+      });
+    } catch (error: any) {
+      console.error('Get invoices error:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to get invoices',
+      });
+    }
+  }
+
+  /**
+   * Cancel invoice
+   * POST /api/invoices/:id/cancel
+   */
+  async cancelInvoice(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const invoice = await invoiceService.cancelInvoice(id);
+
+      res.json({
+        success: true,
+        data: invoice,
+      });
+    } catch (error: any) {
+      console.error('Cancel invoice error:', error);
+      res.status(400).json({
+        success: false,
+        error: error.message || 'Failed to cancel invoice',
+      });
+    }
+  }
+
+  /**
+   * Verify payment manually
+   * POST /api/invoices/:id/verify
+   */
+  async verifyPayment(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { txHash } = req.body;
+
+      if (!txHash) {
+        return res.status(400).json({
+          success: false,
+          error: 'Transaction hash is required',
+        });
+      }
+
+      const invoice = await invoiceService.getInvoiceById(id);
+
+      if (!invoice) {
+        return res.status(404).json({
+          success: false,
+          error: 'Invoice not found',
+        });
+      }
+
+      // Get transaction details
+      const txDetails = await stellarService.getTransaction(txHash);
+      const transaction = txDetails.transaction;
+      const paymentOp = txDetails.operations.find((op: any) => op.type === 'payment');
+
+      if (!paymentOp) {
+        return res.status(400).json({
+          success: false,
+          error: 'No payment operation found in transaction',
+        });
+      }
+
+      // Verify memo
+      if (transaction.memo !== invoice.memo) {
+        return res.status(400).json({
+          success: false,
+          error: 'Memo mismatch',
+        });
+      }
+
+      // Verify amount
+      if (parseFloat(paymentOp.amount).toFixed(7) !== invoice.amount.toFixed(7)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Amount mismatch',
+        });
+      }
+
+      // Mark as paid
+      const updatedInvoice = await invoiceService.markAsPaid(
+        invoice.id,
+        txHash,
+        paymentOp.from
+      );
+
+      res.json({
+        success: true,
+        data: updatedInvoice,
+      });
+    } catch (error: any) {
+      console.error('Verify payment error:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to verify payment',
+      });
+    }
+  }
+
+  /**
+   * Get invoice statistics
+   * GET /api/invoices/stats
+   */
+  async getStats(req: Request, res: Response) {
+    try {
+      const stats = await invoiceService.getInvoiceStats(SELLER_PUBLIC_KEY);
+
+      res.json({
+        success: true,
+        data: stats,
+      });
+    } catch (error: any) {
+      console.error('Get stats error:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to get statistics',
+      });
+    }
+  }
+
+  /**
+   * Get payment URL and QR for invoice
+   * GET /api/invoices/:id/payment-info
+   */
+  async getPaymentInfo(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const invoice = await invoiceService.getInvoiceById(id);
+
+      if (!invoice) {
+        return res.status(404).json({
+          success: false,
+          error: 'Invoice not found',
+        });
+      }
+
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const paymentUrl = `${frontendUrl}/pay/${invoice.id}`;
+
+      const qrCodeDataUrl = await generatePaymentQR(paymentUrl);
+      const stellarQrCode = await generateStellarPaymentQR(
+        invoice.sellerPublicKey,
+        invoice.amount.toString(),
+        invoice.assetCode,
+        invoice.memo
+      );
+
+      res.json({
+        success: true,
+        data: {
+          paymentUrl,
+          qrCode: qrCodeDataUrl,
+          stellarQrCode,
+          invoice,
+        },
+      });
+    } catch (error: any) {
+      console.error('Get payment info error:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to get payment info',
+      });
+    }
+  }
+}
+
+export default new InvoiceController();
+

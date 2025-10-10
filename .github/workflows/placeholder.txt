@@ -1,0 +1,3 @@
+# GitHub Actions workflows buraya eklenebilir
+# Örnek: CI/CD, test automation, deployment
+

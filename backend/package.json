@@ -1,0 +1,42 @@
+{
+  "name": "one-click-crypto-invoice-backend",
+  "version": "1.0.0",
+  "description": "Stellar-based invoice system backend",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "dev:mvp": "tsx watch src/server-mvp.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "start:mvp": "tsx src/server-mvp.ts",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:seed": "tsx src/db/seed.ts"
+  },
+  "keywords": ["stellar", "crypto", "invoice", "blockchain"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@stellar/stellar-sdk": "^12.1.0",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "pg": "^8.11.3",
+    "uuid": "^9.0.1",
+    "zod": "^3.23.8",
+    "bull": "^4.12.2",
+    "ioredis": "^5.3.2",
+    "nanoid": "^3.3.7",
+    "qrcode": "^1.5.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.19",
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "@types/pg": "^8.11.0",
+    "@types/uuid": "^9.0.8",
+    "@types/qrcode": "^1.5.5",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3"
+  }
+}
+
