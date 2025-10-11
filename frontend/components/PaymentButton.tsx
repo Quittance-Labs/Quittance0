@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { sendPayment, checkWalletConnection, requestWalletAccess } from '@/lib/stellar';
 import { toast } from 'sonner';
 import { Wallet, Loader2 } from 'lucide-react';
+import { invoiceApi } from '@/lib/api';
 
 interface PaymentButtonProps {
   destination: string;
@@ -11,6 +12,7 @@ interface PaymentButtonProps {
   memo: string;
   assetCode?: string;
   assetIssuer?: string;
+  invoiceId?: string;
   onSuccess?: (txHash: string) => void;
 }
 
@@ -20,6 +22,7 @@ export default function PaymentButton({
   memo,
   assetCode = 'XLM',
   assetIssuer,
+  invoiceId,
   onSuccess,
 }: PaymentButtonProps) {
   const [loading, setLoading] = useState(false);
@@ -42,9 +45,25 @@ export default function PaymentButton({
       toast.loading('Confirm in wallet...');
       const txHash = await sendPayment(destination, amount, memo, assetCode, assetIssuer);
 
-      toast.success('Payment successful', {
-        description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
-      });
+      // Verify payment with backend if invoice ID provided
+      if (invoiceId) {
+        toast.loading('Verifying payment...');
+        try {
+          await invoiceApi.verify(invoiceId, txHash);
+          toast.success('Payment verified!', {
+            description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
+          });
+        } catch (error) {
+          console.error('Verification failed:', error);
+          toast.warning('Payment sent but verification failed', {
+            description: 'Please wait for automatic confirmation',
+          });
+        }
+      } else {
+        toast.success('Payment successful', {
+          description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
+        });
+      }
 
       onSuccess?.(txHash);
     } catch (error: any) {

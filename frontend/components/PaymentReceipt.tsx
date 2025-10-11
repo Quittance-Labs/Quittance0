@@ -1,8 +1,10 @@
 'use client';
 
 import { formatAmount, formatDate } from '@/lib/utils';
-import { Check, Download, ExternalLink, Printer } from 'lucide-react';
+import { Check, Download, ExternalLink, Printer, FileText } from 'lucide-react';
 import AssetLogo from './AssetLogo';
+import { openInvoicePDF } from '@/lib/export';
+import { toast } from 'sonner';
 
 interface PaymentReceiptProps {
   invoice: any;
@@ -18,8 +20,12 @@ export default function PaymentReceipt({ invoice }: PaymentReceiptProps) {
     window.print();
   };
 
+  const handleDownloadPDF = () => {
+    openInvoicePDF(invoice as any);
+    toast.success('Opening invoice PDF');
+  };
+
   const handleDownload = () => {
-    // Create receipt text
     const receiptText = `
 ═══════════════════════════════════════
           PAYMENT RECEIPT
@@ -173,7 +179,15 @@ Stellar Blockchain Payment System
           View on Stellar Explorer
         </a>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
+          <button
+            onClick={handleDownloadPDF}
+            className="btn btn-outline flex items-center justify-center gap-2"
+          >
+            <FileText className="w-4 h-4" />
+            PDF
+          </button>
+
           <button
             onClick={handlePrint}
             className="btn btn-outline flex items-center justify-center gap-2"
@@ -187,7 +201,7 @@ Stellar Blockchain Payment System
             className="btn btn-outline flex items-center justify-center gap-2"
           >
             <Download className="w-4 h-4" />
-            Download
+            TXT
           </button>
         </div>
       </div>

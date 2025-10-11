@@ -13,8 +13,9 @@ import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
 import AssetLogo from '@/components/AssetLogo';
 import { formatAmount, formatDate, getTimeRemaining, copyToClipboard } from '@/lib/utils';
-import { Copy, ExternalLink, Loader2, Check } from 'lucide-react';
+import { Copy, ExternalLink, Loader2, Check, FileText, Mail, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
+import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 
 export default function PaymentPage() {
   const params = useParams();
@@ -43,13 +44,13 @@ export default function PaymentPage() {
           setInvoice(result.data);
           setPolling(false);
           if (result.data.status === 'PAID') {
-            toast.success('Payment confirmed');
+            toast.success('Payment confirmed!');
           }
         }
       } catch (error) {
-        // Silent fail
+        console.error('Polling error:', error);
       }
-    }, 5000); // Check every 5 seconds
+    }, 3000); // Check every 3 seconds
 
     return () => clearInterval(intervalId);
   }, [invoice, id, polling]);
@@ -70,14 +71,49 @@ export default function PaymentPage() {
   };
 
   const handlePaymentSuccess = async (txHash: string) => {
-    toast.success('Payment confirmed');
-    setTimeout(() => loadInvoice(), 3000);
+    toast.success('Payment sent! Verifying...');
+    setPolling(true); // Restart polling
+    setTimeout(async () => {
+      await loadInvoice();
+    }, 2000);
   };
 
   const copyInfo = async (text: string, label: string) => {
     const success = await copyToClipboard(text);
     if (success) {
-      toast.success(`${label} copied!`);
+      toast.success(`${label} copied`);
+    }
+  };
+
+  const handleDownloadPDF = () => {
+    if (invoice) {
+      openInvoicePDF(invoice as any);
+      toast.success('Opening PDF');
+    }
+  };
+
+  const handleEmailShare = () => {
+    if (invoice) {
+      shareInvoiceByEmail(invoice as any);
+    }
+  };
+
+  const handleManualSync = async () => {
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/payment/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 50 })
+      });
+      const result = await response.json();
+      if (result.success) {
+        toast.success('Payment sync completed');
+        await loadInvoice();
+      } else {
+        toast.error('Sync failed');
+      }
+    } catch (error) {
+      toast.error('Sync failed');
     }
   };
 
@@ -234,7 +270,36 @@ export default function PaymentPage() {
                   </p>
                 </div>
               )}
+
+              {invoice.status === 'PAID' && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <p className="text-sm text-green-800 font-semibold mb-1">Payment Completed</p>
+                  <p className="text-green-700 font-semibold">
+                    {formatDate(invoice.paidAt)}
+                  </p>
+                </div>
+              )}
             </div>
+
+            {invoice.status === 'PAID' && (
+              <div className="border-t pt-5 flex gap-2">
+                <button
+                  onClick={handleDownloadPDF}
+                  className="btn btn-primary flex-1 flex items-center justify-center gap-2"
+                >
+                  <FileText className="w-4 h-4" />
+                  Download Invoice
+                </button>
+                {invoice.customerEmail && (
+                  <button
+                    onClick={handleEmailShare}
+                    className="btn btn-outline flex items-center justify-center gap-2 px-4"
+                  >
+                    <Mail className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            )}
 
             {invoice.status === 'PENDING' && (
               <div className="bg-gray-50 p-4 rounded-lg space-y-3 border">
@@ -341,6 +406,7 @@ export default function PaymentPage() {
                     memo={invoice.memo}
                     assetCode={invoice.assetCode}
                     assetIssuer={invoice.assetIssuer}
+                    invoiceId={invoice.id}
                     onSuccess={handlePaymentSuccess}
                   />
                   
@@ -354,40 +420,49 @@ export default function PaymentPage() {
                   <p className="text-xs text-yellow-700 mb-4 text-center">
                     Simulate a payment without using a real wallet (for testing only)
                   </p>
-                  <button
-                    onClick={async () => {
-                      try {
-                        setLoading(true);
-                        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/invoices/${id}/simulate-payment`, {
-                          method: 'POST',
-                        });
-                        const result = await response.json();
-                        
-                        if (result.success) {
-                          toast.success('Test payment successful');
-                          await loadInvoice();
-                          setPolling(false);
-                        } else {
-                          toast.error(result.error || 'Failed to simulate');
+                  <div className="space-y-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          setLoading(true);
+                          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/invoices/${id}/simulate-payment`, {
+                            method: 'POST',
+                          });
+                          const result = await response.json();
+                          
+                          if (result.success) {
+                            toast.success('Test payment successful');
+                            await loadInvoice();
+                            setPolling(false);
+                          } else {
+                            toast.error(result.error || 'Failed to simulate');
+                          }
+                        } catch (error: any) {
+                          toast.error('Failed to simulate');
+                        } finally {
+                          setLoading(false);
                         }
-                      } catch (error: any) {
-                        toast.error('Failed to simulate');
-                      } finally {
-                        setLoading(false);
-                      }
-                    }}
-                    disabled={loading}
-                    className="btn btn-secondary w-full flex items-center justify-center gap-2"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Simulating...
-                      </>
-                    ) : (
-                      'Simulate Payment'
-                    )}
-                  </button>
+                      }}
+                      disabled={loading}
+                      className="btn btn-secondary w-full flex items-center justify-center gap-2"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Simulating...
+                        </>
+                      ) : (
+                        'Simulate Payment'
+                      )}
+                    </button>
+                    <button
+                      onClick={handleManualSync}
+                      className="btn btn-outline w-full flex items-center justify-center gap-2"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Sync Payments
+                    </button>
+                  </div>
                 </div>
               </>
             )}

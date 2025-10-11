@@ -2,10 +2,12 @@
 
 import Link from 'next/link';
 import { formatAmount, formatDate, getStatusColor, getTimeRemaining } from '@/lib/utils';
-import { Clock, ExternalLink, Copy } from 'lucide-react';
+import { Clock, ExternalLink, Copy, FileText, Mail, Download } from 'lucide-react';
 import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import AssetLogo from './AssetLogo';
+import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
+import { useState } from 'react';
 
 interface Invoice {
   id: string;
@@ -24,14 +26,26 @@ interface InvoiceCardProps {
 }
 
 export default function InvoiceCard({ invoice }: InvoiceCardProps) {
+  const [showMenu, setShowMenu] = useState(false);
   const statusColor = getStatusColor(invoice.status);
   const paymentUrl = `${window.location.origin}/pay/${invoice.id}`;
 
   const handleCopyLink = async () => {
     const success = await copyToClipboard(paymentUrl);
     if (success) {
-      toast.success('Payment link copied!');
+      toast.success('Payment link copied');
     }
+  };
+
+  const handleDownloadPDF = () => {
+    openInvoicePDF(invoice as any);
+    toast.success('Opening PDF');
+    setShowMenu(false);
+  };
+
+  const handleEmailShare = () => {
+    shareInvoiceByEmail(invoice as any);
+    setShowMenu(false);
   };
 
   return (
@@ -83,11 +97,47 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
         {invoice.status === 'PENDING' && (
           <button
             onClick={handleCopyLink}
-            className="btn btn-secondary flex items-center justify-center gap-2"
+            className="btn btn-secondary flex items-center justify-center gap-2 px-3"
           >
             <Copy className="w-4 h-4" />
-            Copy
           </button>
+        )}
+        {invoice.status === 'PAID' && (
+          <div className="relative">
+            <button
+              onClick={() => setShowMenu(!showMenu)}
+              className="btn btn-primary flex items-center justify-center gap-2 px-3"
+              title="Download Invoice"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+            {showMenu && (
+              <>
+                <div 
+                  className="fixed inset-0 z-10" 
+                  onClick={() => setShowMenu(false)}
+                />
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20">
+                  <button
+                    onClick={handleDownloadPDF}
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Download PDF
+                  </button>
+                  {invoice.customerEmail && (
+                    <button
+                      onClick={handleEmailShare}
+                      className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                    >
+                      <Mail className="w-4 h-4" />
+                      Email Invoice
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         )}
       </div>
     </div>

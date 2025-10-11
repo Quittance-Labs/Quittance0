@@ -9,8 +9,9 @@ import UserProfile from '@/components/UserProfile';
 import TransactionHistory from '@/components/TransactionHistory';
 import { useWalletStore } from '@/lib/store';
 import Link from 'next/link';
-import { Loader2, Plus, TrendingUp, DollarSign, FileText } from 'lucide-react';
+import { Loader2, Plus, TrendingUp, DollarSign, FileText, Download } from 'lucide-react';
 import { toast } from 'sonner';
+import { downloadInvoiceCSV } from '@/lib/export';
 
 export default function DashboardPage() {
   const { publicKey, connected } = useWalletStore();
@@ -64,6 +65,20 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleExportCSV = () => {
+    if (filteredInvoices.length === 0) {
+      toast.error('No invoices to export');
+      return;
+    }
+    const paidInvoices = filteredInvoices.filter(inv => inv.status === 'PAID');
+    if (paidInvoices.length === 0) {
+      toast.error('No paid invoices to export');
+      return;
+    }
+    downloadInvoiceCSV(paidInvoices as any);
+    toast.success(`Exported ${paidInvoices.length} paid invoices to CSV`);
   };
 
   return (
@@ -198,14 +213,25 @@ export default function DashboardPage() {
           </div>
             )}
 
-            <div className="card mb-4">
-              <input
-                type="text"
-                placeholder="Search invoices..."
-                className="input w-full"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+            <div className="flex gap-3 mb-4">
+              <div className="card flex-1 mb-0">
+                <input
+                  type="text"
+                  placeholder="Search invoices..."
+                  className="input w-full"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <button
+                onClick={handleExportCSV}
+                className="btn btn-primary flex items-center gap-2 whitespace-nowrap"
+                disabled={filteredInvoices.filter(inv => inv.status === 'PAID').length === 0}
+                title="Export paid invoices only"
+              >
+                <Download className="w-5 h-5" />
+                <span className="hidden sm:inline">Export CSV</span>
+              </button>
             </div>
 
             <div className="bg-white rounded-lg border border-gray-200 mb-6 p-2 flex gap-2 flex-wrap">

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import invoiceController from '../controllers/invoice.controller';
 import stellarController from '../controllers/stellar.controller';
+import paymentMonitorService from '../services/payment-monitor.service';
 
 const router = Router();
 
@@ -27,6 +28,24 @@ router.get('/stellar/account', stellarController.getAccountInfo.bind(stellarCont
 router.get('/stellar/payments', stellarController.getPayments.bind(stellarController));
 router.get('/stellar/transaction/:hash', stellarController.getTransaction.bind(stellarController));
 router.post('/stellar/verify-payment', stellarController.verifyPayment.bind(stellarController));
+
+// Payment monitoring routes
+router.post('/payment/sync', async (req, res) => {
+  try {
+    const limit = req.body.limit || 50;
+    await paymentMonitorService.manualSync(limit);
+    res.json({
+      success: true,
+      message: `Payment sync completed`,
+      limit
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Sync failed'
+    });
+  }
+});
 
 export default router;
 
