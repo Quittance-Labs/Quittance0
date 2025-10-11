@@ -1,7 +1,7 @@
 'use client';
 
 import { formatAmount, formatDate } from '@/lib/utils';
-import { Check, Download, ExternalLink, Printer, FileText } from 'lucide-react';
+import { Check, Download, ExternalLink, FileText } from 'lucide-react';
 import AssetLogo from './AssetLogo';
 import { openInvoicePDF } from '@/lib/export';
 import { toast } from 'sonner';
@@ -15,10 +15,6 @@ export default function PaymentReceipt({ invoice }: PaymentReceiptProps) {
     process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET'
       ? 'https://stellar.expert/explorer/testnet'
       : 'https://stellar.expert/explorer/public';
-
-  const handlePrint = () => {
-    window.print();
-  };
 
   const handleDownloadPDF = () => {
     openInvoicePDF(invoice as any);
@@ -179,21 +175,13 @@ Stellar Blockchain Payment System
           View on Stellar Explorer
         </a>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <button
             onClick={handleDownloadPDF}
             className="btn btn-outline flex items-center justify-center gap-2"
           >
             <FileText className="w-4 h-4" />
             PDF
-          </button>
-
-          <button
-            onClick={handlePrint}
-            className="btn btn-outline flex items-center justify-center gap-2"
-          >
-            <Printer className="w-4 h-4" />
-            Print
           </button>
 
           <button
