@@ -2,6 +2,7 @@
 
 import { formatAmount, formatDate } from '@/lib/utils';
 import { Check, Download, ExternalLink, Printer } from 'lucide-react';
+import AssetLogo from './AssetLogo';
 
 interface PaymentReceiptProps {
   invoice: any;
@@ -87,7 +88,9 @@ Stellar Blockchain Payment System
           <p className="text-4xl font-bold text-green-700">
             {formatAmount(invoice.amount, 7)}
           </p>
-          <p className="text-xl font-semibold text-green-600 mt-1">{invoice.assetCode}</p>
+          <div className="flex items-center justify-center gap-2 mt-2">
+            <AssetLogo code={invoice.assetCode} size={24} showName={true} className="text-green-600 text-xl font-semibold" />
+          </div>
         </div>
 
         {invoice.description && (

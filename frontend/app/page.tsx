@@ -5,6 +5,7 @@ import Link from 'next/link';
 import InvoiceForm from '@/components/InvoiceForm';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import WalletConnect from '@/components/WalletConnect';
+import AssetLogo from '@/components/AssetLogo';
 import { FileText, Zap, Shield, QrCode, Wallet as WalletIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { getUserPublicKey } from '@/lib/stellar';
@@ -153,9 +154,12 @@ export default function HomePage() {
                 <div className="space-y-3">
                   <div className="bg-stellar-50 border border-stellar-200 p-4 rounded-lg">
                     <p className="text-sm text-gray-600 mb-1">Payment Amount</p>
-                    <p className="font-bold text-2xl text-stellar-700">
-                      {createdInvoice.invoice.amount} XLM
-                    </p>
+                    <div className="flex items-center justify-center gap-3">
+                      <AssetLogo code={createdInvoice.invoice.assetCode} size={32} showName={false} />
+                      <p className="font-bold text-2xl text-stellar-700">
+                        {createdInvoice.invoice.amount} {createdInvoice.invoice.assetCode}
+                      </p>
+                    </div>
                   </div>
 
                   {createdInvoice.invoice.description && (

@@ -8,6 +8,7 @@ import PaymentStatus from '@/components/PaymentStatus';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import WalletConnect from '@/components/WalletConnect';
 import PaymentReceipt from '@/components/PaymentReceipt';
+import AssetLogo from '@/components/AssetLogo';
 import { formatAmount, formatDate, getTimeRemaining, copyToClipboard } from '@/lib/utils';
 import { Copy, ExternalLink, Loader2, Check } from 'lucide-react';
 import { toast } from 'sonner';
@@ -131,7 +132,9 @@ export default function PaymentPage() {
                 <p className="text-5xl font-bold text-stellar-700">
                   {formatAmount(invoice.amount, 7)}
                 </p>
-                <p className="text-2xl font-semibold text-stellar-600 mt-1">XLM</p>
+                <div className="flex items-center justify-center gap-2 mt-3">
+                  <AssetLogo code={invoice.assetCode} size={28} showName={true} className="text-stellar-600 text-xl font-semibold" />
+                </div>
               </div>
 
               {invoice.description && (
@@ -232,7 +235,7 @@ export default function PaymentPage() {
                   <p className="text-xs text-gray-600 mb-1">Exact Amount</p>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 text-xs bg-white p-2 rounded border font-semibold">
-                      {invoice.amount} XLM
+                      {invoice.amount} {invoice.assetCode}
                     </code>
                     <button
                       onClick={() => copyInfo(invoice.amount.toString(), 'Amount')}

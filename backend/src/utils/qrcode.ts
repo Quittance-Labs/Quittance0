@@ -29,9 +29,15 @@ export const generateStellarPaymentQR = async (
   destination: string,
   amount: string,
   assetCode: string = 'XLM',
-  memo?: string
+  memo?: string,
+  assetIssuer?: string
 ): Promise<string> => {
-  let stellarUri = `web+stellar:pay?destination=${destination}&amount=${amount}&asset_code=${assetCode}`;
+  let stellarUri = `web+stellar:pay?destination=${destination}&amount=${amount}`;
+  
+  // Add asset information
+  if (assetCode !== 'XLM' && assetIssuer) {
+    stellarUri += `&asset_code=${assetCode}&asset_issuer=${assetIssuer}`;
+  }
   
   if (memo) {
     stellarUri += `&memo=${encodeURIComponent(memo)}&memo_type=MEMO_TEXT`;

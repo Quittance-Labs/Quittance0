@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { invoiceApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
+import { STELLAR_ASSETS, getAssetByCode } from '@/lib/assets';
+import AssetLogo from './AssetLogo';
 
 interface InvoiceFormProps {
   onSuccess?: (invoice: any) => void;
@@ -13,6 +15,7 @@ interface InvoiceFormProps {
 export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps) {
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState('');
+  const [assetCode, setAssetCode] = useState('XLM');
   const [description, setDescription] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -33,9 +36,12 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
     setLoading(true);
 
     try {
+      const selectedAsset = getAssetByCode(assetCode);
+      
       const result = await invoiceApi.create({
         amount: parseFloat(amount),
-        assetCode: 'XLM',
+        assetCode: assetCode,
+        assetIssuer: selectedAsset?.issuer,
         expiresInDays: 7,
         sellerPublicKey: userWallet,
         description: description || undefined,
@@ -51,6 +57,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
 
       // Reset form
       setAmount('');
+      setAssetCode('XLM');
       setDescription('');
       setCustomerName('');
       setCustomerEmail('');
@@ -76,11 +83,26 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
           />
-          <div className="input w-24 text-xl font-bold flex items-center justify-center bg-stellar-50 border-stellar-300 text-stellar-700">
-            XLM
+          <div className="relative">
+            <select
+              value={assetCode}
+              onChange={(e) => setAssetCode(e.target.value)}
+              className="input w-48 text-base font-semibold bg-stellar-50 border-stellar-300 text-stellar-700 pl-12 appearance-none cursor-pointer"
+            >
+              {STELLAR_ASSETS.map((asset) => (
+                <option key={asset.code} value={asset.code}>
+                  {asset.code}
+                </option>
+              ))}
+            </select>
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              <AssetLogo code={assetCode} size={24} showName={false} />
+            </div>
           </div>
         </div>
-        <p className="text-sm text-gray-500 mt-2">Enter the amount you want to receive in XLM</p>
+        <p className="text-sm text-gray-500 mt-2">
+          Enter the amount you want to receive in {getAssetByCode(assetCode)?.name}
+        </p>
       </div>
 
       <div>

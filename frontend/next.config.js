@@ -6,7 +6,14 @@ const nextConfig = {
     NEXT_PUBLIC_STELLAR_NETWORK: process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET',
   },
   images: {
-    domains: ['localhost'],
+    domains: ['localhost', 'assets.coingecko.com'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'assets.coingecko.com',
+        pathname: '/coins/images/**',
+      },
+    ],
   },
 };
 

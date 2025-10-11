@@ -5,6 +5,7 @@ import { formatAmount, formatDate, getStatusColor, getTimeRemaining } from '@/li
 import { Clock, ExternalLink, Copy } from 'lucide-react';
 import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
+import AssetLogo from './AssetLogo';
 
 interface Invoice {
   id: string;
@@ -36,10 +37,13 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
   return (
     <div className="card hover:shadow-xl transition-shadow">
       <div className="flex items-start justify-between mb-4">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900">
-            {formatAmount(invoice.amount)} {invoice.assetCode}
-          </h3>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <AssetLogo code={invoice.assetCode} size={20} showName={false} />
+            <h3 className="text-lg font-semibold text-gray-900">
+              {formatAmount(invoice.amount)} {invoice.assetCode}
+            </h3>
+          </div>
           {invoice.customerName && (
             <p className="text-sm text-gray-600">{invoice.customerName}</p>
           )}

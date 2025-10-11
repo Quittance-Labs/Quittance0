@@ -158,7 +158,8 @@ app.get('/api/invoices/:id/payment-info', async (req: Request, res: Response) =>
       invoice.sellerPublicKey,
       invoice.amount.toString(),
       invoice.assetCode,
-      invoice.memo
+      invoice.memo,
+      invoice.assetIssuer
     );
 
     res.json({
