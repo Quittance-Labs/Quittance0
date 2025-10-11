@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { invoiceApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { STELLAR_ASSETS, getAssetByCode } from '@/lib/assets';
 import AssetLogo from './AssetLogo';
+import { useAuth } from '@/lib/auth';
 
 interface InvoiceFormProps {
   onSuccess?: (invoice: any) => void;
@@ -13,6 +14,7 @@ interface InvoiceFormProps {
 }
 
 export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps) {
+  const { user: googleUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState('');
   const [assetCode, setAssetCode] = useState('XLM');
@@ -20,11 +22,26 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
 
+  // Auto-fill seller and customer info from Google user
+  useEffect(() => {
+    if (googleUser) {
+      // Both seller and customer info are automatically filled from Google user
+      setCustomerName(googleUser.name);
+      setCustomerEmail(googleUser.email);
+      console.log('Google user loaded:', googleUser);
+    }
+  }, [googleUser]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!userWallet) {
       toast.error('Connect your wallet first');
+      return;
+    }
+
+    if (!googleUser) {
+      toast.error('Please sign in with Google first');
       return;
     }
 
@@ -42,6 +59,8 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
         assetIssuer: selectedAsset?.issuer,
         expiresInDays: 7,
         sellerPublicKey: userWallet,
+        sellerName: googleUser.name,
+        sellerEmail: googleUser.email,
         description: description || undefined,
         customerName: customerName || undefined,
         customerEmail: customerEmail || undefined,
@@ -52,8 +71,9 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       setAmount('');
       setAssetCode('XLM');
       setDescription('');
-      setCustomerName('');
-      setCustomerEmail('');
+      // Customer info will be auto-filled again from Google user
+      setCustomerName(googleUser.name);
+      setCustomerEmail(googleUser.email);
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to create link');
     } finally {
@@ -106,31 +126,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
         />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="label">Customer Name</label>
-          <input
-            type="text"
-            className="input text-sm"
-            placeholder="John Doe"
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            maxLength={100}
-          />
-        </div>
 
-        <div>
-          <label className="label">Customer Email</label>
-          <input
-            type="email"
-            className="input text-sm"
-            placeholder="john@example.com"
-            value={customerEmail}
-            onChange={(e) => setCustomerEmail(e.target.value)}
-            maxLength={100}
-          />
-        </div>
-      </div>
 
       <button
         type="submit"

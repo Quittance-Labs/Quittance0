@@ -7,14 +7,17 @@ import InvoiceForm from '@/components/InvoiceForm';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
+import GoogleLogin from '@/components/GoogleLogin';
 import AssetLogo from '@/components/AssetLogo';
 import { useWalletStore } from '@/lib/store';
+import { useAuth } from '@/lib/auth';
 import { FileText, Zap, Shield, QrCode, Wallet as WalletIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function HomePage() {
   const [createdInvoice, setCreatedInvoice] = useState<any>(null);
   const { publicKey, connected } = useWalletStore();
+  const { user: googleUser } = useAuth();
 
 
   const handleInvoiceCreated = (result: any) => setCreatedInvoice(result);
@@ -52,6 +55,7 @@ export default function HomePage() {
             </h1>
           </Link>
           <div className="flex items-center gap-3">
+            {!googleUser && <GoogleLogin className="!w-auto px-4 py-2 text-sm" />}
             {!connected ? (
               <WalletConnect />
             ) : (

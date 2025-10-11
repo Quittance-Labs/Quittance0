@@ -9,6 +9,10 @@ interface Invoice {
   description?: string;
   customerName?: string;
   customerEmail?: string;
+  sellerName?: string;
+  sellerEmail?: string;
+  payerName?: string;
+  payerEmail?: string;
   status: string;
   createdAt: string;
   expiresAt: string;
@@ -401,6 +405,8 @@ export function generateInvoiceCSV(invoices: Invoice[]): string {
   const headers = [
     'Invoice ID',
     'Date',
+    'Seller Name',
+    'Seller Email',
     'Customer Name',
     'Customer Email',
     'Description',
@@ -408,6 +414,8 @@ export function generateInvoiceCSV(invoices: Invoice[]): string {
     'Asset',
     'Status',
     'Payment Date',
+    'Payer Name',
+    'Payer Email',
     'Expires At',
     'Memo',
     'Transaction Hash',
@@ -416,6 +424,8 @@ export function generateInvoiceCSV(invoices: Invoice[]): string {
   const rows = invoices.map((inv) => [
     inv.id,
     format(new Date(inv.createdAt), 'yyyy-MM-dd HH:mm:ss'),
+    inv.sellerName || '',
+    inv.sellerEmail || '',
     inv.customerName || '',
     inv.customerEmail || '',
     inv.description || '',
@@ -423,6 +433,8 @@ export function generateInvoiceCSV(invoices: Invoice[]): string {
     inv.assetCode,
     inv.status,
     inv.paidAt ? format(new Date(inv.paidAt), 'yyyy-MM-dd HH:mm:ss') : '',
+    inv.payerName || '',
+    inv.payerEmail || '',
     format(new Date(inv.expiresAt), 'yyyy-MM-dd HH:mm:ss'),
     inv.memo,
     inv.paymentTxHash || '',
@@ -528,6 +540,13 @@ export function generateInvoicePDF(invoice: Invoice): string {
     </div>
   </div>
 
+  ${invoice.sellerName || invoice.sellerEmail ? `
+  <div class="info-section" style="margin-bottom: 20px;">
+    <h3>Seller Information</h3>
+    ${invoice.sellerName ? `<div class="info-row"><div class="info-label">Name</div><div class="info-value">${invoice.sellerName}</div></div>` : ''}
+    ${invoice.sellerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${invoice.sellerEmail}</div></div>` : ''}
+  </div>` : ''}
+
   <div class="amount-section">
     <div class="amount-label">Amount ${isPaid ? 'Paid' : 'Due'}</div>
     <div class="amount-value">${invoice.amount}</div>
@@ -542,7 +561,9 @@ export function generateInvoicePDF(invoice: Invoice): string {
     <tr><td>Seller Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.sellerPublicKey}</td></tr>
     ${isPaid && invoice.paymentTxHash ? `
     <tr><td>Transaction Hash</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.paymentTxHash}</td></tr>
-    <tr><td>Payer Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.payerPublicKey || 'N/A'}</td></tr>` : ''}
+    <tr><td>Payer Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.payerPublicKey || 'N/A'}</td></tr>
+    ${invoice.payerName ? `<tr><td>Payer Name</td><td>${invoice.payerName}</td></tr>` : ''}
+    ${invoice.payerEmail ? `<tr><td>Payer Email</td><td>${invoice.payerEmail}</td></tr>` : ''}` : ''}
     <tr><td>Network</td><td>${network}</td></tr>
   </table>
 

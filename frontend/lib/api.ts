@@ -57,8 +57,11 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     return response.data;
   },
 
-  verify: async (id: string, txHash: string) => {
-    const response = await api.post(`/invoices/${id}/verify`, { txHash });
+  verify: async (id: string, txHash: string, payerInfo?: { payerName?: string; payerEmail?: string }) => {
+    const response = await api.post(`/invoices/${id}/verify`, { 
+      txHash,
+      ...payerInfo 
+    });
     return response.data;
   },
 

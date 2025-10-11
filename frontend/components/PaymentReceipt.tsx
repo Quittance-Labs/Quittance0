@@ -117,6 +117,24 @@ Stellar Blockchain Payment System
           </div>
         </div>
 
+        {(invoice.sellerName || invoice.sellerEmail) && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
+            <p className="text-sm text-blue-600 font-semibold">Seller Information</p>
+            {invoice.sellerName && (
+              <div>
+                <p className="text-xs text-blue-500">Name</p>
+                <p className="text-sm text-blue-800">{invoice.sellerName}</p>
+              </div>
+            )}
+            {invoice.sellerEmail && (
+              <div>
+                <p className="text-xs text-blue-500">Email</p>
+                <p className="text-sm text-blue-800">{invoice.sellerEmail}</p>
+              </div>
+            )}
+          </div>
+        )}
+
         {(invoice.customerName || invoice.customerEmail) && (
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
             <p className="text-sm text-gray-600 font-semibold">Customer Information</p>
@@ -130,6 +148,24 @@ Stellar Blockchain Payment System
               <div>
                 <p className="text-xs text-gray-500">Email</p>
                 <p className="text-sm text-gray-800">{invoice.customerEmail}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {(invoice.payerName || invoice.payerEmail) && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2">
+            <p className="text-sm text-green-600 font-semibold">Payer Information</p>
+            {invoice.payerName && (
+              <div>
+                <p className="text-xs text-green-500">Name</p>
+                <p className="text-sm text-green-800">{invoice.payerName}</p>
+              </div>
+            )}
+            {invoice.payerEmail && (
+              <div>
+                <p className="text-xs text-green-500">Email</p>
+                <p className="text-sm text-green-800">{invoice.payerEmail}</p>
               </div>
             )}
           </div>

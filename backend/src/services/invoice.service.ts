@@ -98,16 +98,23 @@ class InvoiceService {
   /**
    * Update invoice status to PAID
    */
-  async markAsPaid(invoiceId: string, txHash: string, payerPublicKey: string): Promise<Invoice> {
+  async markAsPaid(invoiceId: string, txHash: string, payerPublicKey: string, payerInfo?: { payerName?: string; payerEmail?: string }): Promise<Invoice> {
     const query = `
       UPDATE invoices 
-      SET status = 'PAID', payment_tx_hash = $2, payer_public_key = $3, paid_at = NOW()
+      SET status = 'PAID', payment_tx_hash = $2, payer_public_key = $3, paid_at = NOW(),
+          payer_name = $4, payer_email = $5
       WHERE id = $1
       RETURNING *
     `;
 
     try {
-      const result = await pool.query(query, [invoiceId, txHash, payerPublicKey]);
+      const result = await pool.query(query, [
+        invoiceId, 
+        txHash, 
+        payerPublicKey,
+        payerInfo?.payerName || null,
+        payerInfo?.payerEmail || null
+      ]);
       
       if (result.rows.length === 0) {
         throw new Error('Invoice not found');

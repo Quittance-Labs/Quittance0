@@ -109,7 +109,7 @@ class InvoiceController {
   async verifyPayment(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const { txHash } = req.body;
+      const { txHash, payerName, payerEmail } = req.body;
 
       if (!txHash) {
         return res.status(400).json({
@@ -155,7 +155,8 @@ class InvoiceController {
       const updatedInvoice = await invoiceService.markAsPaid(
         invoice.id,
         txHash,
-        paymentOp.from
+        paymentOp.from,
+        { payerName, payerEmail }
       );
 
       res.json({

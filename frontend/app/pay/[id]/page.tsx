@@ -16,10 +16,13 @@ import { formatAmount, formatDate, getTimeRemaining, copyToClipboard } from '@/l
 import { Copy, ExternalLink, Loader2, Check, FileText, Mail, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
+import { useAuth } from '@/lib/auth';
+import GoogleLogin from '@/components/GoogleLogin';
 
 export default function PaymentPage() {
   const params = useParams();
   const id = params.id as string;
+  const { user: googleUser } = useAuth();
 
   const [invoice, setInvoice] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -220,6 +223,24 @@ export default function PaymentPage() {
                 </div>
               )}
 
+              {(invoice.sellerName || invoice.sellerEmail) && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
+                  <p className="text-sm text-blue-600 font-semibold">Seller Information</p>
+                  {invoice.sellerName && (
+                    <div>
+                      <p className="text-xs text-blue-500">Name</p>
+                      <p className="text-sm text-blue-800">{invoice.sellerName}</p>
+                    </div>
+                  )}
+                  {invoice.sellerEmail && (
+                    <div>
+                      <p className="text-xs text-blue-500">Email</p>
+                      <p className="text-sm text-blue-800">{invoice.sellerEmail}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {(invoice.customerName || invoice.customerEmail) && (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
                   <p className="text-sm text-gray-600 font-semibold">Customer Information</p>
@@ -387,32 +408,47 @@ export default function PaymentPage() {
                 <div className="card">
                   <h3 className="text-xl font-semibold text-center mb-4">Pay with Wallet</h3>
                   
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                    <p className="text-sm text-blue-800 font-semibold mb-2">How to Pay:</p>
-                    <ol className="text-sm text-blue-700 space-y-1.5 list-decimal list-inside">
-                      <li>Connect your Freighter wallet</li>
-                      <li>Click the Pay with Freighter button</li>
-                      <li>Confirm the transaction</li>
-                    </ol>
-                  </div>
+                  {!googleUser ? (
+                    <div className="text-center py-8">
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                        <p className="text-sm text-yellow-800 font-semibold mb-2">Sign in Required</p>
+                        <p className="text-sm text-yellow-700">Please sign in with Google to make a payment</p>
+                      </div>
+                      <GoogleLogin />
+                    </div>
+                  ) : (
+                    <>
 
-                  <div className="flex justify-center mb-4">
-                    <WalletConnect />
-                  </div>
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                        <p className="text-sm text-blue-800 font-semibold mb-2">How to Pay:</p>
+                        <ol className="text-sm text-blue-700 space-y-1.5 list-decimal list-inside">
+                          <li>Connect your Freighter wallet</li>
+                          <li>Click the Pay with Freighter button</li>
+                          <li>Confirm the transaction</li>
+                        </ol>
+                      </div>
 
-                  <PaymentButton
-                    destination={invoice.sellerPublicKey}
-                    amount={invoice.amount.toString()}
-                    memo={invoice.memo}
-                    assetCode={invoice.assetCode}
-                    assetIssuer={invoice.assetIssuer}
-                    invoiceId={invoice.id}
-                    onSuccess={handlePaymentSuccess}
-                  />
-                  
-                  <div className="mt-6 pt-4 border-t text-center">
-                    <p className="text-xs text-gray-500">Secure payment on Stellar blockchain</p>
-                  </div>
+                      <div className="flex justify-center mb-4">
+                        <WalletConnect />
+                      </div>
+
+                      <PaymentButton
+                        destination={invoice.sellerPublicKey}
+                        amount={invoice.amount.toString()}
+                        memo={invoice.memo}
+                        assetCode={invoice.assetCode}
+                        assetIssuer={invoice.assetIssuer}
+                        invoiceId={invoice.id}
+                        payerName={googleUser?.name}
+                        payerEmail={googleUser?.email}
+                        onSuccess={handlePaymentSuccess}
+                      />
+                      
+                      <div className="mt-6 pt-4 border-t text-center">
+                        <p className="text-xs text-gray-500">Secure payment on Stellar blockchain</p>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div className="card bg-yellow-50 border-yellow-300">
