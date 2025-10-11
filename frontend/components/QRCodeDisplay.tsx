@@ -41,7 +41,7 @@ export default function QRCodeDisplay({
         <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
       )}
       
-      <div className="bg-white p-4 rounded-xl border-2 border-gray-200">
+      <div className="bg-white p-5 rounded-xl border-2 border-gray-200 shadow-lg">
         {isBase64Image ? (
           // Display base64 image from backend
           <img 
@@ -64,13 +64,13 @@ export default function QRCodeDisplay({
 
       {showCopy && (
         <div className="w-full max-w-md">
-          <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg">
-            <code className="flex-1 text-xs text-gray-700 truncate">
+          <div className="flex items-center gap-2 bg-gray-50 p-3 rounded-lg border border-gray-200">
+            <code className="flex-1 text-xs text-gray-700 truncate font-mono">
               {value}
             </code>
             <button
               onClick={handleCopy}
-              className="btn btn-secondary p-2 shrink-0"
+              className="btn btn-secondary p-2 shrink-0 hover:scale-105 transition-transform"
               title="Copy to clipboard"
             >
               {copied ? (

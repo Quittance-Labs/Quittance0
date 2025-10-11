@@ -54,7 +54,7 @@ ${invoice.sellerPublicKey}
 Memo: ${invoice.memo}
 
 ───────────────────────────────────────
-Powered by Link to Pay
+Powered by Stellink
 Stellar Blockchain Payment System
 ═══════════════════════════════════════
     `.trim();
@@ -83,13 +83,18 @@ Stellar Blockchain Payment System
 
       {/* Invoice Details */}
       <div className="space-y-4 mb-6">
-        <div className="bg-green-50 border-2 border-green-200 rounded-xl p-6 text-center">
-          <p className="text-sm text-gray-600 mb-1">Amount Paid</p>
-          <p className="text-4xl font-bold text-green-700">
-            {formatAmount(invoice.amount, 7)}
-          </p>
-          <div className="flex items-center justify-center gap-2 mt-2">
-            <AssetLogo code={invoice.assetCode} size={24} showName={true} className="text-green-600 text-xl font-semibold" />
+        <div className="bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-200 rounded-xl p-6 text-center">
+          <p className="text-sm text-gray-600 mb-3">Amount Paid</p>
+          <div className="flex items-center justify-center gap-3">
+            <AssetLogo code={invoice.assetCode} size={36} showName={false} />
+            <div>
+              <p className="text-4xl font-bold text-green-700">
+                {formatAmount(invoice.amount, 7)}
+              </p>
+              <p className="text-lg font-semibold text-green-600 mt-1">
+                {invoice.assetCode}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -197,7 +202,7 @@ Stellar Blockchain Payment System
           This receipt confirms payment on the Stellar blockchain
         </p>
         <p className="text-xs text-gray-400 mt-1">
-          Powered by Link to Pay
+          Powered by Stellink
         </p>
       </div>
     </div>

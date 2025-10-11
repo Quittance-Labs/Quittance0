@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Image from 'next/image';
+import Link from 'next/link';
 import { invoiceApi } from '@/lib/api';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import PaymentStatus from '@/components/PaymentStatus';
 import WalletConnect from '@/components/WalletConnect';
+import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
 import { formatAmount, formatDate, getTimeRemaining, getShareUrl } from '@/lib/utils';
 import { ArrowLeft, Share2, Loader2, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
-import Link from 'next/link';
 
 export default function InvoiceDetailPage() {
   const params = useParams();
@@ -20,6 +22,7 @@ export default function InvoiceDetailPage() {
   const [invoice, setInvoice] = useState<any>(null);
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [userWallet, setUserWallet] = useState<string | null>(null);
 
   useEffect(() => {
     loadInvoice();
@@ -63,16 +66,25 @@ export default function InvoiceDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-12 h-12 animate-spin text-stellar-600" />
+      <div className="min-h-screen bg-logo-pattern relative flex items-center justify-center">
+        <div className="orb orb-1"></div>
+        <div className="orb orb-2"></div>
+        <div className="orb orb-3"></div>
+        <div className="relative">
+          <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full blur-2xl opacity-30"></div>
+          <Loader2 className="w-16 h-16 animate-spin text-cyan-400 relative z-10" />
+        </div>
       </div>
     );
   }
 
   if (!invoice) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="card text-center max-w-md">
+      <div className="min-h-screen bg-logo-pattern relative flex items-center justify-center">
+        <div className="orb orb-1"></div>
+        <div className="orb orb-2"></div>
+        <div className="orb orb-3"></div>
+        <div className="card text-center max-w-md relative z-10">
           <h2 className="text-2xl font-bold text-red-600 mb-2">Invoice Not Found</h2>
         </div>
       </div>
@@ -85,47 +97,70 @@ export default function InvoiceDetailPage() {
       : 'https://stellar.expert/explorer/public';
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <button
-            onClick={() => router.back()}
-            className="btn btn-outline flex items-center gap-2"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            Back
-          </button>
-          
-          <div className="flex items-center gap-3">
-            <WalletConnect />
+    <div className="min-h-screen bg-logo-pattern relative py-8 sm:py-12 px-4">
+      {/* Animated Background Orbs */}
+      <div className="orb orb-1"></div>
+      <div className="orb orb-2"></div>
+      <div className="orb orb-3"></div>
+      
+      <div className="max-w-4xl mx-auto relative z-10">
+        {/* Fixed Header */}
+        <header className="fixed top-0 left-0 right-0 z-50 premium-header border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => router.back()}
+                className="btn btn-outline flex items-center gap-2"
+              >
+                <ArrowLeft className="w-5 h-5" />
+                <span className="hidden sm:inline">Back</span>
+              </button>
+              <Link href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
+                <Image
+                  src="/Stellink.jpg"
+                  alt="Stellink Logo"
+                  width={40}
+                  height={40}
+                  className="w-10 h-10 object-contain"
+                  priority
+                />
+                <span className="text-xl font-bold text-gray-900 hidden sm:inline">Stellink</span>
+              </Link>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              {!userWallet ? (
+                <WalletConnect onConnect={setUserWallet} />
+              ) : (
+                <UserProfile userWallet={userWallet} onDisconnect={() => setUserWallet(null)} />
+              )}
             {invoice.status === 'PENDING' && (
               <button
                 onClick={handleShare}
                 className="btn btn-primary flex items-center gap-2"
               >
                 <Share2 className="w-5 h-5" />
-                Share
+                <span className="hidden sm:inline">Share</span>
               </button>
             )}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
           {/* Invoice Details */}
           <div className="card">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Invoice Details</h2>
+            <h2 className="text-3xl font-bold text-gray-900 mb-8">Invoice Details</h2>
 
-            <div className="space-y-4">
-              <div className="border-b pb-4">
-                <p className="text-sm text-gray-600 mb-1">Invoice ID</p>
-                <p className="font-mono text-sm text-gray-900">{invoice.id}</p>
+            <div className="space-y-5">
+              <div className="bg-gradient-to-br from-gray-50 to-slate-50 p-5 rounded-2xl border border-gray-200/50">
+                <p className="text-xs text-gray-600 mb-2 font-semibold uppercase tracking-wide">Invoice ID</p>
+                <p className="font-mono text-sm text-gray-900 break-all">{invoice.id}</p>
               </div>
 
-              <div className="border-b pb-4">
-                <p className="text-sm text-gray-600 mb-1">Amount</p>
-                <p className="text-3xl font-bold text-stellar-600">
-                  {formatAmount(invoice.amount, 7)} {invoice.assetCode}
+              <div className="bg-gradient-to-br from-cyan-50 to-blue-50 p-6 rounded-2xl border-2 border-cyan-200/50 shadow-lg">
+                <p className="text-xs text-gray-600 mb-3 font-semibold uppercase tracking-wide">Amount</p>
+                <p className="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
+                  {formatAmount(invoice.amount, 7)} <span className="text-2xl">{invoice.assetCode}</span>
                 </p>
               </div>
 
@@ -207,6 +242,10 @@ export default function InvoiceDetailPage() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Main Content with Header Offset */}
+        <div className="pt-20">
         </div>
       </div>
     </div>

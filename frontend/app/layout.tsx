@@ -6,9 +6,9 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Link to Pay - Instant Crypto Payments',
-  description: 'Create instant payment links with QR codes. Accept XLM on Stellar blockchain.',
-  keywords: ['stellar', 'crypto', 'payment', 'blockchain', 'xlm', 'link to pay', 'qr code'],
+  title: 'Stellink - Instant Crypto Payments',
+  description: 'Create instant payment links with QR codes. Accept XLM, USDC, and USDT on Stellar blockchain.',
+  keywords: ['stellar', 'crypto', 'payment', 'blockchain', 'xlm', 'usdc', 'usdt', 'stellink', 'qr code'],
 };
 
 export default function RootLayout({

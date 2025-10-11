@@ -9,7 +9,7 @@ router.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    service: 'One-Click Crypto Invoice API'
+    service: 'Stellink API'
   });
 });
 

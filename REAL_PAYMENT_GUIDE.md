@@ -1,6 +1,6 @@
 # 🚀 Gerçek Stellar Ödeme Rehberi
 
-**One-Click Crypto Invoice** ile gerçek Stellar blockchain üzerinde ödeme yapın!
+**Stellink** ile gerçek Stellar blockchain üzerinde ödeme yapın!
 
 ---
 
@@ -24,7 +24,7 @@ npm run dev:mvp
 
 **Çıktıda göreceksiniz:**
 ```
-🚀 One-Click Crypto Invoice Backend (MVP Mode)
+🚀 Stellink Backend (MVP Mode)
 ✅ Server running on port 3001
 💰 Seller: GDZKIKB5...
 ```

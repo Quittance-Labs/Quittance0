@@ -253,7 +253,7 @@ export const mockHealthCheck = async () => {
   return {
     status: 'ok (MOCK MODE)',
     timestamp: new Date().toISOString(),
-    service: 'One-Click Crypto Invoice API (Mock)',
+    service: 'Stellink API (Mock)',
   };
 };
 

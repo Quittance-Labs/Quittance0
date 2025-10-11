@@ -1,4 +1,4 @@
--- One-Click Crypto Invoice Database Schema
+-- Stellink Database Schema
 -- PostgreSQL Database
 
 -- Users Table

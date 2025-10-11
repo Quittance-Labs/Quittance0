@@ -2,11 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import Image from 'next/image';
+import Link from 'next/link';
 import { invoiceApi } from '@/lib/api';
 import PaymentButton from '@/components/PaymentButton';
 import PaymentStatus from '@/components/PaymentStatus';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import WalletConnect from '@/components/WalletConnect';
+import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
 import AssetLogo from '@/components/AssetLogo';
 import { formatAmount, formatDate, getTimeRemaining, copyToClipboard } from '@/lib/utils';
@@ -21,6 +24,7 @@ export default function PaymentPage() {
   const [loading, setLoading] = useState(true);
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
   const [polling, setPolling] = useState(true);
+  const [userWallet, setUserWallet] = useState<string | null>(null);
 
   useEffect(() => {
     loadInvoice();
@@ -85,18 +89,27 @@ export default function PaymentPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-12 h-12 animate-spin text-stellar-600" />
+      <div className="min-h-screen bg-logo-pattern relative flex items-center justify-center">
+        <div className="orb orb-1"></div>
+        <div className="orb orb-2"></div>
+        <div className="orb orb-3"></div>
+        <div className="relative">
+          <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full blur-2xl opacity-30"></div>
+          <Loader2 className="w-16 h-16 animate-spin text-cyan-400 relative z-10" />
+        </div>
       </div>
     );
   }
 
   if (!invoice) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="card text-center max-w-md">
+      <div className="min-h-screen bg-logo-pattern relative flex items-center justify-center">
+        <div className="orb orb-1"></div>
+        <div className="orb orb-2"></div>
+        <div className="orb orb-3"></div>
+        <div className="card text-center max-w-md relative z-10">
           <h2 className="text-2xl font-bold text-red-600 mb-2">Invoice Not Found</h2>
-          <p className="text-gray-600">The invoice you're looking for doesn't exist.</p>
+          <p className="text-gray-700">The invoice you're looking for doesn't exist.</p>
         </div>
       </div>
     );
@@ -108,32 +121,72 @@ export default function PaymentPage() {
       : 'https://stellar.expert/explorer/public';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-stellar-50 to-white py-12 px-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Header with Wallet Connect */}
-        <div className="flex justify-end mb-6">
-          <WalletConnect />
-        </div>
+    <div className="min-h-screen bg-logo-pattern relative py-8 sm:py-12 px-4">
+      {/* Animated Background Orbs */}
+      <div className="orb orb-1"></div>
+      <div className="orb orb-2"></div>
+      <div className="orb orb-3"></div>
+      
+      <div className="max-w-4xl mx-auto relative z-10">
+        {/* Fixed Header */}
+        <header className="fixed top-0 left-0 right-0 z-50 premium-header border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+            <Link href="/" className="flex items-center gap-3">
+              <Image
+                src="/Stellink.jpg"
+                alt="Stellink Logo"
+                width={45}
+                height={45}
+                className="w-11 h-11 object-contain"
+                priority
+              />
+              <h1 className="text-2xl font-bold text-gray-900 hidden sm:block">
+                Stellink
+              </h1>
+            </Link>
+            <div className="flex items-center gap-3">
+              {!userWallet ? (
+                <WalletConnect onConnect={setUserWallet} />
+              ) : (
+                <UserProfile userWallet={userWallet} onDisconnect={() => setUserWallet(null)} />
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* Main Content with Header Offset */}
+        <div className="pt-20">
 
         {/* Page Title */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Complete Payment</h1>
-          <p className="text-gray-600">Pay with your Stellar wallet</p>
+        <div className="text-center mb-10 sm:mb-12">
+          <div className="inline-block mb-4 px-6 py-2 bg-gradient-to-r from-cyan-400/20 to-blue-500/20 backdrop-blur-md rounded-full border border-white/30">
+            <span className="text-white text-sm font-semibold tracking-wide">💳 Secure Payment</span>
+          </div>
+          <h1 className="text-4xl sm:text-5xl font-bold text-white mb-3">Complete Payment</h1>
+          <p className="text-xl text-white/90">Pay with your Stellar wallet</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
           {/* Payment Details */}
           <div className="card">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Payment Details</h2>
+            <h2 className="text-3xl font-bold text-gray-900 mb-8">Payment Details</h2>
 
-            <div className="space-y-4 mb-6">
-              <div className="bg-stellar-50 border-2 border-stellar-200 rounded-xl p-6 text-center">
-                <p className="text-sm text-gray-600 mb-2">Amount to Pay</p>
-                <p className="text-5xl font-bold text-stellar-700">
-                  {formatAmount(invoice.amount, 7)}
-                </p>
-                <div className="flex items-center justify-center gap-2 mt-3">
-                  <AssetLogo code={invoice.assetCode} size={28} showName={true} className="text-stellar-600 text-xl font-semibold" />
+            <div className="space-y-5 mb-8">
+              <div className="bg-gradient-to-br from-cyan-50 to-blue-50 border-2 border-cyan-200/50 rounded-2xl p-8 text-center shadow-lg">
+                <p className="text-sm text-gray-600 mb-4 font-semibold uppercase tracking-wide">Amount to Pay</p>
+                <div className="flex items-center justify-center gap-4">
+                  <div className="relative">
+                    <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full blur-lg opacity-40"></div>
+                    <AssetLogo code={invoice.assetCode} size={50} showName={false} />
+                  </div>
+                  <div>
+                    <p className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
+                      {formatAmount(invoice.amount, 7)}
+                    </p>
+                    <p className="text-xl font-bold text-cyan-600 mt-2">
+                      {invoice.assetCode}
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -363,6 +416,8 @@ export default function PaymentPage() {
               </>
             )}
           </div>
+        </div>
+
         </div>
       </div>
     </div>

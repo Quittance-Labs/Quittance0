@@ -25,25 +25,27 @@ export default function AssetLogo({
   return (
     <div className={`inline-flex items-center gap-2 ${className}`}>
       <div 
-        className="rounded-full overflow-hidden flex items-center justify-center bg-white"
+        className="rounded-full overflow-hidden flex items-center justify-center bg-white shadow-sm border border-gray-100"
         style={{ 
           width: size, 
           height: size,
           minWidth: size,
-          minHeight: size
+          minHeight: size,
+          padding: '2px'
         }}
       >
         <Image
           src={asset.logo}
           alt={asset.name}
-          width={size}
-          height={size}
-          className="object-contain"
+          width={size - 4}
+          height={size - 4}
+          className="object-contain rounded-full"
           unoptimized
+          priority
         />
       </div>
       {showName && (
-        <span className="font-medium">{asset.code}</span>
+        <span className="font-semibold">{asset.code}</span>
       )}
     </div>
   );

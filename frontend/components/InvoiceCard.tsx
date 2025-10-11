@@ -35,20 +35,20 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
   };
 
   return (
-    <div className="card hover:shadow-xl transition-shadow">
+    <div className="card hover:shadow-xl group">
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <AssetLogo code={invoice.assetCode} size={20} showName={false} />
-            <h3 className="text-lg font-semibold text-gray-900">
-              {formatAmount(invoice.amount)} {invoice.assetCode}
+            <AssetLogo code={invoice.assetCode} size={24} showName={false} />
+            <h3 className="text-lg font-bold text-gray-900">
+              {formatAmount(invoice.amount)} <span className="text-cyan-600">{invoice.assetCode}</span>
             </h3>
           </div>
           {invoice.customerName && (
             <p className="text-sm text-gray-600">{invoice.customerName}</p>
           )}
         </div>
-        <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColor}`}>
+        <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${statusColor}`}>
           {invoice.status}
         </span>
       </div>
@@ -75,7 +75,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
       <div className="flex gap-2">
         <Link
           href={`/invoice/${invoice.id}`}
-          className="btn btn-outline flex-1 flex items-center justify-center gap-2"
+          className="btn btn-outline flex-1 flex items-center justify-center gap-2 text-sm"
         >
           <ExternalLink className="w-4 h-4" />
           View
@@ -86,7 +86,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
             className="btn btn-secondary flex items-center justify-center gap-2"
           >
             <Copy className="w-4 h-4" />
-            Copy Link
+            Copy
           </button>
         )}
       </div>

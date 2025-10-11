@@ -1,4 +1,4 @@
-# 🚀 One-Click Crypto Invoice
+# 🚀 Stellink
 
 **Stellar blockchain tabanlı otomatik fatura oluşturma ve ödeme doğrulama sistemi**
 
@@ -357,7 +357,7 @@ Sorularınız için:
 
 ## 👨‍💻 Geliştirici
 
-**One-Click Crypto Invoice** - Stellar blockchain üzerinde açık kaynak proje
+**Stellink** - Stellar blockchain üzerinde açık kaynak proje
 
 ⭐ Projeyi beğendiyseniz GitHub'da star vermeyi unutmayın!
 

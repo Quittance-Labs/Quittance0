@@ -59,7 +59,7 @@ npm run dev:mvp
 
 Çıktı:
 ```
-🚀 One-Click Crypto Invoice Backend (MVP Mode)
+🚀 Stellink Backend (MVP Mode)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✅ Server running on port 3001
 📍 API: http://localhost:3001/api

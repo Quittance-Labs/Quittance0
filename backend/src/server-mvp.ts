@@ -30,7 +30,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Root endpoint
 app.get('/', (req: Request, res: Response) => {
   res.json({
-    name: 'One-Click Crypto Invoice API (MVP)',
+    name: 'Stellink API (MVP)',
     version: '1.0.0',
     status: 'running',
     mode: 'in-memory',
@@ -43,7 +43,7 @@ app.get('/api/health', (req: Request, res: Response) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    service: 'One-Click Crypto Invoice API',
+    service: 'Stellink API',
     mode: 'MVP - In-Memory Storage (Dynamic Seller)',
     message: 'Each user uses their own wallet for payments',
   });
@@ -356,7 +356,7 @@ app.use((req: Request, res: Response) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log('\n🚀 One-Click Crypto Invoice Backend (MVP Mode)');
+  console.log('\n🚀 Stellink Backend (MVP Mode)');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log(`✅ Server running on port ${PORT}`);
     console.log(`📍 API: http://localhost:${PORT}/api`);

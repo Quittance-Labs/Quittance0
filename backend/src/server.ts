@@ -33,7 +33,7 @@ app.use('/api', routes);
 // Root endpoint
 app.get('/', (req: Request, res: Response) => {
   res.json({
-    name: 'One-Click Crypto Invoice API',
+    name: 'Stellink API',
     version: '1.0.0',
     status: 'running',
     documentation: '/api/health',
@@ -60,7 +60,7 @@ app.use((req: Request, res: Response) => {
 // Initialize application
 async function initialize() {
   try {
-    console.log('🚀 Initializing One-Click Crypto Invoice Backend...');
+    console.log('🚀 Initializing Stellink Backend...');
 
     // Test database connection
     await pool.query('SELECT NOW()');

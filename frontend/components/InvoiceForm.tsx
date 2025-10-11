@@ -69,16 +69,16 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="label text-lg font-semibold mb-3">Payment Amount *</label>
-        <div className="flex gap-3">
+        <label className="label">Payment Amount *</label>
+        <div className="flex gap-3 flex-col sm:flex-row">
           <input
             type="number"
             step="0.0000001"
             min="0.0000001"
             required
-            className="input flex-1 text-2xl py-4 px-6"
+            className="input flex-1 text-2xl font-semibold"
             placeholder="10.00"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
@@ -87,7 +87,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
             <select
               value={assetCode}
               onChange={(e) => setAssetCode(e.target.value)}
-              className="input w-48 text-base font-semibold bg-stellar-50 border-stellar-300 text-stellar-700 pl-12 appearance-none cursor-pointer"
+              className="input w-full sm:w-40 text-sm font-semibold pl-12 pr-3 appearance-none cursor-pointer"
             >
               {STELLAR_ASSETS.map((asset) => (
                 <option key={asset.code} value={asset.code}>
@@ -100,29 +100,25 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
             </div>
           </div>
         </div>
-        <p className="text-sm text-gray-500 mt-2">
-          Enter the amount you want to receive in {getAssetByCode(assetCode)?.name}
-        </p>
       </div>
 
       <div>
         <label className="label">Description</label>
         <textarea
-          className="input min-h-[80px] resize-none"
-          placeholder="What is this payment for? (e.g., Invoice #1234, Consulting services)"
+          className="input min-h-[80px] resize-none text-sm"
+          placeholder="What is this payment for?"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           maxLength={500}
         />
-        <p className="text-xs text-gray-500 mt-1">{description.length}/500 characters</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="label">Customer Name</label>
           <input
             type="text"
-            className="input"
+            className="input text-sm"
             placeholder="John Doe"
             value={customerName}
             onChange={(e) => setCustomerName(e.target.value)}
@@ -134,7 +130,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
           <label className="label">Customer Email</label>
           <input
             type="email"
-            className="input"
+            className="input text-sm"
             placeholder="john@example.com"
             value={customerEmail}
             onChange={(e) => setCustomerEmail(e.target.value)}
@@ -146,12 +142,12 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       <button
         type="submit"
         disabled={loading}
-        className="btn btn-primary w-full flex items-center justify-center gap-2 text-lg py-4"
+        className="btn btn-primary w-full flex items-center justify-center gap-2 mt-6"
       >
         {loading ? (
           <>
-            <Loader2 className="w-6 h-6 animate-spin" />
-            Creating Payment Link...
+            <Loader2 className="w-5 h-5 animate-spin" />
+            Creating...
           </>
         ) : (
           'Create Payment Link'
