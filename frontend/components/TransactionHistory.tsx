@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { ArrowUpRight, ArrowDownLeft, ExternalLink, Loader2, Clock, Download, FileText, FileSpreadsheet } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatAddress } from '@/lib/utils';
-import { downloadCSV, openPDFPreview, downloadJSON } from '@/lib/export';
+import { downloadCSV, downloadPDF, downloadJSON } from '@/lib/export';
 import { toast } from 'sonner';
 import AssetLogo from './AssetLogo';
 
@@ -127,10 +127,10 @@ export default function TransactionHistory({ publicKey, limit = 20 }: Transactio
 
   const handleExportPDF = () => {
     try {
-      openPDFPreview(filteredTransactions, publicKey);
+      downloadPDF(filteredTransactions, publicKey);
       setShowExportMenu(false);
     } catch (error) {
-      toast.error('Failed to open PDF preview');
+      toast.error('Failed to download PDF');
     }
   };
 

@@ -241,20 +241,12 @@ export default function PaymentPage() {
                 </div>
               )}
 
-              {(invoice.customerName || invoice.customerEmail) && (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
-                  <p className="text-sm text-gray-600 font-semibold">Customer Information</p>
-                  {invoice.customerName && (
-                    <div>
-                      <p className="text-xs text-gray-500">Name</p>
-                      <p className="text-sm text-gray-800">{invoice.customerName}</p>
-                    </div>
-                  )}
-                  {invoice.customerEmail && (
-                    <div>
-                      <p className="text-xs text-gray-500">Email</p>
-                      <p className="text-sm text-gray-800">{invoice.customerEmail}</p>
-                    </div>
+              {invoice.sellerName && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                  <p className="text-sm text-blue-600 font-semibold">Pay to</p>
+                  <p className="text-lg font-bold text-blue-800">{invoice.sellerName}</p>
+                  {invoice.sellerEmail && (
+                    <p className="text-sm text-blue-600">{invoice.sellerEmail}</p>
                   )}
                 </div>
               )}

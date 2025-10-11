@@ -328,39 +328,46 @@ export function generatePDFContent(
     <p>This is an automatically generated report. All transactions are recorded on the Stellar blockchain.</p>
   </div>
 
-  <button class="no-print" onclick="window.print()" style="
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    padding: 12px 24px;
-    background: #4f46e5;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-weight: 600;
-    cursor: pointer;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-  ">
-    🖨️ Print / Save as PDF
-  </button>
+  <div style="position: fixed; top: 10px; right: 10px; background: #06b6d4; color: white; padding: 15px; border-radius: 8px; z-index: 1000; max-width: 300px; font-family: Arial, sans-serif;">
+    <h3 style="margin: 0 0 10px 0; font-size: 14px;">PDF olarak kaydetmek için:</h3>
+    <ol style="margin: 0; padding-left: 20px; font-size: 12px;">
+      <li>Ctrl+P (Windows) veya Cmd+P (Mac)</li>
+      <li>"Hedef" → "PDF olarak kaydet"</li>
+      <li>"Yazdır" butonuna bas</li>
+    </ol>
+    <button onclick="window.print()" style="background: white; color: #06b6d4; border: none; padding: 8px 16px; border-radius: 4px; margin-top: 10px; cursor: pointer; font-weight: bold; font-size: 12px;">
+      PDF Olarak Kaydet
+    </button>
+  </div>
+
 </body>
 </html>
   `;
 }
 
 /**
- * Open PDF preview in new window
+ * Download PDF directly
  */
-export function openPDFPreview(transactions: Transaction[], publicKey: string) {
+export function downloadPDF(transactions: Transaction[], publicKey: string, filename?: string) {
   const pdfContent = generatePDFContent(transactions, publicKey);
-  const printWindow = window.open('', '_blank');
-
-  if (printWindow) {
-    printWindow.document.write(pdfContent);
-    printWindow.document.close();
-  } else {
-    alert('Please allow popups to view the PDF preview');
-  }
+  
+  // Create blob and download as HTML file
+  const blob = new Blob([pdfContent], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename || `stellink-transactions-${format(new Date(), 'yyyy-MM-dd-HHmmss')}.html`;
+  link.style.display = 'none';
+  
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  // Clean up
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 1000);
 }
 
 /**
@@ -477,35 +484,144 @@ export function generateInvoicePDF(invoice: Invoice): string {
   <title>Invoice ${invoice.id}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Arial', sans-serif; padding: 40px; color: #1f2937; background: white; }
-    .header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 40px; padding-bottom: 20px; border-bottom: 3px solid #06b6d4; }
-    .logo { font-size: 32px; font-weight: bold; color: #06b6d4; }
-    .invoice-title { text-align: right; }
-    .invoice-title h1 { font-size: 36px; color: #1f2937; margin-bottom: 5px; }
-    .invoice-number { color: #6b7280; font-size: 14px; }
-    .status-badge { display: inline-block; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-top: 10px; }
+    body { 
+      font-family: Arial, sans-serif; 
+      padding: 20px; 
+      color: #333; 
+      background: white; 
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .header { 
+      display: flex; 
+      justify-content: space-between; 
+      margin-bottom: 30px; 
+      padding-bottom: 15px; 
+      border-bottom: 2px solid #06b6d4; 
+    }
+    .logo { 
+      font-size: 24px; 
+      font-weight: bold; 
+      color: #06b6d4; 
+    }
+    .invoice-title { 
+      text-align: right; 
+    }
+    .invoice-title h1 { 
+      font-size: 28px; 
+      color: #333; 
+      margin-bottom: 5px; 
+    }
+    .invoice-number { 
+      color: #666; 
+      font-size: 12px; 
+    }
+    .status-badge { 
+      display: inline-block; 
+      padding: 4px 8px; 
+      border-radius: 4px; 
+      font-size: 10px; 
+      font-weight: 600; 
+      text-transform: uppercase; 
+      margin-top: 8px; 
+    }
     .status-paid { background: #d1fae5; color: #065f46; }
     .status-pending { background: #fef3c7; color: #92400e; }
     .status-expired { background: #fee2e2; color: #991b1b; }
-    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 40px; }
-    .info-section { padding: 20px; background: #f9fafb; border-radius: 8px; }
-    .info-section h3 { font-size: 14px; color: #6b7280; text-transform: uppercase; margin-bottom: 15px; letter-spacing: 0.5px; }
-    .info-row { margin-bottom: 10px; }
-    .info-label { font-size: 12px; color: #6b7280; margin-bottom: 3px; }
-    .info-value { font-size: 14px; color: #1f2937; font-weight: 500; }
-    .amount-section { background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); padding: 30px; border-radius: 12px; text-align: center; margin-bottom: 30px; }
-    .amount-label { color: rgba(255,255,255,0.9); font-size: 14px; margin-bottom: 10px; }
-    .amount-value { font-size: 48px; font-weight: bold; color: white; margin-bottom: 5px; }
-    .amount-asset { color: rgba(255,255,255,0.9); font-size: 18px; font-weight: 600; }
-    .details-table { width: 100%; margin-bottom: 30px; }
-    .details-table tr { border-bottom: 1px solid #e5e7eb; }
-    .details-table td { padding: 12px 0; }
-    .details-table td:first-child { color: #6b7280; font-size: 13px; width: 30%; }
-    .details-table td:last-child { color: #1f2937; font-size: 14px; font-weight: 500; }
-    .footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center; color: #6b7280; font-size: 12px; }
-    .blockchain-info { background: #fef3c7; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #f59e0b; }
-    .blockchain-info p { font-size: 12px; color: #92400e; line-height: 1.6; }
-    @media print { body { padding: 20px; } .no-print { display: none; } }
+    .info-grid { 
+      display: flex; 
+      gap: 20px; 
+      margin-bottom: 30px; 
+    }
+    .info-section { 
+      flex: 1;
+      padding: 15px; 
+      background: #f9fafb; 
+      border-radius: 6px; 
+    }
+    .info-section h3 { 
+      font-size: 12px; 
+      color: #666; 
+      text-transform: uppercase; 
+      margin-bottom: 10px; 
+      letter-spacing: 0.5px; 
+    }
+    .info-row { 
+      margin-bottom: 8px; 
+    }
+    .info-label { 
+      font-size: 10px; 
+      color: #666; 
+      margin-bottom: 2px; 
+    }
+    .info-value { 
+      font-size: 12px; 
+      color: #333; 
+      font-weight: 500; 
+    }
+    .amount-section { 
+      background: #06b6d4; 
+      padding: 20px; 
+      border-radius: 8px; 
+      text-align: center; 
+      margin-bottom: 20px; 
+    }
+    .amount-label { 
+      color: white; 
+      font-size: 12px; 
+      margin-bottom: 8px; 
+    }
+    .amount-value { 
+      font-size: 36px; 
+      font-weight: bold; 
+      color: white; 
+      margin-bottom: 5px; 
+    }
+    .amount-asset { 
+      color: white; 
+      font-size: 16px; 
+      font-weight: 600; 
+    }
+    .details-table { 
+      width: 100%; 
+      margin-bottom: 20px; 
+    }
+    .details-table tr { 
+      border-bottom: 1px solid #e5e7eb; 
+    }
+    .details-table td { 
+      padding: 8px 0; 
+    }
+    .details-table td:first-child { 
+      color: #666; 
+      font-size: 11px; 
+      width: 30%; 
+    }
+    .details-table td:last-child { 
+      color: #333; 
+      font-size: 12px; 
+      font-weight: 500; 
+    }
+    .footer { 
+      margin-top: 30px; 
+      padding-top: 15px; 
+      border-top: 1px solid #e5e7eb; 
+      text-align: center; 
+      color: #666; 
+      font-size: 10px; 
+    }
+    .blockchain-info { 
+      background: #fef3c7; 
+      padding: 10px; 
+      border-radius: 6px; 
+      margin-bottom: 15px; 
+      border-left: 3px solid #f59e0b; 
+    }
+    .blockchain-info p { 
+      font-size: 10px; 
+      color: #92400e; 
+      line-height: 1.4; 
+    }
   </style>
 </head>
 <body>
@@ -547,6 +663,13 @@ export function generateInvoicePDF(invoice: Invoice): string {
     ${invoice.sellerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${invoice.sellerEmail}</div></div>` : ''}
   </div>` : ''}
 
+  ${isPaid && (invoice.payerName || invoice.payerEmail) ? `
+  <div class="info-section" style="margin-bottom: 20px;">
+    <h3>Payer Information</h3>
+    ${invoice.payerName ? `<div class="info-row"><div class="info-label">Name</div><div class="info-value">${invoice.payerName}</div></div>` : ''}
+    ${invoice.payerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${invoice.payerEmail}</div></div>` : ''}
+  </div>` : ''}
+
   <div class="amount-section">
     <div class="amount-label">Amount ${isPaid ? 'Paid' : 'Due'}</div>
     <div class="amount-value">${invoice.amount}</div>
@@ -575,18 +698,42 @@ export function generateInvoicePDF(invoice: Invoice): string {
     <p style="margin-top: 10px;">This is an automatically generated invoice.</p>
   </div>
 
-  <button class="no-print" onclick="window.print()" style="position: fixed; bottom: 20px; right: 20px; padding: 12px 24px; background: #06b6d4; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">Print / Save as PDF</button>
+  <div style="position: fixed; top: 10px; right: 10px; background: #06b6d4; color: white; padding: 15px; border-radius: 8px; z-index: 1000; max-width: 300px; font-family: Arial, sans-serif;">
+    <h3 style="margin: 0 0 10px 0; font-size: 14px;">PDF olarak kaydetmek için:</h3>
+    <ol style="margin: 0; padding-left: 20px; font-size: 12px;">
+      <li>Ctrl+P (Windows) veya Cmd+P (Mac)</li>
+      <li>"Hedef" → "PDF olarak kaydet"</li>
+      <li>"Yazdır" butonuna bas</li>
+    </ol>
+    <button onclick="window.print()" style="background: white; color: #06b6d4; border: none; padding: 8px 16px; border-radius: 4px; margin-top: 10px; cursor: pointer; font-weight: bold; font-size: 12px;">
+      PDF Olarak Kaydet
+    </button>
+  </div>
+
 </body>
 </html>`;
 }
 
 export function openInvoicePDF(invoice: Invoice) {
   const pdfContent = generateInvoicePDF(invoice);
-  const printWindow = window.open('', '_blank');
-  if (printWindow) {
-    printWindow.document.write(pdfContent);
-    printWindow.document.close();
-  }
+  
+  // Create blob and download as HTML file
+  const blob = new Blob([pdfContent], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `invoice-${invoice.id.substring(0, 8)}.html`;
+  link.style.display = 'none';
+  
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  // Clean up
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 1000);
 }
 
 export function shareInvoiceByEmail(invoice: Invoice) {
