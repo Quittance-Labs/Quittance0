@@ -10,7 +10,6 @@ dotenv.config();
 
 const app: Application = express();
 const PORT = process.env.PORT || 3001;
-const SELLER_PUBLIC_KEY = process.env.SELLER_PUBLIC_KEY || 'GABC123EXAMPLE456STELLAR';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
 // Middleware
@@ -45,8 +44,8 @@ app.get('/api/health', (req: Request, res: Response) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     service: 'One-Click Crypto Invoice API',
-    mode: 'MVP - In-Memory Storage',
-    seller: SELLER_PUBLIC_KEY,
+    mode: 'MVP - In-Memory Storage (Dynamic Seller)',
+    message: 'Each user uses their own wallet for payments',
   });
 });
 
@@ -112,10 +111,11 @@ app.get('/api/invoices/:id', async (req: Request, res: Response) => {
 // Get all invoices
 app.get('/api/invoices', async (req: Request, res: Response) => {
   try {
-    const { status, limit = 50, offset = 0 } = req.query;
+    const { status, limit = 50, offset = 0, sellerPublicKey } = req.query;
 
+    // Eğer seller belirtilmemişse tüm faturaları getir
     const invoices = await invoiceService.getInvoicesBySeller(
-      SELLER_PUBLIC_KEY,
+      sellerPublicKey as string || '',
       status as string | undefined,
       parseInt(limit as string),
       parseInt(offset as string)
@@ -241,7 +241,8 @@ app.post('/api/invoices/:id/simulate-payment', async (req: Request, res: Respons
 // Get stats
 app.get('/api/invoices/stats', async (req: Request, res: Response) => {
   try {
-    const stats = await invoiceService.getInvoiceStats(SELLER_PUBLIC_KEY);
+    const { sellerPublicKey } = req.query;
+    const stats = await invoiceService.getInvoiceStats(sellerPublicKey as string || '');
 
     res.json({
       success: true,
@@ -258,10 +259,11 @@ app.get('/api/invoices/stats', async (req: Request, res: Response) => {
 
 // Mock Stellar endpoints (MVP için)
 app.get('/api/stellar/account', (req: Request, res: Response) => {
+  const { publicKey } = req.query;
   res.json({
     success: true,
     data: {
-      publicKey: SELLER_PUBLIC_KEY,
+      publicKey: publicKey || 'EXAMPLE',
       balances: [
         { assetCode: 'XLM', balance: '1000.0000000' },
       ],
@@ -292,13 +294,13 @@ app.use((req: Request, res: Response) => {
 app.listen(PORT, () => {
   console.log('\n🚀 One-Click Crypto Invoice Backend (MVP Mode)');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log(`✅ Server running on port ${PORT}`);
-  console.log(`📍 API: http://localhost:${PORT}/api`);
-  console.log(`🏥 Health: http://localhost:${PORT}/api/health`);
-  console.log(`💾 Storage: In-Memory (No Database)`);
-  console.log(`💰 Seller: ${SELLER_PUBLIC_KEY.substring(0, 10)}...`);
-  console.log(`🌐 Frontend: ${FRONTEND_URL}`);
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    console.log(`✅ Server running on port ${PORT}`);
+    console.log(`📍 API: http://localhost:${PORT}/api`);
+    console.log(`🏥 Health: http://localhost:${PORT}/api/health`);
+    console.log(`💾 Storage: In-Memory (No Database)`);
+    console.log(`💰 Dynamic Seller: Each user uses their own wallet!`);
+    console.log(`🌐 Frontend: ${FRONTEND_URL}`);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 });
 
 export default app;

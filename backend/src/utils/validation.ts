@@ -14,6 +14,7 @@ export const createInvoiceSchema = z.object({
   customerName: z.string().max(255).optional(),
   customerEmail: z.string().email().optional(),
   expiresInDays: z.number().min(1).max(365).default(7).optional(),
+  sellerPublicKey: stellarPublicKeySchema, // Dinamik seller!
 });
 
 // Payment verification schema

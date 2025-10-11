@@ -11,7 +11,11 @@ import { Wallet, LogOut, Loader2, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatAddress } from '@/lib/utils';
 
-export default function WalletConnect() {
+interface WalletConnectProps {
+  onConnect?: (publicKey: string) => void;
+}
+
+export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(false);
   const [publicKey, setPublicKey] = useState<string | null>(null);
@@ -29,6 +33,11 @@ export default function WalletConnect() {
         setPublicKey(key);
         setConnected(true);
         loadBalance(key);
+        
+        // Call the onConnect callback for initial connection too
+        if (onConnect) {
+          onConnect(key);
+        }
       }
     }
   };
@@ -40,8 +49,19 @@ export default function WalletConnect() {
       if (xlmBalance) {
         setBalance(parseFloat(xlmBalance.balance).toFixed(2));
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Balance error:', error);
+      // Account not funded yet
+      if (error.message?.includes('Not Found') || error.response?.status === 404) {
+        setBalance('0.00');
+        toast.warning('Account not funded', {
+          description: 'Get test XLM from Stellar Laboratory',
+          action: {
+            label: 'Fund Account',
+            onClick: () => window.open(`https://laboratory.stellar.org/#account-creator?network=test`, '_blank'),
+          },
+        });
+      }
     }
   };
 
@@ -57,6 +77,11 @@ export default function WalletConnect() {
           setConnected(true);
           await loadBalance(key);
           toast.success('Wallet connected!');
+          
+          // Call the onConnect callback if provided
+          if (onConnect) {
+            onConnect(key);
+          }
         }
       } else {
         toast.error('Wallet access denied');

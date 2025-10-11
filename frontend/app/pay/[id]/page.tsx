@@ -90,51 +90,52 @@ export default function PaymentPage() {
 
         {/* Page Title */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Payment Request</h1>
-          <p className="text-gray-600">Complete your payment using Stellar</p>
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">Complete Payment</h1>
+          <p className="text-gray-600">Pay with your Stellar wallet</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Invoice Details */}
+          {/* Payment Details */}
           <div className="card">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Invoice Details</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">Payment Details</h2>
 
             <div className="space-y-4 mb-6">
-              <div className="border-b pb-4">
-                <p className="text-sm text-gray-600 mb-1">Amount</p>
-                <p className="text-3xl font-bold text-stellar-600">
-                  {formatAmount(invoice.amount, 7)} {invoice.assetCode}
+              <div className="bg-stellar-50 border-2 border-stellar-200 rounded-xl p-6 text-center">
+                <p className="text-sm text-gray-600 mb-2">Amount to Pay</p>
+                <p className="text-5xl font-bold text-stellar-700">
+                  {formatAmount(invoice.amount, 7)}
                 </p>
+                <p className="text-2xl font-semibold text-stellar-600 mt-1">XLM</p>
               </div>
-
-              {invoice.description && (
-                <div className="border-b pb-4">
-                  <p className="text-sm text-gray-600 mb-1">Description</p>
-                  <p className="text-gray-900">{invoice.description}</p>
-                </div>
-              )}
-
-              {invoice.customerName && (
-                <div className="border-b pb-4">
-                  <p className="text-sm text-gray-600 mb-1">Customer</p>
-                  <p className="text-gray-900">{invoice.customerName}</p>
-                </div>
-              )}
 
               <div className="border-b pb-4">
                 <p className="text-sm text-gray-600 mb-1">Status</p>
-                <p className="text-gray-900 font-semibold">{invoice.status}</p>
-              </div>
-
-              <div className="border-b pb-4">
-                <p className="text-sm text-gray-600 mb-1">Created</p>
-                <p className="text-gray-900">{formatDate(invoice.createdAt)}</p>
+                <div className="inline-flex items-center gap-2 mt-1">
+                  {invoice.status === 'PENDING' && (
+                    <>
+                      <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
+                      <span className="text-yellow-700 font-semibold">Waiting for Payment</span>
+                    </>
+                  )}
+                  {invoice.status === 'PAID' && (
+                    <>
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <span className="text-green-700 font-semibold">Paid</span>
+                    </>
+                  )}
+                  {invoice.status === 'EXPIRED' && (
+                    <>
+                      <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                      <span className="text-red-700 font-semibold">Expired</span>
+                    </>
+                  )}
+                </div>
               </div>
 
               {invoice.status === 'PENDING' && (
-                <div className="border-b pb-4">
-                  <p className="text-sm text-gray-600 mb-1">Expires In</p>
-                  <p className="text-gray-900 font-semibold">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm text-blue-800 font-semibold mb-1">⏰ Expires In</p>
+                  <p className="text-blue-700 font-semibold text-lg">
                     {getTimeRemaining(invoice.expiresAt)}
                   </p>
                 </div>
@@ -142,144 +143,143 @@ export default function PaymentPage() {
             </div>
 
             {/* Payment Instructions for Manual Transfer */}
-            <div className="bg-gray-50 p-4 rounded-lg space-y-3">
-              <h3 className="font-semibold text-gray-900 mb-3">Manual Payment Info</h3>
-              
-              <div>
-                <p className="text-xs text-gray-600 mb-1">Destination Address</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 text-xs bg-white p-2 rounded border truncate">
-                    {invoice.sellerPublicKey}
-                  </code>
-                  <button
-                    onClick={() => copyInfo(invoice.sellerPublicKey, 'Address')}
-                    className="p-2 hover:bg-gray-200 rounded"
-                  >
-                    <Copy className="w-4 h-4" />
-                  </button>
+            {invoice.status === 'PENDING' && (
+              <div className="bg-gray-50 p-4 rounded-lg space-y-3 border">
+                <h3 className="font-semibold text-gray-900 mb-3">📋 Manual Payment Info</h3>
+                
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">Destination Address</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs bg-white p-2 rounded border truncate">
+                      {invoice.sellerPublicKey}
+                    </code>
+                    <button
+                      onClick={() => copyInfo(invoice.sellerPublicKey, 'Address')}
+                      className="p-2 hover:bg-gray-200 rounded transition"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <p className="text-xs text-gray-600 mb-1">Memo (Required)</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 text-xs bg-white p-2 rounded border font-semibold">
-                    {invoice.memo}
-                  </code>
-                  <button
-                    onClick={() => copyInfo(invoice.memo, 'Memo')}
-                    className="p-2 hover:bg-gray-200 rounded"
-                  >
-                    <Copy className="w-4 h-4" />
-                  </button>
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">Memo (Required)</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs bg-white p-2 rounded border font-semibold">
+                      {invoice.memo}
+                    </code>
+                    <button
+                      onClick={() => copyInfo(invoice.memo, 'Memo')}
+                      className="p-2 hover:bg-gray-200 rounded transition"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <p className="text-xs text-gray-600 mb-1">Exact Amount</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 text-xs bg-white p-2 rounded border font-semibold">
-                    {invoice.amount} {invoice.assetCode}
-                  </code>
-                  <button
-                    onClick={() => copyInfo(invoice.amount.toString(), 'Amount')}
-                    className="p-2 hover:bg-gray-200 rounded"
-                  >
-                    <Copy className="w-4 h-4" />
-                  </button>
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">Exact Amount</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs bg-white p-2 rounded border font-semibold">
+                      {invoice.amount} XLM
+                    </code>
+                    <button
+                      onClick={() => copyInfo(invoice.amount.toString(), 'Amount')}
+                      className="p-2 hover:bg-gray-200 rounded transition"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Payment Actions */}
           <div className="space-y-6">
             {invoice.status === 'PAID' && (
-              <PaymentStatus status="PAID" txHash={invoice.paymentTxHash} />
+              <div className="card text-center py-8">
+                <div className="inline-flex items-center justify-center w-20 h-20 bg-green-100 rounded-full mb-4">
+                  <Check className="w-12 h-12 text-green-600" />
+                </div>
+                <h3 className="text-2xl font-bold text-green-700 mb-2">Payment Successful!</h3>
+                <p className="text-gray-600 mb-4">Your payment has been confirmed on the blockchain</p>
+                {invoice.paymentTxHash && (
+                  <a
+                    href={`${horizonUrl}/tx/${invoice.paymentTxHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-primary inline-flex items-center gap-2"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    View Transaction
+                  </a>
+                )}
+              </div>
             )}
 
-            {invoice.status === 'EXPIRED' && <PaymentStatus status="EXPIRED" />}
+            {invoice.status === 'EXPIRED' && (
+              <div className="card text-center py-8">
+                <div className="inline-flex items-center justify-center w-20 h-20 bg-red-100 rounded-full mb-4">
+                  <svg className="w-12 h-12 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </div>
+                <h3 className="text-2xl font-bold text-red-700 mb-2">Payment Expired</h3>
+                <p className="text-gray-600">This payment link has expired</p>
+              </div>
+            )}
 
             {invoice.status === 'PENDING' && (
               <>
                 {/* QR Code */}
                 <div className="card">
+                  <h3 className="text-lg font-semibold text-center mb-4">Scan QR Code</h3>
                   <QRCodeDisplay
                     value={paymentInfo?.stellarQrCode || paymentInfo?.paymentUrl}
-                    title="Scan to Pay"
-                    size={200}
+                    title=""
+                    size={220}
                   />
-                  <p className="text-xs text-gray-500 text-center mt-4">
-                    Scan with your Stellar wallet app
+                  <p className="text-sm text-gray-600 text-center mt-4">
+                    📱 Scan with your Stellar wallet app to pay instantly
                   </p>
                 </div>
 
-                {/* Payment Actions */}
-                <div className="space-y-4">
-                  {/* Wallet Payment */}
-                  <div className="card">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold">Pay with Wallet</h3>
-                      <div className="scale-90">
-                        <WalletConnect />
-                      </div>
-                    </div>
-                    <PaymentButton
-                      destination={invoice.sellerPublicKey}
-                      amount={invoice.amount.toString()}
-                      memo={invoice.memo}
-                      assetCode={invoice.assetCode}
-                      assetIssuer={invoice.assetIssuer}
-                      onSuccess={handlePaymentSuccess}
-                    />
-                    <p className="text-xs text-gray-500 text-center mt-4">
-                      Connect your Freighter wallet above to pay
+                {/* Payment with Freighter Wallet */}
+                <div className="card">
+                  <h3 className="text-xl font-semibold text-center mb-4">Pay with Wallet</h3>
+                  
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                    <p className="text-sm text-blue-800 font-semibold mb-2">
+                      💳 How to Pay:
                     </p>
+                    <ol className="text-sm text-blue-700 space-y-1.5 list-decimal list-inside">
+                      <li>Connect your Freighter wallet</li>
+                      <li>Click the "Pay with Freighter" button</li>
+                      <li>Confirm the transaction</li>
+                    </ol>
                   </div>
 
-                  {/* Test Payment (MVP) */}
-                  <div className="card bg-gray-50 border-dashed">
-                    <p className="text-xs text-gray-600 mb-3 text-center">
-                      <strong>Testing without wallet?</strong> Simulate payment:
+                  <div className="flex justify-center mb-4">
+                    <WalletConnect />
+                  </div>
+
+                  <PaymentButton
+                    destination={invoice.sellerPublicKey}
+                    amount={invoice.amount.toString()}
+                    memo={invoice.memo}
+                    assetCode={invoice.assetCode}
+                    assetIssuer={invoice.assetIssuer}
+                    onSuccess={handlePaymentSuccess}
+                  />
+                  
+                  <div className="mt-6 pt-4 border-t text-center">
+                    <p className="text-xs text-gray-500 flex items-center justify-center gap-1">
+                      🔒 Secure payment on Stellar blockchain
                     </p>
-                    <button
-                      onClick={async () => {
-                        try {
-                          const response = await fetch(
-                            `${process.env.NEXT_PUBLIC_API_URL}/invoices/${invoice.id}/simulate-payment`,
-                            { method: 'POST' }
-                          );
-                          const result = await response.json();
-                          if (result.success) {
-                            toast.success('Payment simulated successfully!');
-                            setTimeout(() => loadInvoice(), 1000);
-                          }
-                        } catch (error) {
-                          toast.error('Simulation failed');
-                        }
-                      }}
-                      className="btn btn-outline w-full"
-                    >
-                      🧪 Simulate Payment (Test)
-                    </button>
                   </div>
                 </div>
               </>
-            )}
-
-            {invoice.paymentTxHash && (
-              <div className="card">
-                <h3 className="font-semibold mb-2">Transaction</h3>
-                <a
-                  href={`${horizonUrl}/tx/${invoice.paymentTxHash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-outline w-full flex items-center justify-center gap-2"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  View on Explorer
-                </a>
-              </div>
             )}
           </div>
         </div>

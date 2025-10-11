@@ -7,140 +7,85 @@ import { Loader2 } from 'lucide-react';
 
 interface InvoiceFormProps {
   onSuccess?: (invoice: any) => void;
+  userWallet?: string;
 }
 
-export default function InvoiceForm({ onSuccess }: InvoiceFormProps) {
+export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps) {
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    amount: '',
-    assetCode: 'XLM',
-    description: '',
-    customerName: '',
-    customerEmail: '',
-    expiresInDays: 7,
-  });
+  const [amount, setAmount] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!userWallet) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+
+    if (!amount || parseFloat(amount) <= 0) {
+      toast.error('Please enter a valid amount');
+      return;
+    }
+
     setLoading(true);
 
     try {
       const result = await invoiceApi.create({
-        amount: parseFloat(formData.amount),
-        assetCode: formData.assetCode,
-        description: formData.description || undefined,
-        customerName: formData.customerName || undefined,
-        customerEmail: formData.customerEmail || undefined,
-        expiresInDays: formData.expiresInDays,
+        amount: parseFloat(amount),
+        assetCode: 'XLM',
+        expiresInDays: 7,
+        sellerPublicKey: userWallet,
       });
 
-      toast.success('Invoice created successfully!');
+      toast.success('Payment link created successfully!');
       
       if (onSuccess) {
         onSuccess(result.data);
       }
 
       // Reset form
-      setFormData({
-        amount: '',
-        assetCode: 'XLM',
-        description: '',
-        customerName: '',
-        customerEmail: '',
-        expiresInDays: 7,
-      });
+      setAmount('');
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to create invoice');
+      toast.error(error.response?.data?.error || 'Failed to create payment link');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-6">
       <div>
-        <label className="label">Amount *</label>
-        <div className="flex gap-2">
+        <label className="label text-lg font-semibold mb-3">Payment Amount</label>
+        <div className="flex gap-3">
           <input
             type="number"
             step="0.0000001"
-            min="0"
+            min="0.0000001"
             required
-            className="input flex-1"
-            placeholder="100.00"
-            value={formData.amount}
-            onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+            className="input flex-1 text-2xl py-4 px-6"
+            placeholder="10.00"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
           />
-          <select
-            className="input w-32"
-            value={formData.assetCode}
-            onChange={(e) => setFormData({ ...formData, assetCode: e.target.value })}
-          >
-            <option value="XLM">XLM</option>
-            <option value="USDC">USDC</option>
-          </select>
+          <div className="input w-24 text-xl font-bold flex items-center justify-center bg-stellar-50 border-stellar-300 text-stellar-700">
+            XLM
+          </div>
         </div>
-      </div>
-
-      <div>
-        <label className="label">Description</label>
-        <textarea
-          className="input"
-          rows={3}
-          placeholder="Invoice description..."
-          value={formData.description}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="label">Customer Name</label>
-          <input
-            type="text"
-            className="input"
-            placeholder="John Doe"
-            value={formData.customerName}
-            onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
-          />
-        </div>
-
-        <div>
-          <label className="label">Customer Email</label>
-          <input
-            type="email"
-            className="input"
-            placeholder="john@example.com"
-            value={formData.customerEmail}
-            onChange={(e) => setFormData({ ...formData, customerEmail: e.target.value })}
-          />
-        </div>
-      </div>
-
-      <div>
-        <label className="label">Expires In (Days)</label>
-        <input
-          type="number"
-          min="1"
-          max="365"
-          className="input"
-          value={formData.expiresInDays}
-          onChange={(e) => setFormData({ ...formData, expiresInDays: parseInt(e.target.value) })}
-        />
+        <p className="text-sm text-gray-500 mt-2">Enter the amount you want to receive in XLM</p>
       </div>
 
       <button
         type="submit"
         disabled={loading}
-        className="btn btn-primary w-full flex items-center justify-center gap-2"
+        className="btn btn-primary w-full flex items-center justify-center gap-2 text-lg py-4"
       >
         {loading ? (
           <>
-            <Loader2 className="w-5 h-5 animate-spin" />
-            Creating Invoice...
+            <Loader2 className="w-6 h-6 animate-spin" />
+            Creating Payment Link...
           </>
         ) : (
-          'Create Invoice'
+          'Create Payment Link'
         )}
       </button>
     </form>

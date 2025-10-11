@@ -81,8 +81,12 @@ export const getAccountBalance = async (
       assetCode: balance.asset_type === 'native' ? 'XLM' : balance.asset_code,
       balance: balance.balance,
     }));
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error getting balance:', error);
+    // If account not found, return empty balance
+    if (error.message?.includes('Not Found') || error.response?.status === 404) {
+      return [{ assetCode: 'XLM', balance: '0.0000000' }];
+    }
     throw error;
   }
 };
@@ -111,7 +115,15 @@ export const sendPayment = async (
     }
 
     // Load account
-    const account = await loadAccount(userPublicKey);
+    let account;
+    try {
+      account = await loadAccount(userPublicKey);
+    } catch (error: any) {
+      if (error.message?.includes('Not Found') || error.response?.status === 404) {
+        throw new Error('Account not funded. Please get test XLM from Stellar Laboratory first.');
+      }
+      throw error;
+    }
 
     // Create asset
     const asset =

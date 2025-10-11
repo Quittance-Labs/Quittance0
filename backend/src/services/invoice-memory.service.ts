@@ -3,19 +3,22 @@ import { generateInvoiceMemo } from '../utils/memo';
 import { CreateInvoiceInput } from '../utils/validation';
 import memoryStorage from '../storage/memory-storage';
 
-const SELLER_PUBLIC_KEY = process.env.SELLER_PUBLIC_KEY || 'GABC123EXAMPLE456';
-
 class InvoiceMemoryService {
   /**
    * Create a new invoice
    */
   async createInvoice(input: CreateInvoiceInput): Promise<any> {
+    // Seller public key artık frontend'den geliyor!
+    if (!input.sellerPublicKey) {
+      throw new Error('Seller public key is required');
+    }
+
     const memo = generateInvoiceMemo();
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + (input.expiresInDays || 7));
 
     const invoice = memoryStorage.createInvoice({
-      sellerPublicKey: SELLER_PUBLIC_KEY,
+      sellerPublicKey: input.sellerPublicKey, // Dinamik!
       amount: input.amount,
       assetCode: input.assetCode || 'XLM',
       assetIssuer: input.assetIssuer,
