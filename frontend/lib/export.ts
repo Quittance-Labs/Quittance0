@@ -351,23 +351,19 @@ export function generatePDFContent(
 export function downloadPDF(transactions: Transaction[], publicKey: string, filename?: string) {
   const pdfContent = generatePDFContent(transactions, publicKey);
   
-  // Create blob and download as HTML file
-  const blob = new Blob([pdfContent], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename || `stellink-transactions-${format(new Date(), 'yyyy-MM-dd-HHmmss')}.html`;
-  link.style.display = 'none';
-  
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  
-  // Clean up
-  setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 1000);
+  // Open in new window for PDF printing
+  const printWindow = window.open('', '_blank', 'width=800,height=600');
+  if (printWindow) {
+    printWindow.document.write(pdfContent);
+    printWindow.document.close();
+    
+    // Auto-trigger print dialog after content loads
+    printWindow.onload = () => {
+      setTimeout(() => {
+        printWindow.print();
+      }, 500);
+    };
+  }
 }
 
 /**
@@ -398,6 +394,10 @@ interface Invoice {
   description?: string;
   customerName?: string;
   customerEmail?: string;
+  sellerName?: string;
+  sellerEmail?: string;
+  payerName?: string;
+  payerEmail?: string;
   status: string;
   createdAt: string;
   expiresAt: string;
@@ -717,23 +717,19 @@ export function generateInvoicePDF(invoice: Invoice): string {
 export function openInvoicePDF(invoice: Invoice) {
   const pdfContent = generateInvoicePDF(invoice);
   
-  // Create blob and download as HTML file
-  const blob = new Blob([pdfContent], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `invoice-${invoice.id.substring(0, 8)}.html`;
-  link.style.display = 'none';
-  
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  
-  // Clean up
-  setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 1000);
+  // Open in new window for PDF printing
+  const printWindow = window.open('', '_blank', 'width=800,height=600');
+  if (printWindow) {
+    printWindow.document.write(pdfContent);
+    printWindow.document.close();
+    
+    // Auto-trigger print dialog after content loads
+    printWindow.onload = () => {
+      setTimeout(() => {
+        printWindow.print();
+      }, 500);
+    };
+  }
 }
 
 export function shareInvoiceByEmail(invoice: Invoice) {

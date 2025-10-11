@@ -19,6 +19,14 @@ interface Invoice {
   createdAt: string;
   expiresAt: string;
   memo: string;
+  sellerPublicKey?: string;
+  sellerName?: string;
+  sellerEmail?: string;
+  payerPublicKey?: string;
+  payerName?: string;
+  payerEmail?: string;
+  paymentTxHash?: string;
+  paidAt?: string;
 }
 
 interface InvoiceCardProps {

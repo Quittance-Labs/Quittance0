@@ -8,6 +8,8 @@ export interface Invoice {
   id: string;
   userId?: string;
   sellerPublicKey: string;
+  sellerName?: string;
+  sellerEmail?: string;
   amount: number;
   assetCode: string;
   assetIssuer?: string;
@@ -18,6 +20,8 @@ export interface Invoice {
   status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
   paymentTxHash?: string;
   payerPublicKey?: string;
+  payerName?: string;
+  payerEmail?: string;
   createdAt: Date;
   paidAt?: Date;
   expiresAt: Date;
@@ -236,6 +240,8 @@ class InvoiceService {
       id: row.id,
       userId: row.user_id,
       sellerPublicKey: row.seller_public_key,
+      sellerName: row.seller_name,
+      sellerEmail: row.seller_email,
       amount: parseFloat(row.amount),
       assetCode: row.asset_code,
       assetIssuer: row.asset_issuer,
@@ -246,6 +252,8 @@ class InvoiceService {
       status: row.status,
       paymentTxHash: row.payment_tx_hash,
       payerPublicKey: row.payer_public_key,
+      payerName: row.payer_name,
+      payerEmail: row.payer_email,
       createdAt: row.created_at,
       paidAt: row.paid_at,
       expiresAt: row.expires_at,

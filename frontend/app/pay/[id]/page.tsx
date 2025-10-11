@@ -251,6 +251,14 @@ export default function PaymentPage() {
                 </div>
               )}
 
+              {googleUser && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                  <p className="text-sm text-green-600 font-semibold">Paying as</p>
+                  <p className="text-lg font-bold text-green-800">{googleUser.name}</p>
+                  <p className="text-sm text-green-600">{googleUser.email}</p>
+                </div>
+              )}
+
               <div className="border-b pb-4">
                 <p className="text-sm text-gray-600 mb-1">Status</p>
                 <div className="inline-flex items-center gap-2 mt-1">
