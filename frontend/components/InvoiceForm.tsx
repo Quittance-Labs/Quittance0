@@ -24,20 +24,18 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
     e.preventDefault();
 
     if (!userWallet) {
-      toast.error('Please connect your wallet first');
+      toast.error('Connect your wallet first');
       return;
     }
 
     if (!amount || parseFloat(amount) <= 0) {
-      toast.error('Please enter a valid amount');
+      toast.error('Enter a valid amount');
       return;
     }
 
     setLoading(true);
-
     try {
       const selectedAsset = getAssetByCode(assetCode);
-      
       const result = await invoiceApi.create({
         amount: parseFloat(amount),
         assetCode: assetCode,
@@ -49,20 +47,15 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
         customerEmail: customerEmail || undefined,
       });
 
-      toast.success('Payment link created successfully!');
-      
-      if (onSuccess) {
-        onSuccess(result.data);
-      }
-
-      // Reset form
+      toast.success('Payment link created');
+      onSuccess?.(result.data);
       setAmount('');
       setAssetCode('XLM');
       setDescription('');
       setCustomerName('');
       setCustomerEmail('');
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to create payment link');
+      toast.error(error.response?.data?.error || 'Failed to create link');
     } finally {
       setLoading(false);
     }

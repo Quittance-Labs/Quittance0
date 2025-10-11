@@ -22,30 +22,18 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
   const [monitoringActive, setMonitoringActive] = useState(false);
   const { publicKey, balance, connected, setWallet, updateBalance, disconnect } = useWalletStore();
 
-  // Don't auto-connect on mount - user must click Connect Wallet
-  // useEffect(() => {
-  //   checkConnection();
-  // }, []);
-
-  // Start payment monitoring when connected (but user must connect first)
   useEffect(() => {
     if (connected && publicKey && !paymentMonitor.isMonitoring(publicKey)) {
-      paymentMonitor.startMonitoring(publicKey, (payment) => {
-        // Reload balance on payment received
-        loadBalance(publicKey);
-      });
+      paymentMonitor.startMonitoring(publicKey, () => loadBalance(publicKey));
       setMonitoringActive(true);
     }
 
     return () => {
-      // Cleanup on unmount
       if (publicKey) {
         paymentMonitor.stopMonitoring(publicKey);
       }
     };
   }, [connected, publicKey]);
-
-  // Removed auto-connect check - user must manually connect
 
   const loadBalance = async (key: string) => {
     try {
@@ -54,17 +42,9 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
       const balanceStr = xlmBalance ? parseFloat(xlmBalance.balance).toFixed(2) : '0.00';
       setWallet(key, balanceStr);
     } catch (error: any) {
-      console.error('Balance error:', error);
-      // Account not funded yet
       if (error.message?.includes('Not Found') || error.response?.status === 404) {
         setWallet(key, '0.00');
-        toast.warning('Account not funded', {
-          description: 'Get test XLM from Stellar Laboratory',
-          action: {
-            label: 'Fund Account',
-            onClick: () => window.open(`https://laboratory.stellar.org/#account-creator?network=test`, '_blank'),
-          },
-        });
+        toast.warning('Account needs funding');
       }
     }
   };
@@ -73,30 +53,18 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
     setLoading(true);
     try {
       const allowed = await requestWalletAccess();
-      
       if (allowed) {
         const key = await getUserPublicKey();
         if (key) {
           await loadBalance(key);
-          toast.success('Wallet connected!');
-          
-          // Call the onConnect callback if provided
-          if (onConnect) {
-            onConnect(key);
-          }
+          toast.success('Wallet connected');
+          onConnect?.(key);
         }
       } else {
-        toast.error('Wallet access denied');
+        toast.error('Access denied');
       }
     } catch (error: any) {
-      console.error('Connect error:', error);
-      toast.error('Failed to connect wallet. Is Freighter installed?', {
-        description: 'Install Freighter from freighter.app',
-        action: {
-          label: 'Get Freighter',
-          onClick: () => window.open('https://www.freighter.app/', '_blank'),
-        },
-      });
+      toast.error('Failed to connect. Install Freighter wallet.');
     } finally {
       setLoading(false);
     }
@@ -117,11 +85,9 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
     if (monitoringActive) {
       paymentMonitor.stopMonitoring(publicKey);
       setMonitoringActive(false);
-      toast.info('Payment monitoring paused');
+      toast.info('Monitoring paused');
     } else {
-      paymentMonitor.startMonitoring(publicKey, (payment) => {
-        loadBalance(publicKey);
-      });
+      paymentMonitor.startMonitoring(publicKey, () => loadBalance(publicKey));
       setMonitoringActive(true);
     }
   };

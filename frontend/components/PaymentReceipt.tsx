@@ -72,16 +72,14 @@ Stellar Blockchain Payment System
 
   return (
     <div className="card print:shadow-none" id="payment-receipt">
-      {/* Header */}
       <div className="text-center mb-6 border-b pb-6">
         <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
           <Check className="w-10 h-10 text-green-600" />
         </div>
         <h2 className="text-3xl font-bold text-gray-900 mb-2">Payment Receipt</h2>
-        <p className="text-green-600 font-semibold text-lg">✓ Payment Confirmed</p>
+        <p className="text-green-600 font-semibold text-lg">Payment Confirmed        </p>
       </div>
 
-      {/* Invoice Details */}
       <div className="space-y-4 mb-6">
         <div className="bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-200 rounded-xl p-6 text-center">
           <p className="text-sm text-gray-600 mb-3">Amount Paid</p>
@@ -100,7 +98,7 @@ Stellar Blockchain Payment System
 
         {invoice.description && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-xs text-gray-600 mb-1">📝 Payment For</p>
+            <p className="text-xs text-gray-600 mb-1">Payment For</p>
             <p className="text-gray-800 font-medium">{invoice.description}</p>
           </div>
         )}
@@ -136,9 +134,8 @@ Stellar Blockchain Payment System
         )}
       </div>
 
-      {/* Transaction Details */}
       <div className="border-t pt-6 mb-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">🔗 Transaction Details</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Transaction Details</h3>
         
         <div className="space-y-3">
           <div className="bg-gray-50 rounded-lg p-4">
@@ -165,7 +162,6 @@ Stellar Blockchain Payment System
         </div>
       </div>
 
-      {/* Actions */}
       <div className="border-t pt-6 space-y-3 print:hidden">
         <a
           href={`${horizonUrl}/tx/${invoice.paymentTxHash}`}
@@ -196,7 +192,6 @@ Stellar Blockchain Payment System
         </div>
       </div>
 
-      {/* Footer */}
       <div className="text-center mt-6 pt-6 border-t">
         <p className="text-xs text-gray-500">
           This receipt confirms payment on the Stellar blockchain

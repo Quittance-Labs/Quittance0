@@ -17,23 +17,11 @@ export default function HomePage() {
   const { publicKey, connected } = useWalletStore();
 
 
-  const handleInvoiceCreated = (result: any) => {
-    setCreatedInvoice(result);
-  };
-
-  const handleWalletConnected = (publicKey: string) => {
-    // WalletConnect component will update the store
-    // No need to set local state
-  };
-
-  const handleWalletDisconnected = () => {
-    setCreatedInvoice(null);
-    // WalletConnect component will update the store
-  };
+  const handleInvoiceCreated = (result: any) => setCreatedInvoice(result);
+  const handleWalletDisconnected = () => setCreatedInvoice(null);
 
   return (
     <div className="min-h-screen bg-logo-pattern relative" style={{zIndex: 2}}>
-      {/* Big Background Logo */}
       <div 
         className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[1500px] h-[1500px] opacity-30 pointer-events-none"
         style={{zIndex: 1}}
@@ -46,12 +34,8 @@ export default function HomePage() {
           priority
         />
       </div>
-      
-      {/* Subtle Background Accents */}
       <div className="accent-blob accent-blob-1"></div>
       <div className="accent-blob accent-blob-2"></div>
-      
-      {/* Fixed Header */}
       <header className="fixed top-0 left-0 right-0 premium-header border-b border-gray-200" style={{zIndex: 100}}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
@@ -69,7 +53,7 @@ export default function HomePage() {
           </Link>
           <div className="flex items-center gap-3">
             {!connected ? (
-              <WalletConnect onConnect={handleWalletConnected} />
+              <WalletConnect />
             ) : (
               <UserProfile userWallet={publicKey} onDisconnect={handleWalletDisconnected} />
             )}
@@ -77,14 +61,10 @@ export default function HomePage() {
         </div>
       </header>
 
-      {/* Main Content with Header Offset */}
       <div className="pt-20 relative" style={{zIndex: 3}}>
-
-      {/* Hero Section */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 py-16 sm:py-24 relative z-10">
         <div className="text-center mb-20">
           <div className="inline-flex items-center gap-2 mb-6 px-5 py-2 bg-cyan-50 rounded-full border border-cyan-200">
-            <span className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse"></span>
             <span className="text-cyan-700 text-sm font-semibold">Powered by Stellar Network</span>
           </div>
           <h2 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 mb-6 leading-tight max-w-4xl mx-auto">
@@ -117,7 +97,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Stats Section - iyzico Style */}
         <div className="bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl p-8 sm:p-12 mb-20">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
             <div className="text-center">
@@ -139,7 +118,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Features */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
           <div className="feature-card group">
             <div className="w-14 h-14 bg-cyan-100 rounded-xl flex items-center justify-center mx-auto mb-4">
@@ -172,7 +150,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* CTA Section */}
         <div className="bg-gray-50 rounded-2xl p-8 sm:p-12 mb-20">
           <h3 className="text-3xl font-bold text-gray-900 text-center mb-4">Start Accepting Crypto Payments Today</h3>
           <p className="text-gray-600 text-center mb-8 max-w-2xl mx-auto">
@@ -180,12 +157,11 @@ export default function HomePage() {
           </p>
           {!connected && (
             <div className="flex justify-center">
-              <WalletConnect onConnect={handleWalletConnected} />
+              <WalletConnect />
             </div>
           )}
         </div>
 
-        {/* Payment Link Creation */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
           <div>
             {!connected ? (
@@ -197,9 +173,9 @@ export default function HomePage() {
                   Connect Your Wallet
                 </h3>
                 <p className="text-gray-600 mb-8 text-base leading-relaxed max-w-md mx-auto">
-                  Connect your Stellar wallet to create payment links and start receiving crypto payments instantly.
+                  Connect your Stellar wallet to create payment links and start receiving payments.
                 </p>
-                <WalletConnect onConnect={handleWalletConnected} />
+                <WalletConnect />
               </div>
             ) : (
               <div className="card">
@@ -232,10 +208,8 @@ export default function HomePage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                     </svg>
                   </div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                    Payment Link Created!
-                  </h3>
-                  <p className="text-gray-600 text-sm">Share this link or QR code to receive payment</p>
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Link Created</h3>
+                  <p className="text-gray-600 text-sm">Share this link or QR code</p>
                 </div>
                 
                 <div className="mb-6 flex justify-center">
@@ -329,7 +303,6 @@ export default function HomePage() {
 
       </div>
 
-      {/* Footer */}
       <footer className="relative z-10 border-t border-gray-200 bg-gray-50 mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">

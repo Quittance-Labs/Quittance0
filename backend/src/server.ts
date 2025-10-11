@@ -21,9 +21,8 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Request logging
 app.use((req: Request, res: Response, next: NextFunction) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  console.log(`${req.method} ${req.path}`);
   next();
 });
 
@@ -40,16 +39,14 @@ app.get('/', (req: Request, res: Response) => {
   });
 });
 
-// Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error('Unhandled error:', err);
+  console.error('Error:', err);
   res.status(500).json({
     success: false,
     error: err.message || 'Internal server error',
   });
 });
 
-// 404 handler
 app.use((req: Request, res: Response) => {
   res.status(404).json({
     success: false,
@@ -57,43 +54,32 @@ app.use((req: Request, res: Response) => {
   });
 });
 
-// Initialize application
 async function initialize() {
   try {
-    console.log('🚀 Initializing Stellink Backend...');
-
-    // Test database connection
+    console.log('Starting server...');
     await pool.query('SELECT NOW()');
-    console.log('✅ Database connected');
-
-    // Validate Stellar configuration
+    console.log('Database connected');
     validateStellarConfig();
-
-    // Start payment monitoring
     paymentMonitorService.start();
-
-    // Start server
     app.listen(PORT, () => {
-      console.log(`\n✅ Server running on port ${PORT}`);
-      console.log(`📍 API: http://localhost:${PORT}/api`);
-      console.log(`🏥 Health: http://localhost:${PORT}/api/health\n`);
+      console.log(`Server running on port ${PORT}`);
+      console.log(`API: http://localhost:${PORT}/api`);
     });
   } catch (error) {
-    console.error('❌ Failed to initialize application:', error);
+    console.error('Failed to start:', error);
     process.exit(1);
   }
 }
 
-// Graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('⚠️ SIGTERM signal received: closing HTTP server');
+  console.log('Shutting down...');
   paymentMonitorService.stop();
   await pool.end();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
-  console.log('\n⚠️ SIGINT signal received: closing HTTP server');
+  console.log('Shutting down...');
   paymentMonitorService.stop();
   await pool.end();
   process.exit(0);

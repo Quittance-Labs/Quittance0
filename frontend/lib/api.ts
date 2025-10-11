@@ -1,9 +1,7 @@
 import axios from 'axios';
 import { mockInvoiceApi, mockStellarApi, mockHealthCheck } from './mock-api';
 
-// Toggle between mock and real API
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
-
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
 const api = axios.create({
@@ -13,7 +11,6 @@ const api = axios.create({
   },
 });
 
-// Response interceptor for error handling
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -21,8 +18,6 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
-
-// Invoice APIs
 export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
   create: async (data: {
     amount: number;

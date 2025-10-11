@@ -6,23 +6,12 @@ import { generatePaymentQR, generateStellarPaymentQR } from '../utils/qrcode';
 import { SELLER_PUBLIC_KEY } from '../config/stellar';
 
 class InvoiceController {
-  /**
-   * Create a new invoice
-   * POST /api/invoices
-   */
   async createInvoice(req: Request, res: Response) {
     try {
-      // Validate request body
       const validatedData = createInvoiceSchema.parse(req.body);
-
-      // Create invoice
       const invoice = await invoiceService.createInvoice(validatedData);
-
-      // Generate payment URL
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
       const paymentUrl = `${frontendUrl}/pay/${invoice.id}`;
-
-      // Generate QR codes
       const qrCodeDataUrl = await generatePaymentQR(paymentUrl);
       const stellarQrCode = await generateStellarPaymentQR(
         invoice.sellerPublicKey,
@@ -41,7 +30,6 @@ class InvoiceController {
         },
       });
     } catch (error: any) {
-      console.error('Create invoice error:', error);
       res.status(400).json({
         success: false,
         error: error.message || 'Failed to create invoice',
@@ -49,10 +37,6 @@ class InvoiceController {
     }
   }
 
-  /**
-   * Get invoice by ID
-   * GET /api/invoices/:id
-   */
   async getInvoice(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -70,7 +54,6 @@ class InvoiceController {
         data: invoice,
       });
     } catch (error: any) {
-      console.error('Get invoice error:', error);
       res.status(500).json({
         success: false,
         error: error.message || 'Failed to get invoice',
@@ -78,10 +61,6 @@ class InvoiceController {
     }
   }
 
-  /**
-   * Get all invoices for seller
-   * GET /api/invoices
-   */
   async getInvoices(req: Request, res: Response) {
     try {
       const { status, limit = 50, offset = 0 } = req.query;
@@ -103,7 +82,6 @@ class InvoiceController {
         },
       });
     } catch (error: any) {
-      console.error('Get invoices error:', error);
       res.status(500).json({
         success: false,
         error: error.message || 'Failed to get invoices',
@@ -111,10 +89,6 @@ class InvoiceController {
     }
   }
 
-  /**
-   * Cancel invoice
-   * POST /api/invoices/:id/cancel
-   */
   async cancelInvoice(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -125,7 +99,6 @@ class InvoiceController {
         data: invoice,
       });
     } catch (error: any) {
-      console.error('Cancel invoice error:', error);
       res.status(400).json({
         success: false,
         error: error.message || 'Failed to cancel invoice',
@@ -133,10 +106,6 @@ class InvoiceController {
     }
   }
 
-  /**
-   * Verify payment manually
-   * POST /api/invoices/:id/verify
-   */
   async verifyPayment(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -158,7 +127,6 @@ class InvoiceController {
         });
       }
 
-      // Get transaction details
       const txDetails = await stellarService.getTransaction(txHash);
       const transaction = txDetails.transaction;
       const paymentOp = txDetails.operations.find((op: any) => op.type === 'payment');
@@ -166,11 +134,10 @@ class InvoiceController {
       if (!paymentOp) {
         return res.status(400).json({
           success: false,
-          error: 'No payment operation found in transaction',
+          error: 'No payment operation found',
         });
       }
 
-      // Verify memo
       if (transaction.memo !== invoice.memo) {
         return res.status(400).json({
           success: false,
@@ -178,7 +145,6 @@ class InvoiceController {
         });
       }
 
-      // Verify amount
       if (parseFloat(paymentOp.amount).toFixed(7) !== invoice.amount.toFixed(7)) {
         return res.status(400).json({
           success: false,
@@ -186,7 +152,6 @@ class InvoiceController {
         });
       }
 
-      // Mark as paid
       const updatedInvoice = await invoiceService.markAsPaid(
         invoice.id,
         txHash,
@@ -198,7 +163,6 @@ class InvoiceController {
         data: updatedInvoice,
       });
     } catch (error: any) {
-      console.error('Verify payment error:', error);
       res.status(500).json({
         success: false,
         error: error.message || 'Failed to verify payment',
@@ -206,10 +170,6 @@ class InvoiceController {
     }
   }
 
-  /**
-   * Get invoice statistics
-   * GET /api/invoices/stats
-   */
   async getStats(req: Request, res: Response) {
     try {
       const stats = await invoiceService.getInvoiceStats(SELLER_PUBLIC_KEY);
@@ -219,18 +179,13 @@ class InvoiceController {
         data: stats,
       });
     } catch (error: any) {
-      console.error('Get stats error:', error);
       res.status(500).json({
         success: false,
-        error: error.message || 'Failed to get statistics',
+        error: error.message || 'Failed to get stats',
       });
     }
   }
 
-  /**
-   * Get payment URL and QR for invoice
-   * GET /api/invoices/:id/payment-info
-   */
   async getPaymentInfo(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -264,7 +219,6 @@ class InvoiceController {
         },
       });
     } catch (error: any) {
-      console.error('Get payment info error:', error);
       res.status(500).json({
         success: false,
         error: error.message || 'Failed to get payment info',

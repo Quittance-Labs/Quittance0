@@ -50,7 +50,6 @@ export default function DashboardPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      
       const [invoicesResult, statsResult] = await Promise.all([
         invoiceApi.getAll({
           status: filter === 'all' ? undefined : filter.toUpperCase(),
@@ -58,12 +57,10 @@ export default function DashboardPage() {
         }),
         invoiceApi.getStats(),
       ]);
-
       setInvoices(invoicesResult.data);
       setStats(statsResult.data[0] || {});
     } catch (error) {
-      toast.error('Failed to load dashboard data');
-      console.error(error);
+      toast.error('Failed to load data');
     } finally {
       setLoading(false);
     }
@@ -71,11 +68,8 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-logo-pattern relative">
-      {/* Subtle Background Accents */}
       <div className="accent-blob accent-blob-1"></div>
       <div className="accent-blob accent-blob-2"></div>
-      
-      {/* Fixed Header */}
       <header className="fixed top-0 left-0 right-0 z-50 premium-header border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
@@ -108,11 +102,8 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* Main Content with Header Offset */}
       <div className="pt-20">
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 relative z-10">
-        {/* View Mode Toggle - Only show if wallet is connected */}
         {connected && publicKey && (
           <div className="bg-white rounded-lg border border-gray-200 mb-6 p-2 flex gap-2">
             <button
@@ -138,17 +129,14 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Transactions View - Only show if wallet is connected */}
         {connected && publicKey && viewMode === 'transactions' && (
           <div className="space-y-6">
             <TransactionHistory publicKey={publicKey} limit={50} />
           </div>
         )}
 
-        {/* Invoices View */}
         {viewMode === 'invoices' && (
           <>
-            {/* Stats Cards */}
             {stats && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div className="card">
@@ -210,7 +198,6 @@ export default function DashboardPage() {
           </div>
             )}
 
-                {/* Search Bar */}
             <div className="card mb-4">
               <input
                 type="text"
@@ -221,7 +208,6 @@ export default function DashboardPage() {
               />
             </div>
 
-            {/* Filter Tabs */}
             <div className="bg-white rounded-lg border border-gray-200 mb-6 p-2 flex gap-2 flex-wrap">
               {['all', 'pending', 'paid', 'expired'].map((status) => (
                 <button
@@ -238,7 +224,6 @@ export default function DashboardPage() {
               ))}
             </div>
 
-            {/* Invoices List */}
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-12 h-12 animate-spin text-cyan-500" />

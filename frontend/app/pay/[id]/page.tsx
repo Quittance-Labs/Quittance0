@@ -43,11 +43,11 @@ export default function PaymentPage() {
           setInvoice(result.data);
           setPolling(false);
           if (result.data.status === 'PAID') {
-            toast.success('Payment confirmed! 🎉');
+            toast.success('Payment confirmed');
           }
         }
       } catch (error) {
-        console.error('Polling error:', error);
+        // Silent fail
       }
     }, 5000); // Check every 5 seconds
 
@@ -60,24 +60,18 @@ export default function PaymentPage() {
         invoiceApi.getById(id),
         invoiceApi.getPaymentInfo(id),
       ]);
-
       setInvoice(invoiceResult.data);
       setPaymentInfo(paymentResult.data);
     } catch (error: any) {
       toast.error('Failed to load invoice');
-      console.error(error);
     } finally {
       setLoading(false);
     }
   };
 
   const handlePaymentSuccess = async (txHash: string) => {
-    toast.success('Payment confirmed! Verifying...');
-    
-    // Wait a bit for blockchain confirmation
-    setTimeout(async () => {
-      await loadInvoice();
-    }, 3000);
+    toast.success('Payment confirmed');
+    setTimeout(() => loadInvoice(), 3000);
   };
 
   const copyInfo = async (text: string, label: string) => {
@@ -122,13 +116,10 @@ export default function PaymentPage() {
 
   return (
     <div className="min-h-screen bg-logo-pattern relative py-8 sm:py-12 px-4">
-      {/* Animated Background Orbs */}
       <div className="orb orb-1"></div>
       <div className="orb orb-2"></div>
       <div className="orb orb-3"></div>
-      
       <div className="max-w-4xl mx-auto relative z-10">
-        {/* Fixed Header */}
         <header className="fixed top-0 left-0 right-0 z-50 premium-header border-b border-gray-200">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
             <Link href="/" className="flex items-center gap-3">
@@ -154,20 +145,16 @@ export default function PaymentPage() {
           </div>
         </header>
 
-        {/* Main Content with Header Offset */}
         <div className="pt-20">
-
-        {/* Page Title */}
         <div className="text-center mb-10 sm:mb-12">
           <div className="inline-block mb-4 px-6 py-2 bg-gradient-to-r from-cyan-400/20 to-blue-500/20 backdrop-blur-md rounded-full border border-white/30">
-            <span className="text-white text-sm font-semibold tracking-wide">💳 Secure Payment</span>
+            <span className="text-white text-sm font-semibold tracking-wide">Secure Payment</span>
           </div>
           <h1 className="text-4xl sm:text-5xl font-bold text-white mb-3">Complete Payment</h1>
           <p className="text-xl text-white/90">Pay with your Stellar wallet</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
-          {/* Payment Details */}
           <div className="card">
             <h2 className="text-3xl font-bold text-gray-900 mb-8">Payment Details</h2>
 
@@ -192,7 +179,7 @@ export default function PaymentPage() {
 
               {invoice.description && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <p className="text-sm text-gray-600 mb-1">📝 Payment For</p>
+                  <p className="text-sm text-gray-600 mb-1">Payment For</p>
                   <p className="text-gray-800 font-medium">{invoice.description}</p>
                 </div>
               )}
@@ -241,7 +228,7 @@ export default function PaymentPage() {
 
               {invoice.status === 'PENDING' && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <p className="text-sm text-blue-800 font-semibold mb-1">⏰ Expires In</p>
+                  <p className="text-sm text-blue-800 font-semibold mb-1">Expires In</p>
                   <p className="text-blue-700 font-semibold text-lg">
                     {getTimeRemaining(invoice.expiresAt)}
                   </p>
@@ -249,10 +236,9 @@ export default function PaymentPage() {
               )}
             </div>
 
-            {/* Payment Instructions for Manual Transfer */}
             {invoice.status === 'PENDING' && (
               <div className="bg-gray-50 p-4 rounded-lg space-y-3 border">
-                <h3 className="font-semibold text-gray-900 mb-3">📋 Manual Payment Info</h3>
+                <h3 className="font-semibold text-gray-900 mb-3">Payment Information</h3>
                 
                 <div>
                   <p className="text-xs text-gray-600 mb-1">Destination Address</p>
@@ -302,7 +288,6 @@ export default function PaymentPage() {
             )}
           </div>
 
-          {/* Payment Actions */}
           <div className="space-y-6">
             {invoice.status === 'PAID' && (
               <PaymentReceipt invoice={invoice} />
@@ -322,7 +307,6 @@ export default function PaymentPage() {
 
             {invoice.status === 'PENDING' && !invoice.paymentTxHash && (
               <>
-                {/* QR Code */}
                 <div className="card">
                   <h3 className="text-lg font-semibold text-center mb-4">Scan QR Code</h3>
                   <QRCodeDisplay
@@ -331,21 +315,18 @@ export default function PaymentPage() {
                     size={220}
                   />
                   <p className="text-sm text-gray-600 text-center mt-4">
-                    📱 Scan with your Stellar wallet app to pay instantly
+                    Scan with your Stellar wallet app to pay instantly
                   </p>
                 </div>
 
-                {/* Payment with Freighter Wallet */}
                 <div className="card">
                   <h3 className="text-xl font-semibold text-center mb-4">Pay with Wallet</h3>
                   
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                    <p className="text-sm text-blue-800 font-semibold mb-2">
-                      💳 How to Pay:
-                    </p>
+                    <p className="text-sm text-blue-800 font-semibold mb-2">How to Pay:</p>
                     <ol className="text-sm text-blue-700 space-y-1.5 list-decimal list-inside">
                       <li>Connect your Freighter wallet</li>
-                      <li>Click the "Pay with Freighter" button</li>
+                      <li>Click the Pay with Freighter button</li>
                       <li>Confirm the transaction</li>
                     </ol>
                   </div>
@@ -364,17 +345,12 @@ export default function PaymentPage() {
                   />
                   
                   <div className="mt-6 pt-4 border-t text-center">
-                    <p className="text-xs text-gray-500 flex items-center justify-center gap-1">
-                      🔒 Secure payment on Stellar blockchain
-                    </p>
+                    <p className="text-xs text-gray-500">Secure payment on Stellar blockchain</p>
                   </div>
                 </div>
 
-                {/* Test Payment Button (MVP) */}
                 <div className="card bg-yellow-50 border-yellow-300">
-                  <h3 className="text-sm font-semibold text-center mb-3 text-yellow-800">
-                    🧪 Test Mode
-                  </h3>
+                  <h3 className="text-sm font-semibold text-center mb-3 text-yellow-800">Test Mode</h3>
                   <p className="text-xs text-yellow-700 mb-4 text-center">
                     Simulate a payment without using a real wallet (for testing only)
                   </p>
@@ -388,14 +364,14 @@ export default function PaymentPage() {
                         const result = await response.json();
                         
                         if (result.success) {
-                          toast.success('Test payment successful! 🎉');
+                          toast.success('Test payment successful');
                           await loadInvoice();
                           setPolling(false);
                         } else {
-                          toast.error(result.error || 'Failed to simulate payment');
+                          toast.error(result.error || 'Failed to simulate');
                         }
                       } catch (error: any) {
-                        toast.error('Failed to simulate payment');
+                        toast.error('Failed to simulate');
                       } finally {
                         setLoading(false);
                       }
@@ -409,7 +385,7 @@ export default function PaymentPage() {
                         Simulating...
                       </>
                     ) : (
-                      '🧪 Simulate Payment'
+                      'Simulate Payment'
                     )}
                   </button>
                 </div>

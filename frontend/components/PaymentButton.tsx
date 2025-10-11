@@ -27,46 +27,29 @@ export default function PaymentButton({
 
   const handlePayment = async () => {
     setLoading(true);
-
     try {
-      // Check wallet connection
       const connected = await checkWalletConnection();
-      
       if (!connected) {
-        toast.info('Please connect your Freighter wallet');
         const allowed = await requestWalletAccess();
-        
         if (!allowed) {
-          toast.error('Wallet access denied');
+          toast.error('Access denied');
           setLoading(false);
           return;
         }
-        
         setWalletConnected(true);
       }
 
-      // Send payment
-      toast.loading('Please confirm the transaction in your wallet...');
-      
-      const txHash = await sendPayment(
-        destination,
-        amount,
-        memo,
-        assetCode,
-        assetIssuer
-      );
+      toast.loading('Confirm in wallet...');
+      const txHash = await sendPayment(destination, amount, memo, assetCode, assetIssuer);
 
-      toast.success('Payment successful!', {
-        description: `Transaction: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
+      toast.success('Payment successful', {
+        description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
       });
 
-      if (onSuccess) {
-        onSuccess(txHash);
-      }
+      onSuccess?.(txHash);
     } catch (error: any) {
-      console.error('Payment error:', error);
       toast.error('Payment failed', {
-        description: error.message || 'Please try again',
+        description: error.message || 'Try again',
       });
     } finally {
       setLoading(false);
