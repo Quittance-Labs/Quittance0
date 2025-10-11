@@ -198,6 +198,61 @@ app.post('/api/invoices/:id/cancel', async (req: Request, res: Response) => {
   }
 });
 
+// Verify payment manually
+app.post('/api/invoices/:id/verify', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { txHash } = req.body;
+
+    if (!txHash) {
+      return res.status(400).json({
+        success: false,
+        error: 'Transaction hash is required',
+      });
+    }
+
+    const invoice = await invoiceService.getInvoiceById(id);
+
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        error: 'Invoice not found',
+      });
+    }
+
+    // Prevent duplicate payment
+    if (invoice.status === 'PAID') {
+      return res.status(400).json({
+        success: false,
+        error: 'Invoice has already been paid',
+      });
+    }
+
+    if (invoice.status !== 'PENDING') {
+      return res.status(400).json({
+        success: false,
+        error: 'Invoice is not pending',
+      });
+    }
+
+    // TODO: In production, verify the payment on Stellar network
+    // For MVP, we'll accept any transaction hash
+    const updatedInvoice = await invoiceService.markAsPaid(id, txHash, 'VERIFIED_PAYER');
+
+    res.json({
+      success: true,
+      data: updatedInvoice,
+      message: '✅ Payment verified successfully!',
+    });
+  } catch (error: any) {
+    console.error('Verify payment error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to verify payment',
+    });
+  }
+});
+
 // Simulate payment (MVP için manuel ödeme simülasyonu)
 app.post('/api/invoices/:id/simulate-payment', async (req: Request, res: Response) => {
   try {
@@ -208,6 +263,14 @@ app.post('/api/invoices/:id/simulate-payment', async (req: Request, res: Respons
       return res.status(404).json({
         success: false,
         error: 'Invoice not found',
+      });
+    }
+
+    // Prevent duplicate payment
+    if (invoice.status === 'PAID') {
+      return res.status(400).json({
+        success: false,
+        error: 'This invoice has already been paid. Cannot accept duplicate payment.',
       });
     }
 

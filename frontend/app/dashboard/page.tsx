@@ -13,10 +13,33 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [filteredInvoices, setFilteredInvoices] = useState<any[]>([]);
 
   useEffect(() => {
     loadData();
   }, [filter]);
+
+  // Filter and search invoices
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredInvoices(invoices);
+      return;
+    }
+
+    const query = searchQuery.toLowerCase();
+    const filtered = invoices.filter((invoice) => {
+      return (
+        invoice.id.toLowerCase().includes(query) ||
+        invoice.memo.toLowerCase().includes(query) ||
+        invoice.description?.toLowerCase().includes(query) ||
+        invoice.customerName?.toLowerCase().includes(query) ||
+        invoice.customerEmail?.toLowerCase().includes(query) ||
+        invoice.amount.toString().includes(query)
+      );
+    });
+    setFilteredInvoices(filtered);
+  }, [searchQuery, invoices]);
 
   const loadData = async () => {
     try {
@@ -119,8 +142,19 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Search Bar */}
+        <div className="bg-white rounded-lg border mb-4 p-4">
+          <input
+            type="text"
+            placeholder="🔍 Search invoices by ID, memo, description, customer, or amount..."
+            className="input w-full"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+
         {/* Filter Tabs */}
-        <div className="bg-white rounded-lg border mb-6 p-2 flex gap-2">
+        <div className="bg-white rounded-lg border mb-6 p-2 flex gap-2 flex-wrap">
           {['all', 'pending', 'paid', 'expired'].map((status) => (
             <button
               key={status}
@@ -141,25 +175,34 @@ export default function DashboardPage() {
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-12 h-12 animate-spin text-stellar-600" />
           </div>
-        ) : invoices.length === 0 ? (
+        ) : filteredInvoices.length === 0 ? (
           <div className="card text-center py-12">
             <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-gray-700 mb-2">
-              No Invoices Found
+              {searchQuery ? 'No Matching Invoices' : 'No Invoices Found'}
             </h3>
             <p className="text-gray-600 mb-6">
-              Create your first invoice to get started
+              {searchQuery ? 'Try a different search term' : 'Create your first invoice to get started'}
             </p>
-            <Link href="/" className="btn btn-primary">
-              Create Invoice
-            </Link>
+            {!searchQuery && (
+              <Link href="/" className="btn btn-primary">
+                Create Invoice
+              </Link>
+            )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {invoices.map((invoice) => (
-              <InvoiceCard key={invoice.id} invoice={invoice} />
-            ))}
-          </div>
+          <>
+            {searchQuery && (
+              <div className="mb-4 text-sm text-gray-600">
+                Found {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? 's' : ''}
+              </div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredInvoices.map((invoice) => (
+                <InvoiceCard key={invoice.id} invoice={invoice} />
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>

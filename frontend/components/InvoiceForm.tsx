@@ -13,6 +13,9 @@ interface InvoiceFormProps {
 export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps) {
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState('');
+  const [description, setDescription] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,6 +38,9 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
         assetCode: 'XLM',
         expiresInDays: 7,
         sellerPublicKey: userWallet,
+        description: description || undefined,
+        customerName: customerName || undefined,
+        customerEmail: customerEmail || undefined,
       });
 
       toast.success('Payment link created successfully!');
@@ -45,6 +51,9 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
 
       // Reset form
       setAmount('');
+      setDescription('');
+      setCustomerName('');
+      setCustomerEmail('');
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to create payment link');
     } finally {
@@ -53,9 +62,9 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-5">
       <div>
-        <label className="label text-lg font-semibold mb-3">Payment Amount</label>
+        <label className="label text-lg font-semibold mb-3">Payment Amount *</label>
         <div className="flex gap-3">
           <input
             type="number"
@@ -72,6 +81,44 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
           </div>
         </div>
         <p className="text-sm text-gray-500 mt-2">Enter the amount you want to receive in XLM</p>
+      </div>
+
+      <div>
+        <label className="label">Description</label>
+        <textarea
+          className="input min-h-[80px] resize-none"
+          placeholder="What is this payment for? (e.g., Invoice #1234, Consulting services)"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          maxLength={500}
+        />
+        <p className="text-xs text-gray-500 mt-1">{description.length}/500 characters</p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="label">Customer Name</label>
+          <input
+            type="text"
+            className="input"
+            placeholder="John Doe"
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            maxLength={100}
+          />
+        </div>
+
+        <div>
+          <label className="label">Customer Email</label>
+          <input
+            type="email"
+            className="input"
+            placeholder="john@example.com"
+            value={customerEmail}
+            onChange={(e) => setCustomerEmail(e.target.value)}
+            maxLength={100}
+          />
+        </div>
       </div>
 
       <button

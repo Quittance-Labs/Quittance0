@@ -6,6 +6,7 @@ import { invoiceApi } from '@/lib/api';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import PaymentStatus from '@/components/PaymentStatus';
 import WalletConnect from '@/components/WalletConnect';
+import PaymentReceipt from '@/components/PaymentReceipt';
 import { formatAmount, formatDate, getTimeRemaining, getShareUrl } from '@/lib/utils';
 import { ArrowLeft, Share2, Loader2, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
@@ -179,7 +180,13 @@ export default function InvoiceDetailPage() {
 
           {/* Payment Info */}
           <div className="space-y-6">
-            <PaymentStatus status={invoice.status} txHash={invoice.paymentTxHash} />
+            {invoice.status !== 'PAID' && (
+              <PaymentStatus status={invoice.status} txHash={invoice.paymentTxHash} />
+            )}
+
+            {invoice.status === 'PAID' && (
+              <PaymentReceipt invoice={invoice} />
+            )}
 
             {invoice.status === 'PENDING' && paymentInfo && (
               <div className="card">
@@ -197,37 +204,6 @@ export default function InvoiceDetailPage() {
                 >
                   Go to Payment Page
                 </Link>
-              </div>
-            )}
-
-            {invoice.paymentTxHash && (
-              <div className="card">
-                <h3 className="font-semibold mb-4">Transaction Details</h3>
-                <div className="space-y-2 mb-4">
-                  <div>
-                    <p className="text-sm text-gray-600">Transaction Hash</p>
-                    <p className="font-mono text-xs text-gray-900 break-all">
-                      {invoice.paymentTxHash}
-                    </p>
-                  </div>
-                  {invoice.payerPublicKey && (
-                    <div>
-                      <p className="text-sm text-gray-600">Payer Address</p>
-                      <p className="font-mono text-xs text-gray-900 break-all">
-                        {invoice.payerPublicKey}
-                      </p>
-                    </div>
-                  )}
-                </div>
-                <a
-                  href={`${horizonUrl}/tx/${invoice.paymentTxHash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-outline w-full flex items-center justify-center gap-2"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  View on Stellar Explorer
-                </a>
               </div>
             )}
           </div>

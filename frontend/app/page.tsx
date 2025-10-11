@@ -158,6 +158,30 @@ export default function HomePage() {
                     </p>
                   </div>
 
+                  {createdInvoice.invoice.description && (
+                    <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+                      <p className="text-xs text-gray-600 mb-1">Description</p>
+                      <p className="text-sm text-gray-800">{createdInvoice.invoice.description}</p>
+                    </div>
+                  )}
+
+                  {(createdInvoice.invoice.customerName || createdInvoice.invoice.customerEmail) && (
+                    <div className="bg-gray-50 p-3 rounded-lg space-y-1">
+                      {createdInvoice.invoice.customerName && (
+                        <div>
+                          <p className="text-xs text-gray-600">Customer</p>
+                          <p className="text-sm text-gray-800">{createdInvoice.invoice.customerName}</p>
+                        </div>
+                      )}
+                      {createdInvoice.invoice.customerEmail && (
+                        <div>
+                          <p className="text-xs text-gray-600">Email</p>
+                          <p className="text-sm text-gray-800">{createdInvoice.invoice.customerEmail}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <p className="text-xs text-gray-600 mb-1">Payment Link</p>
                     <p className="font-mono text-xs break-all text-gray-800">{createdInvoice.paymentUrl}</p>

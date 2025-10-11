@@ -7,6 +7,7 @@ import PaymentButton from '@/components/PaymentButton';
 import PaymentStatus from '@/components/PaymentStatus';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import WalletConnect from '@/components/WalletConnect';
+import PaymentReceipt from '@/components/PaymentReceipt';
 import { formatAmount, formatDate, getTimeRemaining, copyToClipboard } from '@/lib/utils';
 import { Copy, ExternalLink, Loader2, Check } from 'lucide-react';
 import { toast } from 'sonner';
@@ -18,10 +19,35 @@ export default function PaymentPage() {
   const [invoice, setInvoice] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
+  const [polling, setPolling] = useState(true);
 
   useEffect(() => {
     loadInvoice();
   }, [id]);
+
+  // Auto-refresh for pending invoices
+  useEffect(() => {
+    if (!invoice || invoice.status !== 'PENDING' || !polling) {
+      return;
+    }
+
+    const intervalId = setInterval(async () => {
+      try {
+        const result = await invoiceApi.getById(id);
+        if (result.data.status !== 'PENDING') {
+          setInvoice(result.data);
+          setPolling(false);
+          if (result.data.status === 'PAID') {
+            toast.success('Payment confirmed! 🎉');
+          }
+        }
+      } catch (error) {
+        console.error('Polling error:', error);
+      }
+    }, 5000); // Check every 5 seconds
+
+    return () => clearInterval(intervalId);
+  }, [invoice, id, polling]);
 
   const loadInvoice = async () => {
     try {
@@ -107,6 +133,31 @@ export default function PaymentPage() {
                 </p>
                 <p className="text-2xl font-semibold text-stellar-600 mt-1">XLM</p>
               </div>
+
+              {invoice.description && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm text-gray-600 mb-1">📝 Payment For</p>
+                  <p className="text-gray-800 font-medium">{invoice.description}</p>
+                </div>
+              )}
+
+              {(invoice.customerName || invoice.customerEmail) && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+                  <p className="text-sm text-gray-600 font-semibold">Customer Information</p>
+                  {invoice.customerName && (
+                    <div>
+                      <p className="text-xs text-gray-500">Name</p>
+                      <p className="text-sm text-gray-800">{invoice.customerName}</p>
+                    </div>
+                  )}
+                  {invoice.customerEmail && (
+                    <div>
+                      <p className="text-xs text-gray-500">Email</p>
+                      <p className="text-sm text-gray-800">{invoice.customerEmail}</p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="border-b pb-4">
                 <p className="text-sm text-gray-600 mb-1">Status</p>
@@ -198,24 +249,7 @@ export default function PaymentPage() {
           {/* Payment Actions */}
           <div className="space-y-6">
             {invoice.status === 'PAID' && (
-              <div className="card text-center py-8">
-                <div className="inline-flex items-center justify-center w-20 h-20 bg-green-100 rounded-full mb-4">
-                  <Check className="w-12 h-12 text-green-600" />
-                </div>
-                <h3 className="text-2xl font-bold text-green-700 mb-2">Payment Successful!</h3>
-                <p className="text-gray-600 mb-4">Your payment has been confirmed on the blockchain</p>
-                {invoice.paymentTxHash && (
-                  <a
-                    href={`${horizonUrl}/tx/${invoice.paymentTxHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn btn-primary inline-flex items-center gap-2"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    View Transaction
-                  </a>
-                )}
-              </div>
+              <PaymentReceipt invoice={invoice} />
             )}
 
             {invoice.status === 'EXPIRED' && (
@@ -230,7 +264,7 @@ export default function PaymentPage() {
               </div>
             )}
 
-            {invoice.status === 'PENDING' && (
+            {invoice.status === 'PENDING' && !invoice.paymentTxHash && (
               <>
                 {/* QR Code */}
                 <div className="card">
@@ -278,6 +312,50 @@ export default function PaymentPage() {
                       🔒 Secure payment on Stellar blockchain
                     </p>
                   </div>
+                </div>
+
+                {/* Test Payment Button (MVP) */}
+                <div className="card bg-yellow-50 border-yellow-300">
+                  <h3 className="text-sm font-semibold text-center mb-3 text-yellow-800">
+                    🧪 Test Mode
+                  </h3>
+                  <p className="text-xs text-yellow-700 mb-4 text-center">
+                    Simulate a payment without using a real wallet (for testing only)
+                  </p>
+                  <button
+                    onClick={async () => {
+                      try {
+                        setLoading(true);
+                        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/invoices/${id}/simulate-payment`, {
+                          method: 'POST',
+                        });
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                          toast.success('Test payment successful! 🎉');
+                          await loadInvoice();
+                          setPolling(false);
+                        } else {
+                          toast.error(result.error || 'Failed to simulate payment');
+                        }
+                      } catch (error: any) {
+                        toast.error('Failed to simulate payment');
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
+                    disabled={loading}
+                    className="btn btn-secondary w-full flex items-center justify-center gap-2"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Simulating...
+                      </>
+                    ) : (
+                      '🧪 Simulate Payment'
+                    )}
+                  </button>
                 </div>
               </>
             )}
