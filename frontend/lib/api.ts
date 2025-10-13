@@ -28,6 +28,8 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     customerEmail?: string;
     expiresInDays?: number;
     sellerPublicKey?: string;
+    sellerName?: string;
+    sellerEmail?: string;
   }) => {
     const response = await api.post('/invoices', data);
     return response.data;
