@@ -342,7 +342,7 @@ export default function HomePage() {
           </div>
           <div className="border-t border-gray-200 pt-8 text-center">
             <p className="text-gray-600 text-sm">
-              © 2024 Quittance. Powered by Stellar Network. All rights reserved.
+              © {new Date().getFullYear()} Quittance. Powered by Stellar Network. All rights reserved.
             </p>
           </div>
         </div>

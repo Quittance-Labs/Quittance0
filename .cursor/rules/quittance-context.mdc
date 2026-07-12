@@ -17,6 +17,12 @@ alwaysApply: true
 - Do **not** dox others: you should not infer who owns another wallet or what they did from Quittance.
 - Historical legal sense of “quittance” = written discharge / payment proof you keep.
 
+## Identity & email (locked)
+- **Freighter wallet** is the only required identity for create + pay. Do not gate those flows on Google.
+- **Email is optional delivery** (send invoice / send proof to the client). Prefer customer email + mailto now; SMTP/Gmail API later — still not a login gate.
+- Google sign-in must not be required to create invoices or pay with Freighter.
+- Canonical plan: **`PLAN.md`**. Execution checklist: `ROADMAP.md`. Do not invent alternate product paths.
+
 ## SCF rejection feedback (must address for any fund/demo push)
 1. Site must be **online** for verification.
 2. Provide **testnet evidence** (tx hashes + video) and clearer tech details.
@@ -29,9 +35,12 @@ Sharp initial user (default): **freelancer invoicing a client in XLM/USDC on Ste
 - Code last actively built ~Oct 2025; branding commit to Quittance done.
 - Not deployed under Quittance yet; old Stellink Vercel slot is gone / taken by others.
 - Prefer MVP path: `backend` `npm run dev:mvp` (in-memory) + `frontend` `npm run dev` when spinning up locally.
+- Docs: English-only; `README.md` + `PLAN.md` / `ROADMAP.md` + env examples. No overlapping setup guides.
 
 ## Agent guardrails
 - Continue the **invoice MVP**, not a SustainOpen-style payment-link rewrite.
 - Prefer shipping: online demo → testnet proof → PDF/email proof workflow → dashboard history.
 - Keep branding **Quittance**; never reintroduce Stellink as this app’s name.
 - Do not invent unrelated features before the full invoice loop works and is demoable online.
+- Follow `PLAN.md` / `ROADMAP.md` order; ask before committing; one commit = one PLAN row.
+- **English only** in the repository: docs, UI strings, comments added by agents, commit messages. No Turkish in tracked files.
