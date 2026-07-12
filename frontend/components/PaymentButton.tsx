@@ -18,6 +18,8 @@ interface PaymentButtonProps {
   onSuccess?: (txHash: string) => void;
 }
 
+const PAY_TOAST_ID = 'payment-flow';
+
 export default function PaymentButton({
   destination,
   amount,
@@ -30,7 +32,6 @@ export default function PaymentButton({
   onSuccess,
 }: PaymentButtonProps) {
   const [loading, setLoading] = useState(false);
-  const [walletConnected, setWalletConnected] = useState(false);
 
   const handlePayment = async () => {
     setLoading(true);
@@ -40,34 +41,34 @@ export default function PaymentButton({
         const allowed = await requestWalletAccess();
         if (!allowed) {
           toast.error('Access denied');
-          setLoading(false);
           return;
         }
-        setWalletConnected(true);
       }
 
-      toast.loading('Confirm in wallet...');
+      toast.loading('Confirm in wallet...', { id: PAY_TOAST_ID });
       const txHash = await sendPayment(destination, amount, memo, assetCode, assetIssuer);
 
-      // Verify payment with backend if invoice ID provided
       if (invoiceId) {
-        toast.loading('Verifying payment...');
+        toast.loading('Verifying payment...', { id: PAY_TOAST_ID });
         try {
           await invoiceApi.verify(invoiceId, txHash, {
             payerName,
-            payerEmail
+            payerEmail,
           });
-          toast.success('Payment verified!', {
+          toast.success('Payment verified', {
+            id: PAY_TOAST_ID,
             description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
           });
         } catch (error) {
           console.error('Verification failed:', error);
           toast.warning('Payment sent but verification failed', {
-            description: 'Please wait for automatic confirmation',
+            id: PAY_TOAST_ID,
+            description: 'Refresh the page or wait for status to update',
           });
         }
       } else {
         toast.success('Payment successful', {
+          id: PAY_TOAST_ID,
           description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
         });
       }
@@ -75,6 +76,7 @@ export default function PaymentButton({
       onSuccess?.(txHash);
     } catch (error: any) {
       toast.error('Payment failed', {
+        id: PAY_TOAST_ID,
         description: error.message || 'Try again',
       });
     } finally {
@@ -102,4 +104,3 @@ export default function PaymentButton({
     </button>
   );
 }
-
