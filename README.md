@@ -158,11 +158,15 @@ Env template: `backend/env.mvp.example`.
 
 ## Demo & evidence
 
+Reviewer pack: **[`EVIDENCE.md`](./EVIDENCE.md)** (URLs, testnet tx hashes, recording, tech note).
+
 | Item | Status |
 |------|--------|
-| Public demo URL | TBD (Phase D) |
-| Testnet tx hashes | TBD |
-| Screen recording | TBD |
+| Public demo URL | Fill in `EVIDENCE.md` after deploy (D4) |
+| Testnet tx hashes | Fill in after a real Freighter pay (D5) |
+| Screen recording | Fill in after demo recording (D5) |
+
+Until then, run locally: `backend` → `npm run dev:mvp`, `frontend` → `npm run dev`.
 
 ---
 
@@ -174,17 +178,8 @@ frontend/    Next.js app
 db/          Postgres schema (post-demo)
 PLAN.md      Product & delivery plan
 ROADMAP.md   Short commit checklist
+EVIDENCE.md  Public demo URL + testnet evidence (reviewer one-pager)
 ```
-
----
-
-## Docs policy
-
-English only. Lean surface:
-
-- `README.md` — overview and how to run  
-- `PLAN.md` / `ROADMAP.md` — what we ship and in what order  
-- Env example files — configuration  
 
 ---
 

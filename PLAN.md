@@ -2,20 +2,20 @@
 
 **Status:** Locked (Jul 2026)  
 **Target release:** Online SCF-ready demo (v0.1)  
-**Working style:** One outcome per commit; local smoke must pass after each commit.  
-**Language:** English only in this repository (docs, UI, commit messages).
+**Working style:** One outcome per commit; local smoke must pass after each commit.
 
 This document is not a menu of options. Positioning, scope, and ship order are fixed here.
 
 ---
 
-## Docs policy
+## Documentation surface
 
-English only. Keep the repo lean:
+Keep the repo lean:
 
-- `README.md` — overview + run instructions  
+- `README.md` — overview and how to run  
 - `PLAN.md` / `ROADMAP.md` — ship plan  
-- Env examples — config  
+- `EVIDENCE.md` — demo URL and testnet proof for reviewers  
+- Env examples — configuration  
 
 Do not add overlapping how-to guides. Link official Freighter docs when needed.
 

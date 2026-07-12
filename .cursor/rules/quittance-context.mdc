@@ -35,7 +35,7 @@ Sharp initial user (default): **freelancer invoicing a client in XLM/USDC on Ste
 - Code last actively built ~Oct 2025; branding commit to Quittance done.
 - Not deployed under Quittance yet; old Stellink Vercel slot is gone / taken by others.
 - Prefer MVP path: `backend` `npm run dev:mvp` (in-memory) + `frontend` `npm run dev` when spinning up locally.
-- Docs: English-only; `README.md` + `PLAN.md` / `ROADMAP.md` + env examples. No overlapping setup guides.
+- Docs: English-only; `README.md` + `PLAN.md` / `ROADMAP.md` + `EVIDENCE.md` + env examples. No overlapping setup guides.
 
 ## Agent guardrails
 - Continue the **invoice MVP**, not a SustainOpen-style payment-link rewrite.
