@@ -2,19 +2,37 @@
 
 Invoice on Stellar. Get paid. Keep the proof.
 
-Quittance helps freelancers create an invoice, accept payment via link or QR on Stellar, verify it by memo + amount, then **download or email payment proof**. Settlement stays on-chain. Quittance does not expose other people’s wallet identity or history.
+Quittance helps freelancers create an invoice, accept payment via link or QR on Stellar, verify it on Horizon (memo + amount + destination), then **download or email payment proof**. Settlement stays on-chain. Quittance does not expose other people’s wallet identity or history.
 
 **Sharp initial user:** freelancer invoicing a client in XLM/USDC on Stellar.
 
 ---
 
+## What is shipped (v0.1 local / MVP)
+
+| Capability | Status |
+|------------|--------|
+| Freighter wallet as identity (create + pay) | Done — no Google login gate |
+| Create invoice + payment URL / QR | Done |
+| Optional client email + Send invoice / Email proof (`mailto:`) | Done |
+| Horizon-backed payment verify | Done (memo, amount, destination, asset) |
+| Dashboard scoped to connected wallet | Done |
+| Primary **Download Proof** CTA after paid | Done (PDF print flow in browser) |
+| Simulate-payment UI | Removed from demo UI (`ALLOW_SIMULATE=true` only on API) |
+| Public hosted demo + testnet evidence pack | Phase D (not yet) |
+| Postgres persistence / SMTP / Gmail API | After demo (Phase E) |
+
+Ship plan: [`PLAN.md`](./PLAN.md).
+
+---
+
 ## How it works
 
-1. Connect Freighter and create an invoice  
-2. Share the payment link or QR with your client  
-3. Client pays on Stellar (Freighter, QR, or manual)  
-4. Backend verifies memo + amount on Horizon  
-5. Download proof (PDF) or send it by email (`mailto:` in v0.1)
+1. Connect Freighter and create an invoice (optional client name/email)  
+2. Share the payment URL or QR — or **Send invoice** if email is set  
+3. Client pays on Stellar (Freighter, QR, or manual transfer with the memo)  
+4. `POST /api/invoices/:id/verify` checks the tx on Horizon  
+5. **Download Proof** (primary) or **Email Proof** (if client email exists)  
 
 Identity is the **wallet**. Email is an **optional delivery channel**, not a login gate.
 
@@ -25,21 +43,19 @@ Identity is the **wallet**. Email is an **optional delivery channel**, not a log
 | Layer | Tech |
 |-------|------|
 | Frontend | Next.js 14, TypeScript, Tailwind, Freighter |
-| Backend (demo / local) | Express, TypeScript, **in-memory MVP** |
-| Chain | Stellar testnet / public, Horizon |
-| Later | PostgreSQL full server (not required for v0.1 demo) |
-
-Ship plan and commit order: [`PLAN.md`](./PLAN.md).
+| Backend (local / demo) | Express, TypeScript, **in-memory MVP** (`server-mvp.ts`) |
+| Chain | Stellar testnet / public via Horizon |
+| Later | PostgreSQL full server (not required for v0.1) |
 
 ---
 
 ## Requirements
 
 - Node.js 18+
-- [Freighter](https://www.freighter.app/) (browser extension) for wallet flows
-- Stellar testnet account for real payments ([fund via Laboratory](https://laboratory.stellar.org/#account-creator?network=test))
+- [Freighter](https://www.freighter.app/) for wallet flows — see [Freighter docs](https://docs.freighter.app/)
+- Stellar testnet account for real payments ([Laboratory](https://laboratory.stellar.org/#account-creator?network=test))
 
-PostgreSQL and Redis are **not** required for the local MVP path below.
+PostgreSQL and Redis are **not** required for the MVP path below.
 
 ---
 
@@ -54,10 +70,11 @@ cp env.mvp.example .env
 npm run dev:mvp
 ```
 
-API: `http://localhost:3001`  
-Health: `http://localhost:3001/api/health`
+- API: `http://localhost:3001`  
+- Health: `http://localhost:3001/api/health`  
+- In-memory storage resets when the process restarts  
 
-In-memory storage resets when the process restarts.
+Optional: set `ALLOW_SIMULATE=true` in `.env` only for local fake payments (not for demos).
 
 ### Frontend
 
@@ -73,7 +90,7 @@ App: `http://localhost:3000`
 ### Env reference
 
 - Backend: `backend/env.mvp.example`  
-- Frontend: `frontend/env.mvp.local` / `frontend/env.example.txt`
+- Frontend: `frontend/env.mvp.local` / `frontend/env.example.txt`  
 
 Set `FRONTEND_URL` on the backend to match the frontend origin (CORS).
 
@@ -87,17 +104,15 @@ Set `FRONTEND_URL` on the backend to match the frontend origin (CORS).
 | Testnet tx hashes | TBD |
 | Screen recording | TBD |
 
-When deployed, this section will list the live URL and sample testnet transaction hashes.
-
 ---
 
 ## Project layout
 
 ```
-backend/     Express API (server-mvp.ts for demo)
+backend/     Express API — use server-mvp.ts for demo
 frontend/    Next.js app
-db/          Postgres schema (post-demo path)
-PLAN.md      Product & delivery plan (source of truth for v0.1)
+db/          Postgres schema (post-demo)
+PLAN.md      Product & delivery plan
 ROADMAP.md   Short commit checklist
 ```
 
@@ -105,13 +120,11 @@ ROADMAP.md   Short commit checklist
 
 ## Docs policy
 
-This repository keeps a **small English-only** doc surface:
+English only. Lean surface:
 
-- `README.md` — product overview and how to run  
+- `README.md` — overview and how to run  
 - `PLAN.md` / `ROADMAP.md` — what we ship and in what order  
-- `*.example` env files — configuration  
-
-Overlapping setup guides were removed on purpose. For Freighter install and troubleshooting, use the [official Freighter docs](https://docs.freighter.app/).
+- Env example files — configuration  
 
 ---
 
