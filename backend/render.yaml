@@ -1,0 +1,24 @@
+# Render Blueprint — Quittance MVP API (in-memory)
+# Dashboard: New → Blueprint → connect this repo, or create a Web Service manually.
+# Root directory: backend
+
+services:
+  - type: web
+    name: quittance-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run start:mvp
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: STELLAR_NETWORK
+        value: TESTNET
+      - key: STELLAR_HORIZON_URL
+        value: https://horizon-testnet.stellar.org
+      - key: ALLOW_SIMULATE
+        value: "false"
+      - key: FRONTEND_URL
+        sync: false

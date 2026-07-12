@@ -117,6 +117,45 @@ Templates: `frontend/env.example.txt`, `frontend/env.mvp.local`.
 
 ---
 
+## Deploy backend MVP (Render)
+
+Recommended host for `server-mvp.ts` (in-memory). Do **not** use `backend/vercel.json` for the demo — that targets the Postgres full server.
+
+### Manual Web Service
+
+1. Create a **Web Service** on [Render](https://render.com) from this repo.  
+2. **Root Directory:** `backend`  
+3. **Build:** `npm install`  
+4. **Start:** `npm run start:mvp`  
+5. Health check path: `/api/health`  
+6. Environment variables:
+
+| Variable | Value |
+|----------|--------|
+| `NODE_ENV` | `production` |
+| `STELLAR_NETWORK` | `TESTNET` |
+| `STELLAR_HORIZON_URL` | `https://horizon-testnet.stellar.org` |
+| `FRONTEND_URL` | `https://YOUR-APP.vercel.app` (exact frontend origin) |
+| `ALLOW_SIMULATE` | `false` |
+
+`PORT` is set by Render automatically.
+
+### Blueprint (optional)
+
+`backend/render.yaml` can be used as a starting point. Set `FRONTEND_URL` in the dashboard after the frontend URL is known.
+
+### After API is live
+
+1. Copy the public API URL (e.g. `https://quittance-api.onrender.com`).  
+2. Set frontend `NEXT_PUBLIC_API_URL` to `https://…/api` and redeploy Vercel.  
+3. Confirm CORS: browser call from the Vercel origin to `/api/health` succeeds.
+
+**Note:** Free-tier / in-memory means cold starts and process restarts clear all invoices. Fine for a short demo; document this for reviewers.
+
+Env template: `backend/env.mvp.example`.
+
+---
+
 ## Demo & evidence
 
 | Item | Status |
