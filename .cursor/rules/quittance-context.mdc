@@ -1,0 +1,37 @@
+---
+description: Quittance product context, SCF feedback, and priorities for every agent
+alwaysApply: true
+---
+
+# Quittance — project memory
+
+## What this is
+- **Name:** Quittance (renamed from Stellink, Oct 2025 MVP → rebranded Jul 2026).
+- **Repo:** https://github.com/CemAyyildiz/Quittance
+- **Stack:** Next.js 14 frontend + Express/TS backend + PostgreSQL (+ optional Redis/Bull). Freighter wallet. Stellar testnet/public.
+- **Not this project:** [SustainOpen/Stellink](https://github.com/SustainOpen/Stellink) and https://stellink.vercel.app — different product (payment links / escrow). Do not confuse or merge with them.
+
+## Product thesis (owner intent)
+- Freelancer / merchant tooling: create invoice → pay on Stellar (link/QR) → auto-verify (memo + amount) → **download or email proof**.
+- Proof is for the **owner** (customer, tax/official use). Settlement stays on-chain and transparent.
+- Do **not** dox others: you should not infer who owns another wallet or what they did from Quittance.
+- Historical legal sense of “quittance” = written discharge / payment proof you keep.
+
+## SCF rejection feedback (must address for any fund/demo push)
+1. Site must be **online** for verification.
+2. Provide **testnet evidence** (tx hashes + video) and clearer tech details.
+3. Expand team/advisors for delivery confidence.
+4. **Tighten scope:** one sharp initial user + full invoicing workflow end-to-end.
+
+Sharp initial user (default): **freelancer invoicing a client in XLM/USDC on Stellar**.
+
+## Current state (as of Jul 2026)
+- Code last actively built ~Oct 2025; branding commit to Quittance done.
+- Not deployed under Quittance yet; old Stellink Vercel slot is gone / taken by others.
+- Prefer MVP path: `backend` `npm run dev:mvp` (in-memory) + `frontend` `npm run dev` when spinning up locally.
+
+## Agent guardrails
+- Continue the **invoice MVP**, not a SustainOpen-style payment-link rewrite.
+- Prefer shipping: online demo → testnet proof → PDF/email proof workflow → dashboard history.
+- Keep branding **Quittance**; never reintroduce Stellink as this app’s name.
+- Do not invent unrelated features before the full invoice loop works and is demoable online.
