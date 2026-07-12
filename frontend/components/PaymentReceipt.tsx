@@ -1,9 +1,9 @@
 'use client';
 
 import { formatAmount, formatDate } from '@/lib/utils';
-import { Check, Download, ExternalLink, FileText } from 'lucide-react';
+import { Check, Download, ExternalLink, FileText, Mail } from 'lucide-react';
 import AssetLogo from './AssetLogo';
-import { openInvoicePDF } from '@/lib/export';
+import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { toast } from 'sonner';
 
 interface PaymentReceiptProps {
@@ -18,7 +18,15 @@ export default function PaymentReceipt({ invoice }: PaymentReceiptProps) {
 
   const handleDownloadPDF = () => {
     openInvoicePDF(invoice as any);
-    toast.success('Opening invoice PDF');
+    toast.success('Opening payment proof');
+  };
+
+  const handleEmailProof = () => {
+    if (!invoice.customerEmail) {
+      toast.error('No client email on this invoice');
+      return;
+    }
+    shareInvoiceByEmail(invoice as any);
   };
 
   const handleDownload = () => {
@@ -187,33 +195,41 @@ Stellar Blockchain Payment System
       </div>
 
       <div className="border-t pt-6 space-y-3 print:hidden">
+        <button
+          onClick={handleDownloadPDF}
+          className="btn btn-primary w-full flex items-center justify-center gap-2"
+        >
+          <FileText className="w-5 h-5" />
+          Download Proof
+        </button>
+
+        {invoice.customerEmail && (
+          <button
+            onClick={handleEmailProof}
+            className="btn btn-secondary w-full flex items-center justify-center gap-2"
+          >
+            <Mail className="w-5 h-5" />
+            Email Proof
+          </button>
+        )}
+
         <a
           href={`${horizonUrl}/tx/${invoice.paymentTxHash}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="btn btn-primary w-full flex items-center justify-center gap-2"
+          className="btn btn-outline w-full flex items-center justify-center gap-2"
         >
           <ExternalLink className="w-5 h-5" />
           View on Stellar Explorer
         </a>
 
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={handleDownloadPDF}
-            className="btn btn-outline flex items-center justify-center gap-2"
-          >
-            <FileText className="w-4 h-4" />
-            PDF
-          </button>
-
-          <button
-            onClick={handleDownload}
-            className="btn btn-outline flex items-center justify-center gap-2"
-          >
-            <Download className="w-4 h-4" />
-            TXT
-          </button>
-        </div>
+        <button
+          onClick={handleDownload}
+          className="btn btn-outline w-full flex items-center justify-center gap-2 text-sm"
+        >
+          <Download className="w-4 h-4" />
+          Download TXT receipt
+        </button>
       </div>
 
       <div className="text-center mt-6 pt-6 border-t">

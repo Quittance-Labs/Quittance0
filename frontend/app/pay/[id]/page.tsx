@@ -87,7 +87,7 @@ export default function PaymentPage() {
   const handleDownloadPDF = () => {
     if (invoice) {
       openInvoicePDF(invoice as any);
-      toast.success('Opening PDF');
+      toast.success('Opening payment proof');
     }
   };
 
@@ -281,12 +281,13 @@ export default function PaymentPage() {
                   className="btn btn-primary flex-1 flex items-center justify-center gap-2"
                 >
                   <FileText className="w-4 h-4" />
-                  Download Invoice
+                  Download Proof
                 </button>
                 {invoice.customerEmail && (
                   <button
                     onClick={handleEmailShare}
                     className="btn btn-outline flex items-center justify-center gap-2 px-4"
+                    title="Email Proof"
                   >
                     <Mail className="w-4 h-4" />
                   </button>

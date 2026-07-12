@@ -2,12 +2,11 @@
 
 import Link from 'next/link';
 import { formatAmount, formatDate, getStatusColor, getTimeRemaining } from '@/lib/utils';
-import { Clock, ExternalLink, Copy, FileText, Mail, Download } from 'lucide-react';
+import { Clock, ExternalLink, Copy, Mail, Download } from 'lucide-react';
 import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import AssetLogo from './AssetLogo';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
-import { useState } from 'react';
 
 interface Invoice {
   id: string;
@@ -35,7 +34,6 @@ interface InvoiceCardProps {
 }
 
 export default function InvoiceCard({ invoice }: InvoiceCardProps) {
-  const [showMenu, setShowMenu] = useState(false);
   const statusColor = getStatusColor(invoice.status);
   const paymentUrl = `${window.location.origin}/pay/${invoice.id}`;
 
@@ -48,13 +46,11 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
 
   const handleDownloadPDF = () => {
     openInvoicePDF(invoice as any);
-    toast.success('Opening PDF');
-    setShowMenu(false);
+    toast.success('Opening payment proof');
   };
 
   const handleEmailShare = () => {
     shareInvoiceByEmail(invoice as any);
-    setShowMenu(false);
   };
 
   return (
@@ -112,41 +108,22 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
           </button>
         )}
         {invoice.status === 'PAID' && (
-          <div className="relative">
-            <button
-              onClick={() => setShowMenu(!showMenu)}
-              className="btn btn-primary flex items-center justify-center gap-2 px-3"
-              title="Download Invoice"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-            {showMenu && (
-              <>
-                <div 
-                  className="fixed inset-0 z-10" 
-                  onClick={() => setShowMenu(false)}
-                />
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20">
-                  <button
-                    onClick={handleDownloadPDF}
-                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-                  >
-                    <FileText className="w-4 h-4" />
-                    Download Proof
-                  </button>
-                  {invoice.customerEmail && (
-                    <button
-                      onClick={handleEmailShare}
-                      className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-                    >
-                      <Mail className="w-4 h-4" />
-                      Email Proof
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+          <button
+            onClick={handleDownloadPDF}
+            className="btn btn-primary flex-1 flex items-center justify-center gap-2 text-sm"
+          >
+            <Download className="w-4 h-4" />
+            Download Proof
+          </button>
+        )}
+        {invoice.status === 'PAID' && invoice.customerEmail && (
+          <button
+            onClick={handleEmailShare}
+            className="btn btn-outline flex items-center justify-center gap-2 px-3"
+            title="Email Proof"
+          >
+            <Mail className="w-4 h-4" />
+          </button>
         )}
       </div>
     </div>
