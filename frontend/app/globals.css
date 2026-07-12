@@ -3,229 +3,152 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 15, 23, 42;
-  --primary-blue: 45, 99, 165;
-  --primary-cyan: 64, 187, 202;
-  --accent-teal: 94, 234, 212;
-}
-
-@keyframes gradient-shift {
-  0%, 100% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-}
-
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0) rotate(0deg);
-  }
-  50% {
-    transform: translateY(-20px) rotate(5deg);
-  }
-}
-
-@keyframes pulse-glow {
-  0%, 100% {
-    opacity: 0.05;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.1;
-    transform: scale(1.05);
-  }
+  --ink: #0f1419;
+  --paper: #f4f5f7;
+  --paper-deep: #e8eaee;
+  --teal: #0f766e;
+  --teal-hover: #0d9488;
+  --muted: #5c6570;
+  --line: #d8dce3;
+  --font-display: 'Instrument Serif', Georgia, serif;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: #ffffff;
-  position: relative;
+  color: var(--ink);
+  background: var(--paper);
   overflow-x: hidden;
 }
 
-body::before {
-  content: '';
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 1500px;
-  height: 1500px;
-  background-image: url('/Quittance.jpg');
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  opacity: 0.3;
-  z-index: 1;
-  pointer-events: none;
-  animation: float 25s ease-in-out infinite;
+.font-display {
+  font-family: var(--font-display);
 }
 
 @layer base {
   html {
-    @apply antialiased scroll-smooth;
+    @apply scroll-smooth;
   }
-  
+
   * {
-    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2;
+    @apply focus-visible:outline-none;
+  }
+
+  *:focus-visible {
+    box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px rgba(15, 118, 110, 0.4);
   }
 }
 
 @layer components {
-  /* Clean Background Pattern */
-  .bg-logo-pattern {
-    position: relative;
-    overflow: hidden;
-    background: #ffffff;
-  }
-  
-  .bg-logo-pattern::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-image: url('/Quittance.jpg');
-    background-size: 150px 150px;
-    background-repeat: repeat;
-    opacity: 0.015;
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  /* Professional Buttons */
   .btn {
-    @apply px-6 py-3 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-md text-sm font-medium transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
   }
-  
+
   .btn-primary {
-    @apply bg-cyan-500 text-white hover:bg-cyan-600;
+    background-color: var(--teal);
+    color: #fff;
   }
-  
+
   .btn-primary:hover {
-    box-shadow: 0 4px 12px rgba(64, 187, 202, 0.3);
-    transform: translateY(-1px);
+    background-color: var(--teal-hover);
   }
-  
+
   .btn-secondary {
-    @apply bg-gray-100 text-gray-700 hover:bg-gray-200;
+    background-color: var(--paper-deep);
+    color: var(--ink);
   }
-  
+
+  .btn-secondary:hover {
+    background-color: var(--line);
+  }
+
   .btn-outline {
-    @apply border-2 border-cyan-500 text-cyan-500 hover:bg-cyan-50;
+    border: 1px solid rgba(15, 20, 25, 0.2);
+    color: var(--ink);
+    background: transparent;
   }
 
-  /* Professional Cards */
+  .btn-outline:hover {
+    border-color: rgba(15, 20, 25, 0.4);
+    background: rgba(255, 255, 255, 0.6);
+  }
+
   .card {
-    @apply bg-white rounded-xl p-6 border border-gray-200 transition-all duration-200 relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-    z-index: 10;
-  }
-  
-  .card:hover {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-    transform: translateY(-2px);
+    @apply bg-white rounded-lg p-6;
+    border: 1px solid var(--line);
   }
 
-  /* Professional Inputs */
   .input {
-    @apply w-full px-4 py-3 bg-white border border-gray-300 rounded-lg 
-           focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 
-           text-gray-900 placeholder-gray-400 transition-all duration-200;
+    @apply w-full px-4 py-3 bg-white rounded-md transition-colors duration-150;
+    border: 1px solid var(--line);
+    color: var(--ink);
   }
-  
-  select.input {
-    @apply bg-white text-gray-900;
+
+  .input::placeholder {
+    color: rgba(92, 101, 112, 0.7);
   }
-  
-  textarea.input {
-    @apply bg-white text-gray-900;
+
+  .input:focus {
+    outline: none;
+    border-color: var(--teal);
+    box-shadow: 0 0 0 1px rgba(15, 118, 110, 0.3);
   }
 
   .label {
-    @apply block text-sm font-semibold text-gray-700 mb-2;
+    @apply block text-sm font-medium mb-2;
+    color: var(--ink);
   }
-  
-  /* Professional Header */
+
   .premium-header {
-    @apply bg-white border-b border-gray-200 sticky top-0 z-50;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    background: rgba(244, 245, 247, 0.9);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
   }
-  
-  /* Feature Cards */
-  .feature-card {
-    @apply card text-center cursor-default;
+
+  /* Legacy class used by dashboard/pay — no watermark */
+  .bg-logo-pattern {
+    background: var(--paper);
   }
-  
-  .feature-card .icon-wrapper {
-    @apply w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center relative overflow-hidden;
-    background: linear-gradient(135deg, rgba(64, 187, 202, 0.2), rgba(45, 99, 165, 0.2));
-    transition: all 0.3s ease;
-  }
-  
-  .feature-card:hover .icon-wrapper {
-    @apply scale-110 rotate-3;
-    box-shadow: 0 10px 30px rgba(64, 187, 202, 0.3);
-  }
-  
-  /* Stats Card */
-  .stats-card {
-    @apply card;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.7));
-  }
-  
-  /* Subtle Background Accents */
-  .accent-blob {
-    position: absolute;
-    border-radius: 50%;
-    filter: blur(80px);
-    opacity: 0.1;
-    pointer-events: none;
-  }
-  
-  .accent-blob-1 {
-    width: 400px;
-    height: 400px;
-    background: radial-gradient(circle, rgba(64, 187, 202, 0.3), transparent);
-    top: -200px;
-    right: -100px;
-  }
-  
-  .accent-blob-2 {
-    width: 500px;
-    height: 500px;
-    background: radial-gradient(circle, rgba(45, 99, 165, 0.3), transparent);
-    bottom: -250px;
-    left: -150px;
+
+  .accent-blob,
+  .accent-blob-1,
+  .accent-blob-2,
+  .orb,
+  .orb-1,
+  .orb-2,
+  .orb-3 {
+    display: none !important;
   }
 }
 
-/* Print Styles */
+/* Atmosphere — no watermark logos */
+.hero-atmosphere {
+  background:
+    radial-gradient(ellipse 80% 60% at 70% 20%, rgba(15, 118, 110, 0.12), transparent 55%),
+    radial-gradient(ellipse 60% 50% at 10% 80%, rgba(15, 20, 25, 0.06), transparent 50%),
+    linear-gradient(165deg, #f4f5f7 0%, #eef1f4 45%, #e4e8ec 100%);
+}
+
+.hero-grain {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  opacity: 0.35;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  mix-blend-mode: multiply;
+}
+
 @media print {
   body {
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
 
-  .print\\:hidden {
+  .print\:hidden {
     display: none !important;
   }
 
-  .print\\:shadow-none {
-    box-shadow: none !important;
-  }
-
-  header, footer, nav {
+  header,
+  footer,
+  nav {
     display: none !important;
-  }
-
-  .card {
-    page-break-inside: avoid;
-    break-inside: avoid;
   }
 }
-

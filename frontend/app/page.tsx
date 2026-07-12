@@ -2,14 +2,14 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
+import { motion } from 'motion/react';
 import InvoiceForm from '@/components/InvoiceForm';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import AssetLogo from '@/components/AssetLogo';
 import { useWalletStore } from '@/lib/store';
-import { Zap, Shield, QrCode, Wallet as WalletIcon, Mail } from 'lucide-react';
+import { Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { shareInvoiceByEmail } from '@/lib/export';
 
@@ -20,343 +20,281 @@ export default function HomePage() {
   const handleInvoiceCreated = (result: any) => setCreatedInvoice(result);
   const handleWalletDisconnected = () => setCreatedInvoice(null);
 
+  const scrollToCreate = () => {
+    document.getElementById('create')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   return (
-    <div className="min-h-screen bg-logo-pattern relative" style={{zIndex: 2}}>
-      <div 
-        className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[1500px] h-[1500px] opacity-30 pointer-events-none"
-        style={{zIndex: 1}}
-      >
-        <Image
-          src="/Quittance.jpg"
-          alt="Background Logo"
-          fill
-          className="object-contain animate-pulse"
-          priority
-        />
-      </div>
-      <div className="accent-blob accent-blob-1"></div>
-      <div className="accent-blob accent-blob-2"></div>
-      <header className="fixed top-0 left-0 right-0 premium-header border-b border-gray-200" style={{zIndex: 100}}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3">
-            <Image
-              src="/Quittance.jpg"
-              alt="Quittance Logo"
-              width={45}
-              height={45}
-              className="w-11 h-11 object-contain"
-              priority
-            />
-            <h1 className="text-2xl font-bold text-gray-900 hidden sm:block">
-              Quittance
-            </h1>
+    <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)]">
+      <header className="fixed top-0 left-0 right-0 z-50 premium-header">
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
+          <Link href="/" className="font-display text-2xl tracking-tight text-[var(--ink)]">
+            Quittance
           </Link>
-          <div className="flex items-center gap-3">
+          <nav className="flex items-center gap-3 sm:gap-5">
+            <Link
+              href="/dashboard"
+              className="hidden sm:inline text-sm text-[var(--muted)] hover:text-[var(--ink)] transition-colors"
+            >
+              Dashboard
+            </Link>
             {!connected ? (
               <WalletConnect />
             ) : (
               <UserProfile userWallet={publicKey} onDisconnect={handleWalletDisconnected} />
             )}
-          </div>
+          </nav>
         </div>
       </header>
 
-      <div className="pt-20 relative" style={{zIndex: 3}}>
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 py-16 sm:py-24 relative z-10">
-        <div className="text-center mb-20">
-          <div className="inline-flex items-center gap-2 mb-6 px-5 py-2 bg-cyan-50 rounded-full border border-cyan-200">
-            <span className="text-cyan-700 text-sm font-semibold">Powered by Stellar Network</span>
-          </div>
-          <h2 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 mb-6 leading-tight max-w-4xl mx-auto">
-            Invoice on Stellar.
-            <br />
-            <span className="text-cyan-500">Keep the proof.</span>
-          </h2>
-          <p className="text-lg sm:text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed mb-10">
-            Create an invoice, get paid via link or QR, verify on-chain by memo and amount, then download or email payment proof.
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-4">
-            <span className="flex items-center gap-2 text-sm text-gray-600">
-              <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              Wallet-only identity
-            </span>
-            <span className="flex items-center gap-2 text-sm text-gray-600">
-              <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              On-chain verification
-            </span>
-            <span className="flex items-center gap-2 text-sm text-gray-600">
-              <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              Downloadable proof
-            </span>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl p-8 sm:p-12 mb-20">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
-            <div className="text-center">
-              <div className="text-3xl sm:text-4xl font-bold text-white mb-2">&lt; 3s</div>
-              <div className="text-cyan-100 text-sm font-medium">Invoice creation</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl sm:text-4xl font-bold text-white mb-2">0.00001</div>
-              <div className="text-cyan-100 text-sm font-medium">XLM fee</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl sm:text-4xl font-bold text-white mb-2">Memo</div>
-              <div className="text-cyan-100 text-sm font-medium">Matched verify</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl sm:text-4xl font-bold text-white mb-2">PDF</div>
-              <div className="text-cyan-100 text-sm font-medium">Payment proof</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
-          <div className="feature-card group">
-            <div className="w-14 h-14 bg-cyan-100 rounded-xl flex items-center justify-center mx-auto mb-4">
-              <Zap className="w-7 h-7 text-cyan-600" />
-            </div>
-            <h3 className="text-xl font-bold mb-3 text-gray-900">Create invoices</h3>
-            <p className="text-gray-600 leading-relaxed">
-              Connect Freighter and issue an invoice in seconds. Share the link or QR with your client.
+      {/* Hero — one composition */}
+      <section className="relative min-h-[100svh] flex flex-col justify-center hero-atmosphere overflow-hidden">
+        <div className="hero-grain" aria-hidden />
+        <div className="relative z-10 max-w-6xl mx-auto px-5 sm:px-8 pt-24 pb-20 w-full">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <p className="font-display text-[clamp(3.5rem,12vw,8.5rem)] leading-[0.9] tracking-tight text-[var(--ink)] max-w-4xl">
+              Quittance
             </p>
-          </div>
+          </motion.div>
 
-          <div className="feature-card group">
-            <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center mx-auto mb-4">
-              <QrCode className="w-7 h-7 text-blue-600" />
-            </div>
-            <h3 className="text-xl font-bold mb-3 text-gray-900">Get paid on Stellar</h3>
-            <p className="text-gray-600 leading-relaxed">
-              Clients pay with Freighter, QR, or any Stellar wallet. XLM and USDC supported.
-            </p>
-          </div>
+          <motion.p
+            className="mt-8 max-w-md text-lg sm:text-xl text-[var(--muted)] leading-relaxed"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+          >
+            Invoice on Stellar. Get paid. Keep the proof.
+          </motion.p>
 
-          <div className="feature-card group">
-            <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center mx-auto mb-4">
-              <Shield className="w-7 h-7 text-green-600" />
-            </div>
-            <h3 className="text-xl font-bold mb-3 text-gray-900">Keep the proof</h3>
-            <p className="text-gray-600 leading-relaxed">
-              Payments are verified on-chain by memo and amount. Download or email your quittance.
-            </p>
-          </div>
-        </div>
-
-        <div className="bg-gray-50 rounded-2xl p-8 sm:p-12 mb-20">
-          <h3 className="text-3xl font-bold text-gray-900 text-center mb-4">Start invoicing on Stellar</h3>
-          <p className="text-gray-600 text-center mb-8 max-w-2xl mx-auto">
-            Connect your wallet to create invoices and collect payment proof for your clients.
-          </p>
-          {!connected && (
-            <div className="flex justify-center">
-              <WalletConnect />
-            </div>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-          <div>
-            {!connected ? (
-              <div className="card text-center py-12">
-                <div className="w-20 h-20 bg-cyan-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                  <WalletIcon className="w-10 h-10 text-cyan-600" />
-                </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-3">
-                  Connect Your Wallet
-                </h3>
-                <p className="text-gray-600 mb-8 text-base leading-relaxed max-w-md mx-auto">
-                  Connect Freighter to create invoices and receive payments to your wallet.
-                </p>
-                <WalletConnect />
-              </div>
+          <motion.div
+            className="mt-10 flex flex-wrap items-center gap-4"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {connected ? (
+              <button type="button" onClick={scrollToCreate} className="btn btn-primary px-7 py-3">
+                Create invoice
+              </button>
             ) : (
-              <div className="card">
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6 flex items-center gap-3">
-                  <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center">
-                    <WalletIcon className="w-5 h-5 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-green-800">Wallet Connected</p>
-                    <p className="text-xs text-green-600 font-mono truncate">{publicKey?.substring(0, 16)}...{publicKey?.substring(publicKey.length - 10)}</p>
-                  </div>
-                </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                  Create Invoice
-                </h3>
-                <p className="text-gray-600 mb-6 text-sm">
-                  Enter the amount and optional client details. Payment goes directly to your wallet.
-                </p>
-                <InvoiceForm onSuccess={handleInvoiceCreated} userWallet={publicKey || undefined} />
-              </div>
+              <WalletConnect />
             )}
+            <Link href="/dashboard" className="btn btn-outline px-7 py-3">
+              Dashboard
+            </Link>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* How it works — editorial, no cards */}
+      <section className="border-t border-[var(--line)] bg-white">
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-20 sm:py-28">
+          <motion.h2
+            className="font-display text-3xl sm:text-4xl text-[var(--ink)] mb-14"
+            initial={{ opacity: 0, y: 10 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: '-80px' }}
+            transition={{ duration: 0.5 }}
+          >
+            How it works
+          </motion.h2>
+          <ol className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-10">
+            {[
+              {
+                n: '01',
+                title: 'Create',
+                body: 'Connect Freighter and issue an invoice. Share the link or QR with your client.',
+              },
+              {
+                n: '02',
+                title: 'Get paid',
+                body: 'They pay on Stellar. We match memo, amount, and destination on Horizon.',
+              },
+              {
+                n: '03',
+                title: 'Keep proof',
+                body: 'Download your quittance as PDF, or email it when a client address is set.',
+              },
+            ].map((step, i) => (
+              <motion.li
+                key={step.n}
+                className="border-t border-[var(--ink)] pt-6"
+                initial={{ opacity: 0, y: 12 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: '-60px' }}
+                transition={{ duration: 0.45, delay: i * 0.08 }}
+              >
+                <span className="text-xs tracking-[0.2em] text-[var(--teal)] font-medium">
+                  {step.n}
+                </span>
+                <h3 className="mt-3 font-display text-2xl text-[var(--ink)]">{step.title}</h3>
+                <p className="mt-3 text-[var(--muted)] leading-relaxed text-[15px]">{step.body}</p>
+              </motion.li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      {/* Create — interaction surface */}
+      <section id="create" className="border-t border-[var(--line)] bg-[var(--paper)]">
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-20 sm:py-28">
+          <div className="mb-12 max-w-xl">
+            <h2 className="font-display text-3xl sm:text-4xl text-[var(--ink)]">Create an invoice</h2>
+            <p className="mt-3 text-[var(--muted)]">
+              Payments go to your connected wallet. Client email is optional — only for sending the link.
+            </p>
           </div>
 
-          <div>
-            {createdInvoice ? (
-              <div className="card">
-                <div className="text-center mb-6">
-                  <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                    <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                    </svg>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-start">
+            <div className="card">
+              {!connected ? (
+                <div className="py-8 text-center">
+                  <p className="font-display text-2xl text-[var(--ink)] mb-3">Connect Freighter</p>
+                  <p className="text-[var(--muted)] text-sm mb-8 max-w-sm mx-auto">
+                    Your wallet is your identity. No Google account required.
+                  </p>
+                  <div className="flex justify-center">
+                    <WalletConnect />
                   </div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Invoice created</h3>
-                  <p className="text-gray-600 text-sm">Share the link or QR code with your client</p>
                 </div>
-                
-                <div className="mb-6 flex justify-center">
-                  <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+              ) : (
+                <>
+                  <p className="text-xs text-[var(--muted)] mb-1">Receiving to</p>
+                  <p className="font-mono text-xs text-[var(--ink)] mb-6 break-all">{publicKey}</p>
+                  <InvoiceForm onSuccess={handleInvoiceCreated} userWallet={publicKey || undefined} />
+                </>
+              )}
+            </div>
+
+            <div>
+              {createdInvoice ? (
+                <div className="card space-y-5">
+                  <div>
+                    <p className="text-xs tracking-wide text-[var(--teal)] font-medium uppercase">
+                      Ready to share
+                    </p>
+                    <h3 className="font-display text-2xl mt-1">Invoice created</h3>
+                  </div>
+
+                  <div className="flex justify-center py-4 bg-[var(--paper)] rounded-md border border-[var(--line)]">
                     <QRCodeDisplay
                       value={createdInvoice.paymentUrl}
-                      title="Scan to Pay"
-                      size={200}
+                      title="Scan to pay"
+                      size={180}
                     />
                   </div>
-                </div>
 
-                <div className="space-y-3">
-                  <div className="bg-cyan-50 border border-cyan-200 p-4 rounded-lg">
-                    <p className="text-xs text-gray-600 mb-2 font-semibold">Invoice Amount</p>
-                    <div className="flex items-center gap-3">
-                      <AssetLogo code={createdInvoice.invoice.assetCode} size={32} showName={false} />
-                      <p className="font-bold text-3xl text-gray-900">
-                        {createdInvoice.invoice.amount}
-                      </p>
-                      <span className="font-semibold text-lg text-cyan-600">
-                        {createdInvoice.invoice.assetCode}
-                      </span>
-                    </div>
+                  <div className="flex items-baseline gap-3">
+                    <AssetLogo code={createdInvoice.invoice.assetCode} size={28} showName={false} />
+                    <span className="font-display text-4xl">
+                      {createdInvoice.invoice.amount}
+                    </span>
+                    <span className="text-[var(--teal)] font-medium">
+                      {createdInvoice.invoice.assetCode}
+                    </span>
                   </div>
 
                   {createdInvoice.invoice.description && (
-                    <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg">
-                      <p className="text-xs text-gray-600 mb-1 font-semibold">Description</p>
-                      <p className="text-sm text-gray-800">{createdInvoice.invoice.description}</p>
-                    </div>
+                    <p className="text-sm text-[var(--muted)]">{createdInvoice.invoice.description}</p>
                   )}
 
                   {(createdInvoice.invoice.customerName || createdInvoice.invoice.customerEmail) && (
-                    <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg space-y-2">
+                    <div className="text-sm space-y-1 border-t border-[var(--line)] pt-4">
                       {createdInvoice.invoice.customerName && (
-                        <div>
-                          <p className="text-xs text-gray-600 font-semibold">Client</p>
-                          <p className="text-sm text-gray-900">{createdInvoice.invoice.customerName}</p>
-                        </div>
+                        <p>
+                          <span className="text-[var(--muted)]">Client · </span>
+                          {createdInvoice.invoice.customerName}
+                        </p>
                       )}
                       {createdInvoice.invoice.customerEmail && (
-                        <div>
-                          <p className="text-xs text-gray-600 font-semibold">Email</p>
-                          <p className="text-sm text-gray-900">{createdInvoice.invoice.customerEmail}</p>
-                        </div>
+                        <p>
+                          <span className="text-[var(--muted)]">Email · </span>
+                          {createdInvoice.invoice.customerEmail}
+                        </p>
                       )}
                     </div>
                   )}
 
-                  <div className="bg-gray-800 p-4 rounded-lg">
-                    <p className="text-xs text-gray-400 mb-2 font-semibold">Payment URL</p>
-                    <p className="font-mono text-xs break-all text-gray-200">{createdInvoice.paymentUrl}</p>
-                  </div>
+                  <p className="font-mono text-[11px] break-all text-[var(--muted)] bg-[var(--ink)] text-white/90 p-3 rounded-md">
+                    {createdInvoice.paymentUrl}
+                  </p>
 
-                  <div className="flex gap-2 pt-2 flex-wrap">
+                  <div className="flex flex-wrap gap-2">
                     <button
+                      type="button"
                       onClick={async () => {
                         await navigator.clipboard.writeText(createdInvoice.paymentUrl);
-                        toast.success('Link copied to clipboard');
+                        toast.success('Link copied');
                       }}
                       className="btn btn-primary flex-1"
                     >
-                      Copy Link
+                      Copy link
                     </button>
                     {createdInvoice.invoice.customerEmail && (
                       <button
+                        type="button"
                         onClick={() => {
                           shareInvoiceByEmail(createdInvoice.invoice);
-                          toast.success('Opening email client');
+                          toast.success('Opening email');
                         }}
-                        className="btn btn-secondary flex items-center justify-center gap-2 px-4"
+                        className="btn btn-secondary"
                       >
                         <Mail className="w-4 h-4" />
-                        Send invoice
+                        Send
                       </button>
                     )}
                     <button
+                      type="button"
                       onClick={() => setCreatedInvoice(null)}
-                      className="btn btn-secondary px-6"
+                      className="btn btn-outline"
                     >
                       New
                     </button>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="card text-center py-16">
-                <div className="w-20 h-20 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                  <QrCode className="w-10 h-10 text-gray-400" />
+              ) : (
+                <div className="border border-dashed border-[var(--line)] rounded-lg p-10 text-center min-h-[280px] flex flex-col items-center justify-center">
+                  <p className="font-display text-xl text-[var(--ink)]">Payment link appears here</p>
+                  <p className="mt-2 text-sm text-[var(--muted)] max-w-xs">
+                    After you create an invoice, the QR and URL show up for sharing.
+                  </p>
                 </div>
-                <h3 className="text-xl font-bold text-gray-700 mb-2">
-                  Your invoice will appear here
-                </h3>
-                <p className="text-gray-600 text-sm max-w-md mx-auto">
-                  Connect your wallet and create an invoice to get a shareable payment link and QR code
-                </p>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </section>
 
-      </div>
-
-      <footer className="relative z-10 border-t border-gray-200 bg-gray-50 mt-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <Image
-                  src="/Quittance.jpg"
-                  alt="Quittance Logo"
-                  width={40}
-                  height={40}
-                  className="w-10 h-10 object-contain"
-                />
-                <span className="text-xl font-bold text-gray-900">Quittance</span>
-              </div>
-              <p className="text-gray-600 text-sm">
-                Stellar invoices with downloadable payment proof.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-4">Product</h4>
-              <ul className="space-y-2 text-sm text-gray-600">
-                <li><Link href="/" className="hover:text-cyan-600 transition-colors">Home</Link></li>
-                <li><Link href="/dashboard" className="hover:text-cyan-600 transition-colors">Dashboard</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-4">Network</h4>
-              <ul className="space-y-2 text-sm text-gray-600">
-                <li><a href="https://www.stellar.org" target="_blank" rel="noopener noreferrer" className="hover:text-cyan-600 transition-colors">Stellar.org</a></li>
-                <li><a href="https://stellar.expert" target="_blank" rel="noopener noreferrer" className="hover:text-cyan-600 transition-colors">Block Explorer</a></li>
-              </ul>
-            </div>
-          </div>
-          <div className="border-t border-gray-200 pt-8 text-center">
-            <p className="text-gray-600 text-sm">
-              © {new Date().getFullYear()} Quittance. Powered by Stellar Network. All rights reserved.
+      <footer className="border-t border-[var(--line)] bg-white">
+        <div className="max-w-6xl mx-auto px-5 sm:px-8 py-12 flex flex-col sm:flex-row sm:items-end justify-between gap-8">
+          <div>
+            <p className="font-display text-2xl">Quittance</p>
+            <p className="mt-2 text-sm text-[var(--muted)] max-w-xs">
+              Stellar invoices with downloadable payment proof.
             </p>
           </div>
+          <div className="flex flex-wrap gap-6 text-sm text-[var(--muted)]">
+            <Link href="/dashboard" className="hover:text-[var(--ink)]">
+              Dashboard
+            </Link>
+            <a href="https://www.stellar.org" target="_blank" rel="noopener noreferrer" className="hover:text-[var(--ink)]">
+              Stellar
+            </a>
+            <a href="https://stellar.expert/explorer/testnet" target="_blank" rel="noopener noreferrer" className="hover:text-[var(--ink)]">
+              Explorer
+            </a>
+          </div>
+        </div>
+        <div className="border-t border-[var(--line)]">
+          <p className="max-w-6xl mx-auto px-5 sm:px-8 py-4 text-xs text-[var(--muted)]">
+            © {new Date().getFullYear()} Quittance
+          </p>
         </div>
       </footer>
     </div>
   );
 }
-
-

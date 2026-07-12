@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Image from 'next/image';
 import { invoiceApi } from '@/lib/api';
 import InvoiceCard from '@/components/InvoiceCard';
 import WalletConnect from '@/components/WalletConnect';
@@ -95,25 +94,14 @@ export default function DashboardPage() {
       <div className="accent-blob accent-blob-2"></div>
       <header className="fixed top-0 left-0 right-0 z-50 premium-header border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <Image
-              src="/Quittance.jpg"
-              alt="Quittance Logo"
-              width={40}
-              height={40}
-              className="w-10 h-10 object-contain"
-              priority
-            />
-            <h1 className="text-2xl font-bold text-gray-900 hidden sm:block">
-              Dashboard
-            </h1>
+          <Link href="/" className="font-display text-xl tracking-tight text-[var(--ink)] hover:opacity-80 transition-opacity">
+            Quittance
           </Link>
           <div className="flex items-center gap-3">
             {!connected ? (
               <WalletConnect />
             ) : (
               <UserProfile userWallet={publicKey} onDisconnect={() => {
-                // Disconnect wallet logic
                 window.location.reload();
               }} />
             )}

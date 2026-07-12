@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Image from 'next/image';
 import Link from 'next/link';
 import { invoiceApi } from '@/lib/api';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
@@ -108,16 +107,8 @@ export default function InvoiceDetailPage() {
                 <ArrowLeft className="w-5 h-5" />
                 <span className="hidden sm:inline">Back</span>
               </button>
-              <Link href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
-                <Image
-                  src="/Quittance.jpg"
-                  alt="Quittance Logo"
-                  width={40}
-                  height={40}
-                  className="w-10 h-10 object-contain"
-                  priority
-                />
-                <span className="text-xl font-bold text-gray-900 hidden sm:inline">Quittance</span>
+              <Link href="/" className="hover:opacity-90 transition-opacity">
+                <span className="font-display text-xl tracking-tight text-[var(--ink)]">Quittance</span>
               </Link>
             </div>
 

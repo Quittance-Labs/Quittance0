@@ -1,24 +1,20 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Instrument_Serif } from 'next/font/google';
+import { GeistSans } from 'geist/font/sans';
 import { Toaster } from 'sonner';
 import './globals.css';
 
-const inter = Inter({ subsets: ['latin'] });
+const instrumentSerif = Instrument_Serif({
+  weight: '400',
+  subsets: ['latin'],
+  variable: '--font-display',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
-  title: 'Quittance — Crypto invoices you can prove',
+  title: 'Quittance — Invoice on Stellar. Keep the proof.',
   description:
-    'Create Stellar invoices, get paid on-chain, and download or email your own payment proof — without exposing anyone else’s wallet history.',
-  keywords: [
-    'stellar',
-    'crypto invoice',
-    'quittance',
-    'payment proof',
-    'xlm',
-    'usdc',
-    'freelancer invoicing',
-    'qr code',
-  ],
+    'Create Stellar invoices, get paid on-chain, and download or email your payment proof — without exposing anyone else’s wallet history.',
 };
 
 export default function RootLayout({
@@ -27,12 +23,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
+    <html lang="en" className={`${GeistSans.variable} ${instrumentSerif.variable}`}>
+      <body className={`${GeistSans.className} antialiased`}>
         <Toaster position="top-right" richColors />
         {children}
       </body>
     </html>
   );
 }
-
