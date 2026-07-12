@@ -6,23 +6,19 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { invoiceApi } from '@/lib/api';
 import PaymentButton from '@/components/PaymentButton';
-import PaymentStatus from '@/components/PaymentStatus';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
 import AssetLogo from '@/components/AssetLogo';
 import { formatAmount, formatDate, getTimeRemaining, copyToClipboard } from '@/lib/utils';
-import { Copy, ExternalLink, Loader2, Check, FileText, Mail, RefreshCw } from 'lucide-react';
+import { Copy, ExternalLink, Loader2, Check, FileText, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
-import { useAuth } from '@/lib/auth';
-import GoogleLogin from '@/components/GoogleLogin';
 
 export default function PaymentPage() {
   const params = useParams();
   const id = params.id as string;
-  const { user: googleUser } = useAuth();
 
   const [invoice, setInvoice] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -96,28 +92,12 @@ export default function PaymentPage() {
   };
 
   const handleEmailShare = () => {
-    if (invoice) {
-      shareInvoiceByEmail(invoice as any);
+    if (!invoice) return;
+    if (!invoice.customerEmail) {
+      toast.error('No client email on this invoice');
+      return;
     }
-  };
-
-  const handleManualSync = async () => {
-    try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/payment/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 50 })
-      });
-      const result = await response.json();
-      if (result.success) {
-        toast.success('Payment sync completed');
-        await loadInvoice();
-      } else {
-        toast.error('Sync failed');
-      }
-    } catch (error) {
-      toast.error('Sync failed');
-    }
+    shareInvoiceByEmail(invoice as any);
   };
 
   if (loading) {
@@ -251,14 +231,6 @@ export default function PaymentPage() {
                 </div>
               )}
 
-              {googleUser && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-                  <p className="text-sm text-green-600 font-semibold">Paying as</p>
-                  <p className="text-lg font-bold text-green-800">{googleUser.name}</p>
-                  <p className="text-sm text-green-600">{googleUser.email}</p>
-                </div>
-              )}
-
               <div className="border-b pb-4">
                 <p className="text-sm text-gray-600 mb-1">Status</p>
                 <div className="inline-flex items-center gap-2 mt-1">
@@ -387,7 +359,7 @@ export default function PaymentPage() {
                   </svg>
                 </div>
                 <h3 className="text-2xl font-bold text-red-700 mb-2">Payment Expired</h3>
-                <p className="text-gray-600">This payment link has expired</p>
+                <p className="text-gray-600">This invoice has expired</p>
               </div>
             )}
 
@@ -407,97 +379,32 @@ export default function PaymentPage() {
 
                 <div className="card">
                   <h3 className="text-xl font-semibold text-center mb-4">Pay with Wallet</h3>
-                  
-                  {!googleUser ? (
-                    <div className="text-center py-8">
-                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-                        <p className="text-sm text-yellow-800 font-semibold mb-2">Sign in Required</p>
-                        <p className="text-sm text-yellow-700">Please sign in with Google to make a payment</p>
-                      </div>
-                      <GoogleLogin />
-                    </div>
-                  ) : (
-                    <>
 
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                        <p className="text-sm text-blue-800 font-semibold mb-2">How to Pay:</p>
-                        <ol className="text-sm text-blue-700 space-y-1.5 list-decimal list-inside">
-                          <li>Connect your Freighter wallet</li>
-                          <li>Click the Pay with Freighter button</li>
-                          <li>Confirm the transaction</li>
-                        </ol>
-                      </div>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                    <p className="text-sm text-blue-800 font-semibold mb-2">How to Pay:</p>
+                    <ol className="text-sm text-blue-700 space-y-1.5 list-decimal list-inside">
+                      <li>Connect your Freighter wallet</li>
+                      <li>Click Pay with Freighter</li>
+                      <li>Confirm the transaction</li>
+                    </ol>
+                  </div>
 
-                      <div className="flex justify-center mb-4">
-                        <WalletConnect />
-                      </div>
+                  <div className="flex justify-center mb-4">
+                    <WalletConnect onConnect={setUserWallet} />
+                  </div>
 
-                      <PaymentButton
-                        destination={invoice.sellerPublicKey}
-                        amount={invoice.amount.toString()}
-                        memo={invoice.memo}
-                        assetCode={invoice.assetCode}
-                        assetIssuer={invoice.assetIssuer}
-                        invoiceId={invoice.id}
-                        payerName={googleUser?.name}
-                        payerEmail={googleUser?.email}
-                        onSuccess={handlePaymentSuccess}
-                      />
-                      
-                      <div className="mt-6 pt-4 border-t text-center">
-                        <p className="text-xs text-gray-500">Secure payment on Stellar blockchain</p>
-                      </div>
-                    </>
-                  )}
-                </div>
+                  <PaymentButton
+                    destination={invoice.sellerPublicKey}
+                    amount={invoice.amount.toString()}
+                    memo={invoice.memo}
+                    assetCode={invoice.assetCode}
+                    assetIssuer={invoice.assetIssuer}
+                    invoiceId={invoice.id}
+                    onSuccess={handlePaymentSuccess}
+                  />
 
-                <div className="card bg-yellow-50 border-yellow-300">
-                  <h3 className="text-sm font-semibold text-center mb-3 text-yellow-800">Test Mode</h3>
-                  <p className="text-xs text-yellow-700 mb-4 text-center">
-                    Simulate a payment without using a real wallet (for testing only)
-                  </p>
-                  <div className="space-y-2">
-                    <button
-                      onClick={async () => {
-                        try {
-                          setLoading(true);
-                          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/invoices/${id}/simulate-payment`, {
-                            method: 'POST',
-                          });
-                          const result = await response.json();
-                          
-                          if (result.success) {
-                            toast.success('Test payment successful');
-                            await loadInvoice();
-                            setPolling(false);
-                          } else {
-                            toast.error(result.error || 'Failed to simulate');
-                          }
-                        } catch (error: any) {
-                          toast.error('Failed to simulate');
-                        } finally {
-                          setLoading(false);
-                        }
-                      }}
-                      disabled={loading}
-                      className="btn btn-secondary w-full flex items-center justify-center gap-2"
-                    >
-                      {loading ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Simulating...
-                        </>
-                      ) : (
-                        'Simulate Payment'
-                      )}
-                    </button>
-                    <button
-                      onClick={handleManualSync}
-                      className="btn btn-outline w-full flex items-center justify-center gap-2"
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                      Sync Payments
-                    </button>
+                  <div className="mt-6 pt-4 border-t text-center">
+                    <p className="text-xs text-gray-500">Secure payment on Stellar blockchain</p>
                   </div>
                 </div>
               </>

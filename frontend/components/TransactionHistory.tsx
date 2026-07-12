@@ -73,6 +73,7 @@ export default function TransactionHistory({ publicKey, limit = 20 }: Transactio
 
       for (const payment of payments.records) {
         if (payment.type === 'payment' || payment.type === 'create_account') {
+          const op = payment as any;
           // Get transaction to fetch memo
           const transaction = await server
             .transactions()
@@ -82,15 +83,15 @@ export default function TransactionHistory({ publicKey, limit = 20 }: Transactio
           const tx: Transaction = {
             id: payment.id,
             hash: payment.transaction_hash,
-            type: payment.to === publicKey ? 'received' : 'sent',
-            from: payment.from || payment.funder || '',
-            to: payment.to || payment.account || '',
-            amount: payment.amount || payment.starting_balance || '0',
-            assetCode: payment.asset_type === 'native' ? 'XLM' : payment.asset_code || 'XLM',
-            assetIssuer: payment.asset_issuer,
+            type: op.to === publicKey ? 'received' : 'sent',
+            from: op.from || op.funder || '',
+            to: op.to || op.account || '',
+            amount: op.amount || op.starting_balance || '0',
+            assetCode: op.asset_type === 'native' ? 'XLM' : op.asset_code || 'XLM',
+            assetIssuer: op.asset_issuer,
             memo: transaction.memo || undefined,
             createdAt: payment.created_at,
-            ledger: payment.ledger_attr || 0,
+            ledger: op.ledger_attr || 0,
           };
 
           txs.push(tx);
@@ -283,7 +284,7 @@ export default function TransactionHistory({ publicKey, limit = 20 }: Transactio
                       {tx.type === 'received' ? '+' : '-'}
                       {parseFloat(tx.amount).toFixed(2)}
                     </span>
-                    <AssetLogo assetCode={tx.assetCode} className="w-5 h-5" />
+                    <AssetLogo code={tx.assetCode} size={20} showName={false} />
                   </div>
                   <span className="text-xs text-gray-500">{tx.assetCode}</span>
                 </div>

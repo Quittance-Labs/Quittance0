@@ -1,24 +1,21 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import InvoiceForm from '@/components/InvoiceForm';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
-import GoogleLogin from '@/components/GoogleLogin';
 import AssetLogo from '@/components/AssetLogo';
 import { useWalletStore } from '@/lib/store';
-import { useAuth } from '@/lib/auth';
-import { FileText, Zap, Shield, QrCode, Wallet as WalletIcon } from 'lucide-react';
+import { Zap, Shield, QrCode, Wallet as WalletIcon, Mail } from 'lucide-react';
 import { toast } from 'sonner';
+import { shareInvoiceByEmail } from '@/lib/export';
 
 export default function HomePage() {
   const [createdInvoice, setCreatedInvoice] = useState<any>(null);
   const { publicKey, connected } = useWalletStore();
-  const { user: googleUser } = useAuth();
-
 
   const handleInvoiceCreated = (result: any) => setCreatedInvoice(result);
   const handleWalletDisconnected = () => setCreatedInvoice(null);
@@ -55,7 +52,6 @@ export default function HomePage() {
             </h1>
           </Link>
           <div className="flex items-center gap-3">
-            {!googleUser && <GoogleLogin className="!w-auto px-4 py-2 text-sm" />}
             {!connected ? (
               <WalletConnect />
             ) : (
@@ -72,31 +68,31 @@ export default function HomePage() {
             <span className="text-cyan-700 text-sm font-semibold">Powered by Stellar Network</span>
           </div>
           <h2 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 mb-6 leading-tight max-w-4xl mx-auto">
-            Accept Crypto Payments
+            Invoice on Stellar.
             <br />
-            <span className="text-cyan-500">in Seconds</span>
+            <span className="text-cyan-500">Keep the proof.</span>
           </h2>
           <p className="text-lg sm:text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed mb-10">
-            Generate instant payment links with QR codes. Accept XLM, USDC, and USDT payments on Stellar blockchain with automatic verification.
+            Create an invoice, get paid via link or QR, verify on-chain by memo and amount, then download or email payment proof.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-4">
             <span className="flex items-center gap-2 text-sm text-gray-600">
               <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
-              No Registration Required
+              Wallet-only identity
             </span>
             <span className="flex items-center gap-2 text-sm text-gray-600">
               <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
-              Instant Settlement
+              On-chain verification
             </span>
             <span className="flex items-center gap-2 text-sm text-gray-600">
               <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
-              Low Fees
+              Downloadable proof
             </span>
           </div>
         </div>
@@ -105,19 +101,19 @@ export default function HomePage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
             <div className="text-center">
               <div className="text-3xl sm:text-4xl font-bold text-white mb-2">&lt; 3s</div>
-              <div className="text-cyan-100 text-sm font-medium">Payment Creation</div>
+              <div className="text-cyan-100 text-sm font-medium">Invoice creation</div>
             </div>
             <div className="text-center">
               <div className="text-3xl sm:text-4xl font-bold text-white mb-2">0.00001</div>
-              <div className="text-cyan-100 text-sm font-medium">XLM Fee</div>
+              <div className="text-cyan-100 text-sm font-medium">XLM fee</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl sm:text-4xl font-bold text-white mb-2">24/7</div>
-              <div className="text-cyan-100 text-sm font-medium">Availability</div>
+              <div className="text-3xl sm:text-4xl font-bold text-white mb-2">Memo</div>
+              <div className="text-cyan-100 text-sm font-medium">Matched verify</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl sm:text-4xl font-bold text-white mb-2">100%</div>
-              <div className="text-cyan-100 text-sm font-medium">Decentralized</div>
+              <div className="text-3xl sm:text-4xl font-bold text-white mb-2">PDF</div>
+              <div className="text-cyan-100 text-sm font-medium">Payment proof</div>
             </div>
           </div>
         </div>
@@ -127,9 +123,9 @@ export default function HomePage() {
             <div className="w-14 h-14 bg-cyan-100 rounded-xl flex items-center justify-center mx-auto mb-4">
               <Zap className="w-7 h-7 text-cyan-600" />
             </div>
-            <h3 className="text-xl font-bold mb-3 text-gray-900">Instant Links</h3>
+            <h3 className="text-xl font-bold mb-3 text-gray-900">Create invoices</h3>
             <p className="text-gray-600 leading-relaxed">
-              Create payment links instantly with your connected wallet. No registration or approval process required.
+              Connect Freighter and issue an invoice in seconds. Share the link or QR with your client.
             </p>
           </div>
 
@@ -137,9 +133,9 @@ export default function HomePage() {
             <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center mx-auto mb-4">
               <QrCode className="w-7 h-7 text-blue-600" />
             </div>
-            <h3 className="text-xl font-bold mb-3 text-gray-900">QR Code Payments</h3>
+            <h3 className="text-xl font-bold mb-3 text-gray-900">Get paid on Stellar</h3>
             <p className="text-gray-600 leading-relaxed">
-              Scan QR code to pay instantly from any Stellar wallet. Perfect for in-person and online payments.
+              Clients pay with Freighter, QR, or any Stellar wallet. XLM and USDC supported.
             </p>
           </div>
 
@@ -147,17 +143,17 @@ export default function HomePage() {
             <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center mx-auto mb-4">
               <Shield className="w-7 h-7 text-green-600" />
             </div>
-            <h3 className="text-xl font-bold mb-3 text-gray-900">Auto Verification</h3>
+            <h3 className="text-xl font-bold mb-3 text-gray-900">Keep the proof</h3>
             <p className="text-gray-600 leading-relaxed">
-              Payments verified automatically on the blockchain. Real-time confirmation with zero fraud risk.
+              Payments are verified on-chain by memo and amount. Download or email your quittance.
             </p>
           </div>
         </div>
 
         <div className="bg-gray-50 rounded-2xl p-8 sm:p-12 mb-20">
-          <h3 className="text-3xl font-bold text-gray-900 text-center mb-4">Start Accepting Crypto Payments Today</h3>
+          <h3 className="text-3xl font-bold text-gray-900 text-center mb-4">Start invoicing on Stellar</h3>
           <p className="text-gray-600 text-center mb-8 max-w-2xl mx-auto">
-            Join thousands of users who trust Quittance for fast, secure, and decentralized crypto payments on the Stellar network.
+            Connect your wallet to create invoices and collect payment proof for your clients.
           </p>
           {!connected && (
             <div className="flex justify-center">
@@ -177,7 +173,7 @@ export default function HomePage() {
                   Connect Your Wallet
                 </h3>
                 <p className="text-gray-600 mb-8 text-base leading-relaxed max-w-md mx-auto">
-                  Connect your Stellar wallet to create payment links and start receiving payments.
+                  Connect Freighter to create invoices and receive payments to your wallet.
                 </p>
                 <WalletConnect />
               </div>
@@ -193,10 +189,10 @@ export default function HomePage() {
                   </div>
                 </div>
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                  Create Payment Link
+                  Create Invoice
                 </h3>
                 <p className="text-gray-600 mb-6 text-sm">
-                  Enter the amount you want to receive. Payments will be sent directly to your wallet.
+                  Enter the amount and optional client details. Payment goes directly to your wallet.
                 </p>
                 <InvoiceForm onSuccess={handleInvoiceCreated} userWallet={publicKey || undefined} />
               </div>
@@ -212,8 +208,8 @@ export default function HomePage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                     </svg>
                   </div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Link Created</h3>
-                  <p className="text-gray-600 text-sm">Share this link or QR code</p>
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">Invoice created</h3>
+                  <p className="text-gray-600 text-sm">Share the link or QR code with your client</p>
                 </div>
                 
                 <div className="mb-6 flex justify-center">
@@ -228,7 +224,7 @@ export default function HomePage() {
 
                 <div className="space-y-3">
                   <div className="bg-cyan-50 border border-cyan-200 p-4 rounded-lg">
-                    <p className="text-xs text-gray-600 mb-2 font-semibold">Payment Amount</p>
+                    <p className="text-xs text-gray-600 mb-2 font-semibold">Invoice Amount</p>
                     <div className="flex items-center gap-3">
                       <AssetLogo code={createdInvoice.invoice.assetCode} size={32} showName={false} />
                       <p className="font-bold text-3xl text-gray-900">
@@ -251,7 +247,7 @@ export default function HomePage() {
                     <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg space-y-2">
                       {createdInvoice.invoice.customerName && (
                         <div>
-                          <p className="text-xs text-gray-600 font-semibold">Customer</p>
+                          <p className="text-xs text-gray-600 font-semibold">Client</p>
                           <p className="text-sm text-gray-900">{createdInvoice.invoice.customerName}</p>
                         </div>
                       )}
@@ -265,20 +261,32 @@ export default function HomePage() {
                   )}
 
                   <div className="bg-gray-800 p-4 rounded-lg">
-                    <p className="text-xs text-gray-400 mb-2 font-semibold">Payment Link</p>
+                    <p className="text-xs text-gray-400 mb-2 font-semibold">Payment URL</p>
                     <p className="font-mono text-xs break-all text-gray-200">{createdInvoice.paymentUrl}</p>
                   </div>
 
-                  <div className="flex gap-2 pt-2">
+                  <div className="flex gap-2 pt-2 flex-wrap">
                     <button
                       onClick={async () => {
                         await navigator.clipboard.writeText(createdInvoice.paymentUrl);
-                        toast.success('Link copied to clipboard!');
+                        toast.success('Link copied to clipboard');
                       }}
                       className="btn btn-primary flex-1"
                     >
                       Copy Link
                     </button>
+                    {createdInvoice.invoice.customerEmail && (
+                      <button
+                        onClick={() => {
+                          shareInvoiceByEmail(createdInvoice.invoice);
+                          toast.success('Opening email client');
+                        }}
+                        className="btn btn-secondary flex items-center justify-center gap-2 px-4"
+                      >
+                        <Mail className="w-4 h-4" />
+                        Send invoice
+                      </button>
+                    )}
                     <button
                       onClick={() => setCreatedInvoice(null)}
                       className="btn btn-secondary px-6"
@@ -294,10 +302,10 @@ export default function HomePage() {
                   <QrCode className="w-10 h-10 text-gray-400" />
                 </div>
                 <h3 className="text-xl font-bold text-gray-700 mb-2">
-                  Your Payment Link Will Appear Here
+                  Your invoice will appear here
                 </h3>
                 <p className="text-gray-600 text-sm max-w-md mx-auto">
-                  Connect your wallet and create a payment link to get started
+                  Connect your wallet and create an invoice to get a shareable payment link and QR code
                 </p>
               </div>
             )}
@@ -322,7 +330,7 @@ export default function HomePage() {
                 <span className="text-xl font-bold text-gray-900">Quittance</span>
               </div>
               <p className="text-gray-600 text-sm">
-                Fast, secure, and decentralized crypto payment links on the Stellar network.
+                Stellar invoices with downloadable payment proof.
               </p>
             </div>
             <div>

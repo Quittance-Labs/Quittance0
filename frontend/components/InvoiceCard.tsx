@@ -15,6 +15,7 @@ interface Invoice {
   assetCode: string;
   description?: string;
   customerName?: string;
+  customerEmail?: string;
   status: string;
   createdAt: string;
   expiresAt: string;
@@ -41,7 +42,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
   const handleCopyLink = async () => {
     const success = await copyToClipboard(paymentUrl);
     if (success) {
-      toast.success('Payment link copied');
+      toast.success('Invoice link copied');
     }
   };
 
@@ -131,7 +132,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
                     className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
                   >
                     <FileText className="w-4 h-4" />
-                    Download PDF
+                    Download Proof
                   </button>
                   {invoice.customerEmail && (
                     <button
@@ -139,7 +140,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
                       className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
                     >
                       <Mail className="w-4 h-4" />
-                      Email Invoice
+                      Email Proof
                     </button>
                   )}
                 </div>

@@ -70,7 +70,12 @@ class InvoiceMemoryService {
     limit: number = 50,
     offset: number = 0
   ): Promise<any[]> {
-    const invoices = memoryStorage.getAllInvoices(status ? { status } : undefined);
+    let invoices = memoryStorage.getAllInvoices(status ? { status } : undefined);
+
+    if (sellerPublicKey) {
+      invoices = invoices.filter((inv) => inv.sellerPublicKey === sellerPublicKey);
+    }
+
     return invoices.slice(offset, offset + limit);
   }
 

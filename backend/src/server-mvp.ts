@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { createInvoiceSchema } from './utils/validation';
 import invoiceService from './services/invoice-memory.service';
 import { generatePaymentQR, generateStellarPaymentQR } from './utils/qrcode';
+import stellarService from './services/stellar.service';
 
 // Load environment variables
 dotenv.config();
@@ -11,6 +12,7 @@ dotenv.config();
 const app: Application = express();
 const PORT = process.env.PORT || 3001;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+const ALLOW_SIMULATE = process.env.ALLOW_SIMULATE === 'true';
 
 // Middleware
 app.use(cors({
@@ -108,14 +110,20 @@ app.get('/api/invoices/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Get all invoices
+// Get all invoices (scoped by sellerPublicKey when provided)
 app.get('/api/invoices', async (req: Request, res: Response) => {
   try {
     const { status, limit = 50, offset = 0, sellerPublicKey } = req.query;
 
-    // Eğer seller belirtilmemişse tüm faturaları getir
+    if (!sellerPublicKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'sellerPublicKey query parameter is required',
+      });
+    }
+
     const invoices = await invoiceService.getInvoicesBySeller(
-      sellerPublicKey as string || '',
+      sellerPublicKey as string,
       status as string | undefined,
       parseInt(limit as string),
       parseInt(offset as string)
@@ -199,7 +207,7 @@ app.post('/api/invoices/:id/cancel', async (req: Request, res: Response) => {
   }
 });
 
-// Verify payment manually
+// Verify payment against Horizon (memo + amount + destination)
 app.post('/api/invoices/:id/verify', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -221,7 +229,6 @@ app.post('/api/invoices/:id/verify', async (req: Request, res: Response) => {
       });
     }
 
-    // Prevent duplicate payment
     if (invoice.status === 'PAID') {
       return res.status(400).json({
         success: false,
@@ -236,14 +243,57 @@ app.post('/api/invoices/:id/verify', async (req: Request, res: Response) => {
       });
     }
 
-    // TODO: In production, verify the payment on Stellar network
-    // For MVP, we'll accept any transaction hash
-    const updatedInvoice = await invoiceService.markAsPaid(id, txHash, 'VERIFIED_PAYER');
+    const txDetails = await stellarService.getTransaction(txHash);
+    const transaction = txDetails.transaction;
+    const paymentOp = txDetails.operations.find((op: any) => op.type === 'payment');
+
+    if (!paymentOp) {
+      return res.status(400).json({
+        success: false,
+        error: 'No payment operation found in transaction',
+      });
+    }
+
+    if (transaction.memo !== invoice.memo) {
+      return res.status(400).json({
+        success: false,
+        error: 'Memo mismatch',
+      });
+    }
+
+    if (paymentOp.to !== invoice.sellerPublicKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'Payment destination mismatch',
+      });
+    }
+
+    if (parseFloat(paymentOp.amount).toFixed(7) !== Number(invoice.amount).toFixed(7)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Amount mismatch',
+      });
+    }
+
+    const opAsset =
+      paymentOp.asset_type === 'native' ? 'XLM' : paymentOp.asset_code;
+    if (opAsset !== invoice.assetCode) {
+      return res.status(400).json({
+        success: false,
+        error: 'Asset mismatch',
+      });
+    }
+
+    const updatedInvoice = await invoiceService.markAsPaid(
+      id,
+      txHash,
+      paymentOp.from
+    );
 
     res.json({
       success: true,
       data: updatedInvoice,
-      message: '✅ Payment verified successfully!',
+      message: 'Payment verified on Stellar',
     });
   } catch (error: any) {
     console.error('Verify payment error:', error);
@@ -254,9 +304,16 @@ app.post('/api/invoices/:id/verify', async (req: Request, res: Response) => {
   }
 });
 
-// Simulate payment (MVP için manuel ödeme simülasyonu)
+// Simulate payment — only when ALLOW_SIMULATE=true (local testing)
 app.post('/api/invoices/:id/simulate-payment', async (req: Request, res: Response) => {
   try {
+    if (!ALLOW_SIMULATE) {
+      return res.status(404).json({
+        success: false,
+        error: 'Endpoint not found',
+      });
+    }
+
     const { id } = req.params;
     const invoice = await invoiceService.getInvoiceById(id);
 
@@ -267,7 +324,6 @@ app.post('/api/invoices/:id/simulate-payment', async (req: Request, res: Respons
       });
     }
 
-    // Prevent duplicate payment
     if (invoice.status === 'PAID') {
       return res.status(400).json({
         success: false,
@@ -282,7 +338,6 @@ app.post('/api/invoices/:id/simulate-payment', async (req: Request, res: Respons
       });
     }
 
-    // Simulate payment
     const mockTxHash = `MOCK_TX_${Date.now().toString(36).toUpperCase()}_${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
     const mockPayerKey = 'GXXXSIMULATEDPAYERXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
 
@@ -291,7 +346,7 @@ app.post('/api/invoices/:id/simulate-payment', async (req: Request, res: Respons
     res.json({
       success: true,
       data: updatedInvoice,
-      message: '✅ Payment simulated successfully!',
+      message: 'Payment simulated successfully',
     });
   } catch (error: any) {
     console.error('Simulate payment error:', error);
@@ -302,11 +357,19 @@ app.post('/api/invoices/:id/simulate-payment', async (req: Request, res: Respons
   }
 });
 
-// Get stats
+// Get stats (scoped to seller)
 app.get('/api/invoices/stats', async (req: Request, res: Response) => {
   try {
     const { sellerPublicKey } = req.query;
-    const stats = await invoiceService.getInvoiceStats(sellerPublicKey as string || '');
+
+    if (!sellerPublicKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'sellerPublicKey query parameter is required',
+      });
+    }
+
+    const stats = await invoiceService.getInvoiceStats(sellerPublicKey as string);
 
     res.json({
       success: true,

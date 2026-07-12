@@ -1,12 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { invoiceApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { STELLAR_ASSETS, getAssetByCode } from '@/lib/assets';
 import AssetLogo from './AssetLogo';
-import { useAuth } from '@/lib/auth';
 
 interface InvoiceFormProps {
   onSuccess?: (invoice: any) => void;
@@ -14,23 +13,12 @@ interface InvoiceFormProps {
 }
 
 export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps) {
-  const { user: googleUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState('');
   const [assetCode, setAssetCode] = useState('XLM');
   const [description, setDescription] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
-
-  // Auto-fill seller and customer info from Google user
-  useEffect(() => {
-    if (googleUser) {
-      // Both seller and customer info are automatically filled from Google user
-      setCustomerName(googleUser.name);
-      setCustomerEmail(googleUser.email);
-      console.log('Google user loaded:', googleUser);
-    }
-  }, [googleUser]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,13 +28,13 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       return;
     }
 
-    if (!googleUser) {
-      toast.error('Please sign in with Google first');
+    if (!amount || parseFloat(amount) <= 0) {
+      toast.error('Enter a valid amount');
       return;
     }
 
-    if (!amount || parseFloat(amount) <= 0) {
-      toast.error('Enter a valid amount');
+    if (customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
+      toast.error('Enter a valid client email');
       return;
     }
 
@@ -59,23 +47,20 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
         assetIssuer: selectedAsset?.issuer,
         expiresInDays: 7,
         sellerPublicKey: userWallet,
-        sellerName: googleUser.name,
-        sellerEmail: googleUser.email,
         description: description || undefined,
-        customerName: customerName || undefined,
-        customerEmail: customerEmail || undefined,
+        customerName: customerName.trim() || undefined,
+        customerEmail: customerEmail.trim() || undefined,
       });
 
-      toast.success('Payment link created');
+      toast.success('Invoice created');
       onSuccess?.(result.data);
       setAmount('');
       setAssetCode('XLM');
       setDescription('');
-      // Customer info will be auto-filled again from Google user
-      setCustomerName(googleUser.name);
-      setCustomerEmail(googleUser.email);
+      setCustomerName('');
+      setCustomerEmail('');
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to create link');
+      toast.error(error.response?.data?.error || 'Failed to create invoice');
     } finally {
       setLoading(false);
     }
@@ -84,7 +69,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="label">Payment Amount *</label>
+        <label className="label">Invoice Amount *</label>
         <div className="flex gap-3 flex-col sm:flex-row">
           <input
             type="number"
@@ -119,14 +104,39 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
         <label className="label">Description</label>
         <textarea
           className="input min-h-[80px] resize-none text-sm"
-          placeholder="What is this payment for?"
+          placeholder="What is this invoice for?"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           maxLength={500}
         />
       </div>
 
+      <div>
+        <label className="label">Client name (optional)</label>
+        <input
+          type="text"
+          className="input text-sm"
+          placeholder="Client or company name"
+          value={customerName}
+          onChange={(e) => setCustomerName(e.target.value)}
+          maxLength={255}
+        />
+      </div>
 
+      <div>
+        <label className="label">Client email (optional)</label>
+        <input
+          type="email"
+          className="input text-sm"
+          placeholder="client@example.com — for sending the invoice"
+          value={customerEmail}
+          onChange={(e) => setCustomerEmail(e.target.value)}
+          maxLength={255}
+        />
+        <p className="text-xs text-gray-500 mt-1">
+          Used only to send the invoice or payment proof. Not required to create an invoice.
+        </p>
+      </div>
 
       <button
         type="submit"
@@ -139,10 +149,9 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
             Creating...
           </>
         ) : (
-          'Create Payment Link'
+          'Create Invoice'
         )}
       </button>
     </form>
   );
 }
-

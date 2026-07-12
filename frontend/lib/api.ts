@@ -44,6 +44,7 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     status?: string;
     limit?: number;
     offset?: number;
+    sellerPublicKey?: string;
   }) => {
     const response = await api.get('/invoices', { params });
     return response.data;
@@ -67,8 +68,10 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     return response.data;
   },
 
-  getStats: async () => {
-    const response = await api.get('/invoices/stats');
+  getStats: async (sellerPublicKey?: string) => {
+    const response = await api.get('/invoices/stats', {
+      params: sellerPublicKey ? { sellerPublicKey } : undefined,
+    });
     return response.data;
   },
 };

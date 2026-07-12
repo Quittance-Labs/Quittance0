@@ -24,8 +24,14 @@ export default function DashboardPage() {
   const [viewMode, setViewMode] = useState<'invoices' | 'transactions'>('invoices');
 
   useEffect(() => {
+    if (!connected || !publicKey) {
+      setInvoices([]);
+      setStats(null);
+      setLoading(false);
+      return;
+    }
     loadData();
-  }, [filter]);
+  }, [filter, connected, publicKey]);
 
   // Filter and search invoices
   useEffect(() => {
@@ -49,14 +55,16 @@ export default function DashboardPage() {
   }, [searchQuery, invoices]);
 
   const loadData = async () => {
+    if (!publicKey) return;
     try {
       setLoading(true);
       const [invoicesResult, statsResult] = await Promise.all([
         invoiceApi.getAll({
           status: filter === 'all' ? undefined : filter.toUpperCase(),
           limit: 50,
+          sellerPublicKey: publicKey,
         }),
-        invoiceApi.getStats(),
+        invoiceApi.getStats(publicKey),
       ]);
       setInvoices(invoicesResult.data);
       setStats(statsResult.data[0] || {});
@@ -119,6 +127,19 @@ export default function DashboardPage() {
 
       <div className="pt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 relative z-10">
+        {!connected || !publicKey ? (
+          <div className="card text-center py-16 max-w-lg mx-auto">
+            <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Connect your wallet</h2>
+            <p className="text-gray-600 mb-6">
+              Dashboard shows only invoices for your connected Freighter wallet.
+            </p>
+            <div className="flex justify-center">
+              <WalletConnect />
+            </div>
+          </div>
+        ) : (
+          <>
         {connected && publicKey && (
           <div className="bg-white rounded-lg border border-gray-200 mb-6 p-2 flex gap-2">
             <button
@@ -283,6 +304,8 @@ export default function DashboardPage() {
                 </div>
               </>
             )}
+          </>
+        )}
           </>
         )}
       </div>

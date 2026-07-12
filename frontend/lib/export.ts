@@ -733,6 +733,10 @@ export function openInvoicePDF(invoice: Invoice) {
 }
 
 export function shareInvoiceByEmail(invoice: Invoice) {
+  if (!invoice.customerEmail) {
+    throw new Error('Client email is required to send this invoice');
+  }
+
   const subject = `Invoice #${invoice.id.substring(0, 8).toUpperCase()} - ${invoice.amount} ${invoice.assetCode}`;
   const isPaid = invoice.status === 'PAID';
   
@@ -741,7 +745,7 @@ export function shareInvoiceByEmail(invoice: Invoice) {
   body += `Amount: ${invoice.amount} ${invoice.assetCode}\n`;
   body += `Status: ${invoice.status}\n`;
   
-  if (invoice.customerName) body += `Customer: ${invoice.customerName}\n`;
+  if (invoice.customerName) body += `Client: ${invoice.customerName}\n`;
   if (invoice.description) body += `Description: ${invoice.description}\n`;
   
   if (isPaid && invoice.paymentTxHash) {
@@ -754,9 +758,9 @@ export function shareInvoiceByEmail(invoice: Invoice) {
     body += `\nPayment Link: ${window.location.origin}/pay/${invoice.id}\n`;
   }
   
-  body += `\nPowered by Quittance - Stellar Payment Platform`;
+  body += `\nPowered by Quittance`;
   
-  const mailtoLink = `mailto:${invoice.customerEmail || ''}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const mailtoLink = `mailto:${invoice.customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   window.location.href = mailtoLink;
 }
 
