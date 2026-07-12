@@ -96,6 +96,27 @@ Set `FRONTEND_URL` on the backend to match the frontend origin (CORS).
 
 ---
 
+## Deploy frontend (Vercel)
+
+1. Import the GitHub repo in [Vercel](https://vercel.com).  
+2. Set **Root Directory** to `frontend`.  
+3. Framework preset: Next.js (see `frontend/vercel.json`).  
+4. Add environment variables (Production):
+
+| Variable | Example |
+|----------|---------|
+| `NEXT_PUBLIC_API_URL` | `https://YOUR-API-HOST/api` |
+| `NEXT_PUBLIC_STELLAR_NETWORK` | `TESTNET` |
+| `NEXT_PUBLIC_HORIZON_URL` | `https://horizon-testnet.stellar.org` |
+| `NEXT_PUBLIC_APP_URL` | `https://YOUR-APP.vercel.app` |
+| `NEXT_PUBLIC_USE_MOCK` | `false` |
+
+5. Deploy. After the API is live (Phase D2), point `NEXT_PUBLIC_API_URL` at it and set the backend `FRONTEND_URL` to this Vercel URL.
+
+Templates: `frontend/env.example.txt`, `frontend/env.mvp.local`.
+
+---
+
 ## Demo & evidence
 
 | Item | Status |
