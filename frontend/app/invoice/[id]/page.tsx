@@ -117,14 +117,14 @@ export default function InvoiceDetailPage() {
               </button>
               <Link href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
                 <Image
-                  src="/Stellink.jpg"
-                  alt="Stellink Logo"
+                  src="/Quittance.jpg"
+                  alt="Quittance Logo"
                   width={40}
                   height={40}
                   className="w-10 h-10 object-contain"
                   priority
                 />
-                <span className="text-xl font-bold text-gray-900 hidden sm:inline">Stellink</span>
+                <span className="text-xl font-bold text-gray-900 hidden sm:inline">Quittance</span>
               </Link>
             </div>
             

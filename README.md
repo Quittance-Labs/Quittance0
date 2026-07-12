@@ -1,8 +1,10 @@
-# 🚀 Stellink
+# Quittance
 
-**Stellar blockchain tabanlı otomatik fatura oluşturma ve ödeme doğrulama sistemi**
+**Stellar üzerinde ödenen faturaları kanıt olarak indirebileceğin / mail atabileceğin invoice sistemi.**
 
-Kullanıcılar tek tıkla on-chain fatura oluşturabilir, karşı taraf link veya QR kod ile ödeme yapabilir ve sistem ödemeleri memo ve tutar kontrolüyle otomatik doğrular.
+Ödeme settlement’ı on-chain ve şeffaf kalır; sen kendi faturalarını PDF veya mail ile saklayıp (ör. müşteriye / resmi süreçlere) sunabilirsin. Başkasının cüzdan geçmişini veya kimliğini açığa çıkarmaz.
+
+Tek tıkla fatura oluştur → link/QR ile öde → memo + tutar ile otomatik doğrula → kanıtı indir veya gönder.
 
 ---
 
@@ -59,7 +61,7 @@ Kullanıcılar tek tıkla on-chain fatura oluşturabilir, karşı taraf link vey
 
 \`\`\`bash
 git clone <repository-url>
-cd one-click-crypto-invoice
+cd quittance
 \`\`\`
 
 ### 2. Backend Kurulumu
@@ -357,7 +359,7 @@ Sorularınız için:
 
 ## 👨‍💻 Geliştirici
 
-**Stellink** - Stellar blockchain üzerinde açık kaynak proje
+**Quittance** - Stellar blockchain üzerinde açık kaynak proje
 
 ⭐ Projeyi beğendiyseniz GitHub'da star vermeyi unutmayın!
 

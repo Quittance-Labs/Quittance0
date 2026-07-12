@@ -30,7 +30,7 @@ export default function HomePage() {
         style={{zIndex: 1}}
       >
         <Image
-          src="/Stellink.jpg"
+          src="/Quittance.jpg"
           alt="Background Logo"
           fill
           className="object-contain animate-pulse"
@@ -43,15 +43,15 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
             <Image
-              src="/Stellink.jpg"
-              alt="Stellink Logo"
+              src="/Quittance.jpg"
+              alt="Quittance Logo"
               width={45}
               height={45}
               className="w-11 h-11 object-contain"
               priority
             />
             <h1 className="text-2xl font-bold text-gray-900 hidden sm:block">
-              Stellink
+              Quittance
             </h1>
           </Link>
           <div className="flex items-center gap-3">
@@ -157,7 +157,7 @@ export default function HomePage() {
         <div className="bg-gray-50 rounded-2xl p-8 sm:p-12 mb-20">
           <h3 className="text-3xl font-bold text-gray-900 text-center mb-4">Start Accepting Crypto Payments Today</h3>
           <p className="text-gray-600 text-center mb-8 max-w-2xl mx-auto">
-            Join thousands of users who trust Stellink for fast, secure, and decentralized crypto payments on the Stellar network.
+            Join thousands of users who trust Quittance for fast, secure, and decentralized crypto payments on the Stellar network.
           </p>
           {!connected && (
             <div className="flex justify-center">
@@ -313,13 +313,13 @@ export default function HomePage() {
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <Image
-                  src="/Stellink.jpg"
-                  alt="Stellink Logo"
+                  src="/Quittance.jpg"
+                  alt="Quittance Logo"
                   width={40}
                   height={40}
                   className="w-10 h-10 object-contain"
                 />
-                <span className="text-xl font-bold text-gray-900">Stellink</span>
+                <span className="text-xl font-bold text-gray-900">Quittance</span>
               </div>
               <p className="text-gray-600 text-sm">
                 Fast, secure, and decentralized crypto payment links on the Stellar network.
@@ -342,7 +342,7 @@ export default function HomePage() {
           </div>
           <div className="border-t border-gray-200 pt-8 text-center">
             <p className="text-gray-600 text-sm">
-              © 2024 Stellink. Powered by Stellar Network. All rights reserved.
+              © 2024 Quittance. Powered by Stellar Network. All rights reserved.
             </p>
           </div>
         </div>

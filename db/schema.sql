@@ -1,4 +1,4 @@
--- Stellink Database Schema
+-- Quittance Database Schema
 -- PostgreSQL Database
 
 -- Users Table

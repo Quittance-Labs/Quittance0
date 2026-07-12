@@ -151,7 +151,7 @@ class PaymentMonitor {
       if (Notification.permission === 'granted') {
         new Notification('💰 Payment Received!', {
           body: `${amount} ${payment.assetCode} from ${payment.from.slice(0, 8)}...`,
-          icon: '/Stellink.jpg',
+          icon: '/Quittance.jpg',
           tag: payment.hash,
         });
       }

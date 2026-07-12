@@ -56,7 +56,7 @@ ${invoice.sellerPublicKey}
 Memo: ${invoice.memo}
 
 ───────────────────────────────────────
-Powered by Stellink
+Powered by Quittance
 Stellar Blockchain Payment System
 ═══════════════════════════════════════
     `.trim();
@@ -221,7 +221,7 @@ Stellar Blockchain Payment System
           This receipt confirms payment on the Stellar blockchain
         </p>
         <p className="text-xs text-gray-400 mt-1">
-          Powered by Stellink
+          Powered by Quittance
         </p>
       </div>
     </div>

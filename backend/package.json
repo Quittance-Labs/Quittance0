@@ -1,5 +1,5 @@
 {
-  "name": "one-click-crypto-invoice-backend",
+  "name": "quittance-backend",
   "version": "1.0.0",
   "description": "Stellar-based invoice system backend",
   "main": "dist/server.js",

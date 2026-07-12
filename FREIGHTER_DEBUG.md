@@ -23,7 +23,7 @@ Frontend değişikliklerini alması için yeniden başlat:
 lsof -ti:3000 | xargs kill -9
 
 # Frontend'i başlat
-cd /Users/cemayyildiz/one-click-crypto-invoice/frontend
+cd /Users/cemayyildiz/quittance/frontend
 npm run dev
 ```
 

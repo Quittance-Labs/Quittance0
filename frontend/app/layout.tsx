@@ -6,9 +6,19 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Stellink - Instant Crypto Payments',
-  description: 'Create instant payment links with QR codes. Accept XLM, USDC, and USDT on Stellar blockchain.',
-  keywords: ['stellar', 'crypto', 'payment', 'blockchain', 'xlm', 'usdc', 'usdt', 'stellink', 'qr code'],
+  title: 'Quittance — Crypto invoices you can prove',
+  description:
+    'Create Stellar invoices, get paid on-chain, and download or email your own payment proof — without exposing anyone else’s wallet history.',
+  keywords: [
+    'stellar',
+    'crypto invoice',
+    'quittance',
+    'payment proof',
+    'xlm',
+    'usdc',
+    'freelancer invoicing',
+    'qr code',
+  ],
 };
 
 export default function RootLayout({

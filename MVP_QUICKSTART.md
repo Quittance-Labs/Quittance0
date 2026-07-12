@@ -59,7 +59,7 @@ npm run dev:mvp
 
 Çıktı:
 ```
-🚀 Stellink Backend (MVP Mode)
+🚀 Quittance Backend (MVP Mode)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✅ Server running on port 3001
 📍 API: http://localhost:3001/api

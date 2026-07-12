@@ -32,7 +32,7 @@ app.use('/api', routes);
 // Root endpoint
 app.get('/', (req: Request, res: Response) => {
   res.json({
-    name: 'Stellink API',
+    name: 'Quittance API',
     version: '1.0.0',
     status: 'running',
     documentation: '/api/health',

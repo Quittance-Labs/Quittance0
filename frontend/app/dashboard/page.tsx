@@ -89,8 +89,8 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
             <Image
-              src="/Stellink.jpg"
-              alt="Stellink Logo"
+              src="/Quittance.jpg"
+              alt="Quittance Logo"
               width={40}
               height={40}
               className="w-10 h-10 object-contain"

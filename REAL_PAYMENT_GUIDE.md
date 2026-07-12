@@ -1,6 +1,6 @@
 # 🚀 Gerçek Stellar Ödeme Rehberi
 
-**Stellink** ile gerçek Stellar blockchain üzerinde ödeme yapın!
+**Quittance** ile gerçek Stellar blockchain üzerinde ödeme yapın!
 
 ---
 
@@ -24,7 +24,7 @@ npm run dev:mvp
 
 **Çıktıda göreceksiniz:**
 ```
-🚀 Stellink Backend (MVP Mode)
+🚀 Quittance Backend (MVP Mode)
 ✅ Server running on port 3001
 💰 Seller: GDZKIKB5...
 ```
