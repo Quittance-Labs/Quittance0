@@ -121,7 +121,7 @@ export default function PaymentPage() {
         <div className="orb orb-3"></div>
         <div className="card text-center max-w-md relative z-10">
           <h2 className="text-2xl font-bold text-red-600 mb-2">Invoice Not Found</h2>
-          <p className="text-gray-700">The invoice you're looking for doesn't exist.</p>
+          <p className="text-gray-700">The invoice you are looking for does not exist.</p>
         </div>
       </div>
     );

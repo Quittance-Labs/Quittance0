@@ -84,6 +84,33 @@ app.post('/api/invoices', async (req: Request, res: Response) => {
   }
 });
 
+// Get stats (scoped to seller)
+app.get('/api/invoices/stats', async (req: Request, res: Response) => {
+  try {
+    const { sellerPublicKey } = req.query;
+
+    if (!sellerPublicKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'sellerPublicKey query parameter is required',
+      });
+    }
+
+    const stats = await invoiceService.getInvoiceStats(sellerPublicKey as string);
+
+    res.json({
+      success: true,
+      data: stats,
+    });
+  } catch (error: any) {
+    console.error('Get stats error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to get statistics',
+    });
+  }
+});
+
 // Get invoice by ID
 app.get('/api/invoices/:id', async (req: Request, res: Response) => {
   try {
@@ -353,33 +380,6 @@ app.post('/api/invoices/:id/simulate-payment', async (req: Request, res: Respons
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to simulate payment',
-    });
-  }
-});
-
-// Get stats (scoped to seller)
-app.get('/api/invoices/stats', async (req: Request, res: Response) => {
-  try {
-    const { sellerPublicKey } = req.query;
-
-    if (!sellerPublicKey) {
-      return res.status(400).json({
-        success: false,
-        error: 'sellerPublicKey query parameter is required',
-      });
-    }
-
-    const stats = await invoiceService.getInvoiceStats(sellerPublicKey as string);
-
-    res.json({
-      success: true,
-      data: stats,
-    });
-  } catch (error: any) {
-    console.error('Get stats error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to get statistics',
     });
   }
 });
