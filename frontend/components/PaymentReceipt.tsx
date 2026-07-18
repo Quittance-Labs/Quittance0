@@ -203,15 +203,17 @@ Stellar Blockchain Payment System
           Download Proof
         </button>
 
-        {invoice.customerEmail && (
-          <button
-            onClick={handleEmailProof}
-            className="btn btn-secondary w-full flex items-center justify-center gap-2"
-          >
-            <Mail className="w-5 h-5" />
-            Email Proof
-          </button>
-        )}
+        <button
+          onClick={!invoice.customerEmail ? undefined : handleEmailProof}
+          disabled={!invoice.customerEmail}
+          title={!invoice.customerEmail ? 'No client email on this invoice' : 'Email Proof'}
+          className={`btn btn-secondary w-full flex items-center justify-center gap-2 ${
+            !invoice.customerEmail ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
+        >
+          <Mail className="w-5 h-5" />
+          Email Proof
+        </button>
 
         <a
           href={`${horizonUrl}/tx/${invoice.paymentTxHash}`}
@@ -243,4 +245,3 @@ Stellar Blockchain Payment System
     </div>
   );
 }
-
