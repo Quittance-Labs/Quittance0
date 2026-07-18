@@ -24,6 +24,9 @@ export default function PaymentPage() {
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
   const [polling, setPolling] = useState(true);
   const [userWallet, setUserWallet] = useState<string | null>(null);
+  // New state for manual verification
+  const [verifyTxHash, setVerifyTxHash] = useState<string>('');
+  const [verifying, setVerifying] = useState<boolean>(false);
 
   useEffect(() => {
     loadInvoice();
@@ -74,6 +77,28 @@ export default function PaymentPage() {
     setTimeout(async () => {
       await loadInvoice();
     }, 2000);
+  };
+
+  // Manual verification handler for users who paid via QR or other method
+  const handleVerify = async () => {
+    if (!verifyTxHash.trim()) {
+      toast.error('Please enter a transaction hash');
+      return;
+    }
+    setVerifying(true);
+    try {
+      toast.loading('Verifying transaction...', { id: 'verify-toast' });
+      await invoiceApi.verify(id, verifyTxHash);
+      toast.success('Transaction verified!', { id: 'verify-toast' });
+      // Reload invoice to reflect PAID status
+      await loadInvoice();
+    } catch (error: any) {
+      console.error('Manual verification error:', error);
+      const msg = error?.response?.data?.error || error.message || 'Verification failed';
+      toast.error(msg, { id: 'verify-toast' });
+    } finally {
+      setVerifying(false);
+    }
   };
 
   const copyInfo = async (text: string, label: string) => {
@@ -398,6 +423,38 @@ export default function PaymentPage() {
                   <div className="mt-6 pt-4 border-t text-center">
                     <p className="text-xs text-gray-500">Secure payment on Stellar blockchain</p>
                   </div>
+                </div>
+
+                <div className="card">
+                  <h3 className="text-lg font-semibold text-center mb-4">Already paid? Verify your transaction</h3>
+                  <p className="text-sm text-gray-600 text-center mb-2">Enter the 64‑character Stellar transaction hash you received.</p>
+                  <div className="flex items-center gap-2 mb-4">
+                    <input
+                      type="text"
+                      placeholder="Transaction hash (64 chars)"
+                      value={verifyTxHash}
+                      onChange={(e) => setVerifyTxHash(e.target.value)}
+                      maxLength={64}
+                      className="flex-1 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    />
+                    <button
+                      onClick={handleVerify}
+                      disabled={verifying}
+                      className="btn btn-primary flex items-center gap-2"
+                    >
+                      {verifying ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Verifying...
+                        </>
+                      ) : (
+                        <>Verify</>
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 text-center">
+                    If verification succeeds, the invoice will show the receipt and download options.
+                  </p>
                 </div>
               </>
             )}
