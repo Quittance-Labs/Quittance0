@@ -59,40 +59,57 @@ PostgreSQL and Redis are **not** required for the MVP path below.
 
 ---
 
-## Quick start (MVP)
+## Quick start (local MVP)
 
-### Backend
+Follow these steps from a fresh clone. Use **two terminals** so the backend and frontend can run at the same time.
+
+```bash
+git clone https://github.com/Kappa16/Quittance0.git
+cd Quittance0
+```
+
+### 1) Backend API
 
 ```bash
 cd backend
-npm install
+npm i
 cp env.mvp.example .env
 npm run dev:mvp
 ```
 
-- API: `http://localhost:3001`  
-- Health: `http://localhost:3001/api/health`  
-- In-memory storage resets when the process restarts  
+Keep this terminal running.
 
-Optional: set `ALLOW_SIMULATE=true` in `.env` only for local fake payments (not for demos).
+- API: `http://localhost:3001/api`
+- Health check: `http://localhost:3001/api/health`
+- MVP server entrypoint: `backend/src/server-mvp.ts`
 
-### Frontend
+Optional: set `ALLOW_SIMULATE=true` in `backend/.env` only for local fake payments (not for demos).
+
+### 2) Frontend app
+
+Open a second terminal from the repo root:
 
 ```bash
 cd frontend
-npm install
+npm i
 cp env.mvp.local .env.local
 npm run dev
 ```
 
-App: `http://localhost:3000`
+Open the app at `http://localhost:3000`.
+
+### Local MVP notes
+
+- The MVP backend is intentionally **in-memory**: invoices and payment state clear every time the backend process restarts.
+- PostgreSQL and Redis are **not** needed for the local MVP path.
+- `FRONTEND_URL` in `backend/.env` must match the frontend origin for CORS; the provided MVP env uses `http://localhost:3000`.
+- `NEXT_PUBLIC_API_URL` in `frontend/.env.local` must include `/api`; the provided MVP env uses `http://localhost:3001/api`.
 
 ### Env reference
 
-- Backend: `backend/env.mvp.example`  
-- Frontend: `frontend/env.mvp.local` / `frontend/env.example.txt`  
-
-Set `FRONTEND_URL` on the backend to match the frontend origin (CORS).
+- Backend MVP template: `backend/env.mvp.example` → copy to `backend/.env`
+- Frontend MVP template: `frontend/env.mvp.local` → copy to `frontend/.env.local`
+- Full frontend template: `frontend/env.example.txt`
 
 ---
 
