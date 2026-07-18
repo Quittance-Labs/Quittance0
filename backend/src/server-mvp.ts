@@ -86,6 +86,7 @@ app.post('/api/invoices', async (req: Request, res: Response) => {
 });
 
 // Get stats (scoped to seller)
+// NOTE: This route must be defined before the dynamic /api/invoices/:id route to avoid shadowing.
 app.get('/api/invoices/stats', async (req: Request, res: Response) => {
   try {
     const { sellerPublicKey } = req.query;
