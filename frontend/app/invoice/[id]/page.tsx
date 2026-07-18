@@ -10,7 +10,7 @@ import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
 import { formatAmount, formatDate, getTimeRemaining, getShareUrl } from '@/lib/utils';
-import { ArrowLeft, Share2, Loader2 } from 'lucide-react';
+import { ArrowLeft, Share2, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function InvoiceDetailPage() {
@@ -60,6 +60,17 @@ export default function InvoiceDetailPage() {
     } else {
       await navigator.clipboard.writeText(url);
       toast.success('Invoice link copied');
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!window.confirm('Cancel this invoice?')) return;
+    try {
+      await invoiceApi.cancel(id);
+      toast.success('Invoice cancelled');
+      await loadInvoice();
+    } catch (e) {
+      toast.error('Failed to cancel invoice');
     }
   };
 
@@ -119,13 +130,24 @@ export default function InvoiceDetailPage() {
                 <UserProfile userWallet={userWallet} onDisconnect={() => setUserWallet(null)} />
               )}
               {invoice.status === 'PENDING' && (
-                <button
-                  onClick={handleShare}
-                  className="btn btn-primary flex items-center gap-2"
-                >
-                  <Share2 className="w-5 h-5" />
-                  <span className="hidden sm:inline">Share</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleShare}
+                    className="btn btn-primary flex items-center gap-2"
+                  >
+                    <Share2 className="w-5 h-5" />
+                    <span className="hidden sm:inline">Share</span>
+                  </button>
+                  {userWallet && invoice.sellerPublicKey === userWallet && (
+                    <button
+                      onClick={handleCancel}
+                      className="btn btn-destructive flex items-center gap-2"
+                    >
+                      <X className="w-5 h-5" />
+                      <span className="hidden sm:inline">Cancel</span>
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
