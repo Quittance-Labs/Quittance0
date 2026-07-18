@@ -10,6 +10,7 @@ import stellarService from './services/stellar.service';
 dotenv.config();
 
 const app: Application = express();
+// Fixed route ordering: stats before ID route
 const PORT = process.env.PORT || 3001;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const ALLOW_SIMULATE = process.env.ALLOW_SIMULATE === 'true';
