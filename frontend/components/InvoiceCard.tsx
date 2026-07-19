@@ -116,11 +116,14 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
             Download Proof
           </button>
         )}
-        {invoice.status === 'PAID' && invoice.customerEmail && (
+        {invoice.status === 'PAID' && (
           <button
-            onClick={handleEmailShare}
-            className="btn btn-outline flex items-center justify-center gap-2 px-3"
-            title="Email Proof"
+            onClick={!invoice.customerEmail ? undefined : handleEmailShare}
+            disabled={!invoice.customerEmail}
+            title={!invoice.customerEmail ? 'No client email on this invoice' : 'Email Proof'}
+            className={`btn btn-outline flex items-center justify-center gap-2 px-3 ${
+              !invoice.customerEmail ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
           >
             <Mail className="w-4 h-4" />
           </button>
@@ -129,4 +132,3 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
     </div>
   );
 }
-
