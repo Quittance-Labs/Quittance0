@@ -755,7 +755,7 @@ export function shareInvoiceByEmail(invoice: Invoice) {
     if (invoice.payerPublicKey) body += `Payer Address: ${invoice.payerPublicKey}\n`;
     body += `Verified on Stellar Blockchain\n`;
   } else {
-    body += `\nPayment Link: ${window.location.origin}/pay/${invoice.id}\n`;
+    body += `\nQuittance: ${window.location.origin}/pay/${invoice.id}\n`;
   }
   
   body += `\nPowered by Quittance`;
