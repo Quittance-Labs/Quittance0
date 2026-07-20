@@ -265,6 +265,13 @@ app.post('/api/invoices/:id/verify', async (req: Request, res: Response) => {
       });
     }
 
+    if (invoice.status === 'EXPIRED') {
+      return res.status(400).json({
+        success: false,
+        error: 'Invoice has expired',
+      });
+    }
+
     if (invoice.status !== 'PENDING') {
       return res.status(400).json({
         success: false,
@@ -357,6 +364,13 @@ app.post('/api/invoices/:id/simulate-payment', async (req: Request, res: Respons
       return res.status(400).json({
         success: false,
         error: 'This invoice has already been paid. Cannot accept duplicate payment.',
+      });
+    }
+
+    if (invoice.status === 'EXPIRED') {
+      return res.status(400).json({
+        success: false,
+        error: 'Invoice has expired',
       });
     }
 

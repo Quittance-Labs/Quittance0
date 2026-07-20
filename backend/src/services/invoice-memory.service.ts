@@ -37,6 +37,7 @@ class InvoiceMemoryService {
    * Get invoice by ID
    */
   async getInvoiceById(id: string): Promise<any | null> {
+    await this.markExpiredInvoices();
     return memoryStorage.getInvoiceById(id);
   }
 
@@ -44,6 +45,7 @@ class InvoiceMemoryService {
    * Get invoice by memo
    */
   async getInvoiceByMemo(memo: string): Promise<any | null> {
+    await this.markExpiredInvoices();
     return memoryStorage.getInvoiceByMemo(memo);
   }
 
@@ -70,6 +72,7 @@ class InvoiceMemoryService {
     limit: number = 50,
     offset: number = 0
   ): Promise<any[]> {
+    await this.markExpiredInvoices();
     let invoices = memoryStorage.getAllInvoices(status ? { status } : undefined);
 
     if (sellerPublicKey) {
@@ -103,6 +106,7 @@ class InvoiceMemoryService {
    * Get invoice statistics
    */
   async getInvoiceStats(sellerPublicKey: string): Promise<any> {
+    await this.markExpiredInvoices();
     return [memoryStorage.getStats(sellerPublicKey)];
   }
 }
