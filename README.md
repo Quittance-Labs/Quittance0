@@ -59,6 +59,16 @@ PostgreSQL and Redis are **not** required for the MVP path below.
 
 ---
 
+## Freighter testnet setup
+
+1. Install the [Freighter browser extension](https://www.freighter.app/) and create or import a wallet.
+2. Open Freighter's network menu and select **Testnet**. The official [Connect to the Testnet guide](https://developers.stellar.org/docs/build/guides/freighter/connect-testnet) shows the same flow.
+3. Copy your public account address (it starts with `G`). Use Freighter's **Fund with Friendbot** prompt, or open Stellar Lab's [Fund Account page](https://lab.stellar.org/account/fund?network=testnet), paste the address, and select **Get testnet XLM**.
+
+Only use your public `G...` address with Friendbot. Never paste a secret key or recovery phrase into a funding form. Testnet XLM has no real-world value and may disappear when Stellar resets Testnet.
+
+---
+
 ## Quick start (local MVP)
 
 Follow these steps from a fresh clone. Use **two terminals** so the backend and frontend can run at the same time.
