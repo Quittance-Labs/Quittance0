@@ -34,6 +34,12 @@ export default function PaymentButton({
   const [loading, setLoading] = useState(false);
 
   const handlePayment = async () => {
+    const normalizedPayerEmail = payerEmail?.trim();
+    if (normalizedPayerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedPayerEmail)) {
+      toast.error('Enter a valid payer email');
+      return;
+    }
+
     setLoading(true);
     try {
       const connected = await checkWalletConnection();
@@ -52,8 +58,8 @@ export default function PaymentButton({
         toast.loading('Verifying payment...', { id: PAY_TOAST_ID });
         try {
           await invoiceApi.verify(invoiceId, txHash, {
-            payerName,
-            payerEmail,
+            payerName: payerName?.trim() || undefined,
+            payerEmail: normalizedPayerEmail || undefined,
           });
           toast.success('Payment verified', {
             id: PAY_TOAST_ID,

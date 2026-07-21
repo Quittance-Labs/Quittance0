@@ -27,6 +27,8 @@ export default function PaymentPage() {
   // New state for manual verification
   const [verifyTxHash, setVerifyTxHash] = useState<string>('');
   const [verifying, setVerifying] = useState<boolean>(false);
+  const [payerName, setPayerName] = useState<string>('');
+  const [payerEmail, setPayerEmail] = useState<string>('');
 
   useEffect(() => {
     loadInvoice();
@@ -85,10 +87,18 @@ export default function PaymentPage() {
       toast.error('Please enter a transaction hash');
       return;
     }
+    const normalizedPayerEmail = payerEmail.trim();
+    if (normalizedPayerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedPayerEmail)) {
+      toast.error('Enter a valid payer email');
+      return;
+    }
     setVerifying(true);
     try {
       toast.loading('Verifying transaction...', { id: 'verify-toast' });
-      await invoiceApi.verify(id, verifyTxHash);
+      await invoiceApi.verify(id, verifyTxHash.trim(), {
+        payerName: payerName.trim() || undefined,
+        payerEmail: normalizedPayerEmail || undefined,
+      });
       toast.success('Transaction verified!', { id: 'verify-toast' });
       // Reload invoice to reflect PAID status
       await loadInvoice();
@@ -406,6 +416,39 @@ export default function PaymentPage() {
                     </ol>
                   </div>
 
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                    <div>
+                      <label htmlFor="payer-name" className="block text-sm font-medium text-gray-700 mb-1">
+                        Your name (optional)
+                      </label>
+                      <input
+                        id="payer-name"
+                        type="text"
+                        value={payerName}
+                        onChange={(event) => setPayerName(event.target.value)}
+                        maxLength={255}
+                        autoComplete="name"
+                        className="input text-sm"
+                        placeholder="Name on payment proof"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="payer-email" className="block text-sm font-medium text-gray-700 mb-1">
+                        Your email (optional)
+                      </label>
+                      <input
+                        id="payer-email"
+                        type="email"
+                        value={payerEmail}
+                        onChange={(event) => setPayerEmail(event.target.value)}
+                        maxLength={255}
+                        autoComplete="email"
+                        className="input text-sm"
+                        placeholder="Email on payment proof"
+                      />
+                    </div>
+                  </div>
+
                   <div className="flex justify-center mb-4">
                     <WalletConnect onConnect={setUserWallet} />
                   </div>
@@ -417,6 +460,8 @@ export default function PaymentPage() {
                     assetCode={invoice.assetCode}
                     assetIssuer={invoice.assetIssuer}
                     invoiceId={invoice.id}
+                    payerName={payerName}
+                    payerEmail={payerEmail}
                     onSuccess={handlePaymentSuccess}
                   />
 
@@ -466,4 +511,3 @@ export default function PaymentPage() {
     </div>
   );
 }
-
