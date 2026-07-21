@@ -244,7 +244,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="bg-white rounded-lg border border-gray-200 mb-6 p-2 flex gap-2 flex-wrap">
-              {['all', 'pending', 'paid', 'expired'].map((status) => (
+              {['all', 'pending', 'paid', 'expired', 'cancelled'].map((status) => (
                 <button
                   key={status}
                   onClick={() => setFilter(status)}
