@@ -19,6 +19,8 @@ class InvoiceMemoryService {
 
     const invoice = memoryStorage.createInvoice({
       sellerPublicKey: input.sellerPublicKey, // Dinamik!
+      sellerName: input.sellerName,
+      sellerEmail: input.sellerEmail,
       amount: input.amount,
       assetCode: input.assetCode || 'XLM',
       assetIssuer: input.assetIssuer,
@@ -108,4 +110,3 @@ class InvoiceMemoryService {
 }
 
 export default new InvoiceMemoryService();
-
