@@ -22,6 +22,30 @@ export const NETWORK_PASSPHRASE =
 
 export const server = new StellarSdk.Horizon.Server(HORIZON_URL);
 
+const getTrustlineMessage = (assetCode: string): string =>
+  `Your wallet does not have a ${assetCode} trustline on ${STELLAR_NETWORK.toLowerCase()}. Add the ${assetCode} trustline in Freighter, or ask the seller for an XLM invoice.`;
+
+const hasAssetTrustline = (
+  account: StellarSdk.Horizon.AccountResponse,
+  assetCode: string,
+  assetIssuer: string
+): boolean =>
+  account.balances.some(
+    (balance: any) =>
+      balance.asset_type !== 'native' &&
+      balance.asset_code === assetCode &&
+      balance.asset_issuer === assetIssuer
+  );
+
+const isMissingTrustlineError = (error: any): boolean => {
+  const operationCodes = error?.response?.data?.extras?.result_codes?.operations;
+  return (
+    operationCodes?.includes('op_no_trust') ||
+    error?.message?.toLowerCase().includes('op_no_trust') ||
+    error?.message?.toLowerCase().includes('no trustline')
+  );
+};
+
 /**
  * Check if Freighter wallet is available and connected
  */
@@ -131,6 +155,14 @@ export const sendPayment = async (
         ? StellarSdk.Asset.native()
         : new StellarSdk.Asset(assetCode, assetIssuer!);
 
+    if (
+      assetCode !== 'XLM' &&
+      assetIssuer &&
+      !hasAssetTrustline(account, assetCode, assetIssuer)
+    ) {
+      throw new Error(getTrustlineMessage(assetCode));
+    }
+
     // Build transaction
     const transaction = new StellarSdk.TransactionBuilder(account, {
       fee: StellarSdk.BASE_FEE,
@@ -165,6 +197,9 @@ export const sendPayment = async (
     return result.hash;
   } catch (error: any) {
     console.error('Payment error:', error);
+    if (assetCode !== 'XLM' && isMissingTrustlineError(error)) {
+      throw new Error(getTrustlineMessage(assetCode));
+    }
     throw new Error(error.message || 'Payment failed');
   }
 };
@@ -255,4 +290,3 @@ export default {
   formatStellarAmount,
   isValidPublicKey,
 };
-
