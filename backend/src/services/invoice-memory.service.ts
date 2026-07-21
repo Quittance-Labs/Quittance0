@@ -52,8 +52,13 @@ class InvoiceMemoryService {
   /**
    * Update invoice status to PAID
    */
-  async markAsPaid(invoiceId: string, txHash: string, payerPublicKey: string): Promise<any> {
-    const invoice = memoryStorage.markAsPaid(invoiceId, txHash, payerPublicKey);
+  async markAsPaid(
+    invoiceId: string,
+    txHash: string,
+    payerPublicKey: string,
+    payerInfo?: { payerName?: string; payerEmail?: string }
+  ): Promise<any> {
+    const invoice = memoryStorage.markAsPaid(invoiceId, txHash, payerPublicKey, payerInfo);
 
     if (!invoice) {
       throw new Error('Invoice not found');

@@ -240,13 +240,32 @@ app.post('/api/invoices/:id/cancel', async (req: Request, res: Response) => {
 app.post('/api/invoices/:id/verify', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { txHash } = req.body;
+    const { txHash, payerName, payerEmail } = req.body;
 
     if (!txHash) {
       return res.status(400).json({
         success: false,
         error: 'Transaction hash is required',
       });
+    }
+
+    if (payerName !== undefined && typeof payerName !== 'string') {
+      return res.status(400).json({ success: false, error: 'Payer name must be text' });
+    }
+    if (payerEmail !== undefined && typeof payerEmail !== 'string') {
+      return res.status(400).json({ success: false, error: 'Payer email must be text' });
+    }
+
+    const normalizedPayerName = payerName?.trim() || undefined;
+    const normalizedPayerEmail = payerEmail?.trim() || undefined;
+    if (
+      normalizedPayerEmail &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedPayerEmail)
+    ) {
+      return res.status(400).json({ success: false, error: 'Payer email is invalid' });
+    }
+    if ((normalizedPayerName?.length || 0) > 255 || (normalizedPayerEmail?.length || 0) > 255) {
+      return res.status(400).json({ success: false, error: 'Payer information is too long' });
     }
 
     const invoice = await invoiceService.getInvoiceById(id);
@@ -316,7 +335,11 @@ app.post('/api/invoices/:id/verify', async (req: Request, res: Response) => {
     const updatedInvoice = await invoiceService.markAsPaid(
       id,
       txHash,
-      paymentOp.from
+      paymentOp.from,
+      {
+        payerName: normalizedPayerName,
+        payerEmail: normalizedPayerEmail,
+      }
     );
 
     res.json({
@@ -433,4 +456,3 @@ app.listen(PORT, () => {
 });
 
 export default app;
-
