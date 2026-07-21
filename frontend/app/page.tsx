@@ -258,7 +258,7 @@ export default function HomePage() {
                 </div>
               ) : (
                 <div className="border border-dashed border-[var(--line)] rounded-lg p-10 text-center min-h-[280px] flex flex-col items-center justify-center">
-                  <p className="font-display text-xl text-[var(--ink)]">Payment link appears here</p>
+                  <p className="font-display text-xl text-[var(--ink)]">Quittance appears here</p>
                   <p className="mt-2 text-sm text-[var(--muted)] max-w-xs">
                     After you create an invoice, the QR and URL show up for sharing.
                   </p>
