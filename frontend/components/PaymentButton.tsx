@@ -75,9 +75,12 @@ export default function PaymentButton({
 
       onSuccess?.(txHash);
     } catch (error: any) {
-      toast.error('Payment failed', {
+      const missingTrustline =
+        assetCode !== 'XLM' && error.message?.toLowerCase().includes('trustline');
+      toast.error(missingTrustline ? `${assetCode} trustline required` : 'Payment failed', {
         id: PAY_TOAST_ID,
         description: error.message || 'Try again',
+        duration: missingTrustline ? 10000 : undefined,
       });
     } finally {
       setLoading(false);
