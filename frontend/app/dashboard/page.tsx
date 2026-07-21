@@ -21,6 +21,7 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filteredInvoices, setFilteredInvoices] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<'invoices' | 'transactions'>('invoices');
+  const hasAnyInvoices = Number(stats?.total_invoices || 0) > 0;
 
   useEffect(() => {
     if (!connected || !publicKey) {
@@ -267,13 +268,38 @@ export default function DashboardPage() {
               <div className="card text-center py-12">
                 <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-gray-700 mb-2">
-                  {searchQuery ? 'No Matching Invoices' : 'No Invoices Found'}
+                  {searchQuery
+                    ? 'No Matching Invoices'
+                    : hasAnyInvoices
+                      ? `No ${filter === 'all' ? '' : `${filter} `}Invoices`
+                      : 'No Invoices Yet'}
                 </h3>
                 <p className="text-gray-600 mb-6">
-                  {searchQuery ? 'Try a different search term' : 'Create your first invoice to get started'}
+                  {searchQuery
+                    ? 'Try a different search term or clear your search.'
+                    : hasAnyInvoices
+                      ? 'Choose another status to see your other invoices.'
+                      : 'Create your first invoice and start accepting Stellar payments.'}
                 </p>
-                {!searchQuery && (
-                  <Link href="/" className="btn btn-primary">
+                {searchQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="btn btn-primary"
+                  >
+                    Clear Search
+                  </button>
+                ) : hasAnyInvoices ? (
+                  <button
+                    type="button"
+                    onClick={() => setFilter('all')}
+                    className="btn btn-primary"
+                  >
+                    Show All Invoices
+                  </button>
+                ) : (
+                  <Link href="/" className="btn btn-primary inline-flex items-center gap-2">
+                    <Plus className="w-5 h-5" />
                     Create Invoice
                   </Link>
                 )}
@@ -302,4 +328,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
