@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { formatAmount, formatDate, getStatusColor, getTimeRemaining } from '@/lib/utils';
-import { Clock, ExternalLink, Copy, Mail, Download } from 'lucide-react';
+import { Clock, ExternalLink, Copy, Check, Mail, Download } from 'lucide-react';
 import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import AssetLogo from './AssetLogo';
@@ -34,13 +35,18 @@ interface InvoiceCardProps {
 }
 
 export default function InvoiceCard({ invoice }: InvoiceCardProps) {
+  const [linkCopied, setLinkCopied] = useState(false);
   const statusColor = getStatusColor(invoice.status);
   const paymentUrl = `${window.location.origin}/pay/${invoice.id}`;
 
   const handleCopyLink = async () => {
     const success = await copyToClipboard(paymentUrl);
     if (success) {
+      setLinkCopied(true);
       toast.success('Invoice link copied');
+      setTimeout(() => setLinkCopied(false), 2000);
+    } else {
+      toast.error('Could not copy invoice link');
     }
   };
 
@@ -103,8 +109,14 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
           <button
             onClick={handleCopyLink}
             className="btn btn-secondary flex items-center justify-center gap-2 px-3"
+            aria-label={linkCopied ? 'Invoice link copied' : 'Copy invoice link'}
+            title={linkCopied ? 'Invoice link copied' : 'Copy invoice link'}
           >
-            <Copy className="w-4 h-4" />
+            {linkCopied ? (
+              <Check className="w-4 h-4 text-green-700" />
+            ) : (
+              <Copy className="w-4 h-4" />
+            )}
           </button>
         )}
         {invoice.status === 'PAID' && (
