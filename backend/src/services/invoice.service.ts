@@ -40,9 +40,10 @@ class InvoiceService {
 
     const query = `
       INSERT INTO invoices (
-        id, user_id, seller_public_key, amount, asset_code, asset_issuer,
-        memo, description, customer_name, customer_email, status, expires_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        id, user_id, seller_public_key, seller_name, seller_email, amount,
+        asset_code, asset_issuer, memo, description, customer_name,
+        customer_email, status, expires_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *
     `;
 
@@ -50,6 +51,8 @@ class InvoiceService {
       id,
       userId || null,
       SELLER_PUBLIC_KEY,
+      input.sellerName || null,
+      input.sellerEmail || null,
       input.amount,
       input.assetCode || 'XLM',
       input.assetIssuer || null,
@@ -263,4 +266,3 @@ class InvoiceService {
 }
 
 export default new InvoiceService();
-

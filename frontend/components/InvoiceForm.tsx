@@ -17,6 +17,8 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   const [amount, setAmount] = useState('');
   const [assetCode, setAssetCode] = useState('XLM');
   const [description, setDescription] = useState('');
+  const [sellerName, setSellerName] = useState('');
+  const [sellerEmail, setSellerEmail] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
 
@@ -38,6 +40,11 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       return;
     }
 
+    if (sellerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sellerEmail)) {
+      toast.error('Enter a valid email for yourself');
+      return;
+    }
+
     setLoading(true);
     try {
       const selectedAsset = getAssetByCode(assetCode);
@@ -47,6 +54,8 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
         assetIssuer: selectedAsset?.issuer,
         expiresInDays: 7,
         sellerPublicKey: userWallet,
+        sellerName: sellerName.trim() || undefined,
+        sellerEmail: sellerEmail.trim() || undefined,
         description: description || undefined,
         customerName: customerName.trim() || undefined,
         customerEmail: customerEmail.trim() || undefined,
@@ -57,6 +66,8 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       setAmount('');
       setAssetCode('XLM');
       setDescription('');
+      setSellerName('');
+      setSellerEmail('');
       setCustomerName('');
       setCustomerEmail('');
     } catch (error: any) {
@@ -109,6 +120,32 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
           onChange={(e) => setDescription(e.target.value)}
           maxLength={500}
         />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="label">Your name (optional)</label>
+          <input
+            type="text"
+            className="input text-sm"
+            placeholder="Your name or business"
+            value={sellerName}
+            onChange={(e) => setSellerName(e.target.value)}
+            maxLength={255}
+          />
+        </div>
+
+        <div>
+          <label className="label">Your email (optional)</label>
+          <input
+            type="email"
+            className="input text-sm"
+            placeholder="you@example.com"
+            value={sellerEmail}
+            onChange={(e) => setSellerEmail(e.target.value)}
+            maxLength={255}
+          />
+        </div>
       </div>
 
       <div>
