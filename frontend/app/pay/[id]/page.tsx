@@ -14,6 +14,7 @@ import { formatAmount, formatDate, getTimeRemaining, copyToClipboard } from '@/l
 import { Copy, ExternalLink, Loader2, Check, FileText, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
+import { isExpiredInvoice, shouldShowPaymentControls } from '@/lib/payment-page-state';
 
 export default function PaymentPage() {
   const params = useParams();
@@ -166,6 +167,11 @@ export default function PaymentPage() {
     process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET'
       ? 'https://stellar.expert/explorer/testnet'
       : 'https://stellar.expert/explorer/public';
+  const isExpired = isExpiredInvoice(invoice.status);
+  const showPaymentControls = shouldShowPaymentControls(
+    invoice.status,
+    invoice.paymentTxHash
+  );
 
   return (
     <div className="min-h-screen bg-logo-pattern relative py-8 sm:py-12 px-4">
@@ -193,10 +199,16 @@ export default function PaymentPage() {
         <div className="pt-20">
         <div className="text-center mb-10 sm:mb-12">
           <div className="inline-block mb-4 px-6 py-2 bg-gradient-to-r from-cyan-400/20 to-blue-500/20 backdrop-blur-md rounded-full border border-white/30">
-            <span className="text-white text-sm font-semibold tracking-wide">Secure Payment</span>
+            <span className="text-white text-sm font-semibold tracking-wide">
+              {isExpired ? 'Expired Invoice' : 'Secure Payment'}
+            </span>
           </div>
-          <h1 className="text-4xl sm:text-5xl font-bold text-white mb-3">Complete Payment</h1>
-          <p className="text-xl text-white/90">Pay with your Stellar wallet</p>
+          <h1 className="text-4xl sm:text-5xl font-bold text-white mb-3">
+            {isExpired ? 'Invoice Expired' : 'Complete Payment'}
+          </h1>
+          <p className="text-xl text-white/90">
+            {isExpired ? 'Payment is no longer available' : 'Pay with your Stellar wallet'}
+          </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
@@ -205,7 +217,9 @@ export default function PaymentPage() {
 
             <div className="space-y-5 mb-8">
               <div className="bg-gradient-to-br from-cyan-50 to-blue-50 border-2 border-cyan-200/50 rounded-2xl p-8 text-center shadow-lg">
-                <p className="text-sm text-gray-600 mb-4 font-semibold uppercase tracking-wide">Amount to Pay</p>
+                <p className="text-sm text-gray-600 mb-4 font-semibold uppercase tracking-wide">
+                  {isExpired ? 'Invoice Amount' : 'Amount to Pay'}
+                </p>
                 <div className="flex items-center justify-center gap-4">
                   <div className="relative">
                     <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full blur-lg opacity-40"></div>
@@ -272,7 +286,7 @@ export default function PaymentPage() {
                       <span className="text-green-700 font-semibold">Paid</span>
                     </>
                   )}
-                  {invoice.status === 'EXPIRED' && (
+                  {isExpired && (
                     <>
                       <div className="w-2 h-2 bg-red-500 rounded-full"></div>
                       <span className="text-red-700 font-semibold">Expired</span>
@@ -371,6 +385,16 @@ export default function PaymentPage() {
                 </div>
               </div>
             )}
+
+            {isExpired && (
+              <div className="bg-gray-50 p-4 rounded-lg border">
+                <h3 className="font-semibold text-gray-900 mb-3">Invoice Reference</h3>
+                <p className="text-xs text-gray-600 mb-1">Memo</p>
+                <code className="block text-xs bg-white p-2 rounded border font-semibold">
+                  {invoice.memo}
+                </code>
+              </div>
+            )}
           </div>
 
           <div className="space-y-6">
@@ -378,7 +402,7 @@ export default function PaymentPage() {
               <PaymentReceipt invoice={invoice} />
             )}
 
-            {invoice.status === 'EXPIRED' && (
+            {isExpired && (
               <div className="card text-center py-8">
                 <div className="inline-flex items-center justify-center w-20 h-20 bg-red-100 rounded-full mb-4">
                   <svg className="w-12 h-12 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -386,11 +410,13 @@ export default function PaymentPage() {
                   </svg>
                 </div>
                 <h3 className="text-2xl font-bold text-red-700 mb-2">Payment Expired</h3>
-                <p className="text-gray-600">This invoice has expired</p>
+                <p className="text-gray-600">
+                  This invoice has expired and can no longer be paid.
+                </p>
               </div>
             )}
 
-            {invoice.status === 'PENDING' && !invoice.paymentTxHash && (
+            {showPaymentControls && (
               <>
                 <div className="card">
                   <h3 className="text-lg font-semibold text-center mb-4">Scan QR Code</h3>
