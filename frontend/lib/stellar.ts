@@ -6,6 +6,7 @@ import {
   isAllowed,
   setAllowed,
 } from '@stellar/freighter-api';
+import { detectFreighter } from './freighter-availability';
 
 // Network configuration
 const STELLAR_NETWORK = process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET';
@@ -47,15 +48,10 @@ const isMissingTrustlineError = (error: any): boolean => {
 };
 
 /**
- * Check if Freighter wallet is available and connected
+ * Check whether the Freighter extension API is available
  */
 export const checkWalletConnection = async (): Promise<boolean> => {
-  try {
-    return await isConnected();
-  } catch (error) {
-    console.error('Error checking wallet connection:', error);
-    return false;
-  }
+  return detectFreighter(isConnected);
 };
 
 /**
