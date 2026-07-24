@@ -135,7 +135,37 @@ class InvoiceService {
         payerPublicKey,
       });
 
-      return this.mapRowToInvoice(result.rows[0]);
+      const invoice = this.mapRowToInvoice(result.rows[0]);
+
+      // Type-contract invariant (mirrors the typed `Invoice` discriminated-
+      // union PAID variant in `frontend/lib/utils.ts`): when an invoice is
+      // marked PAID, three fields MUST be set atomically — `paidAt`,
+      // `paymentTxHash`, `payerPublicKey`. The frontend discriminated union
+      // tracks this with TypeScript narrowing; the backend enforces it
+      // here with a runtime guard so any future caller or partial SQL
+      // UPDATE that forgets one of the three fails fast at the boundary
+      // rather than at a downstream consumer (the frontend would
+      // otherwise silently read `undefined` for the missing field).
+      //
+      // The SQL UPDATE above is a single statement setting all four
+      // columns atomically (`status='PAID', payment_tx_hash=$2,
+      // payer_public_key=$3, paid_at=NOW()`), so today's normal flow
+      // never fires this assertion. It's a tripwire for FUTURE drift —
+      // e.g. a partial UPDATE path that flips status without the
+      // on-chain tx info, or a racing webhook handler that updates
+      // status before the tx hash is available.
+      if (
+        invoice.status === 'PAID' &&
+        (!invoice.paidAt || !invoice.paymentTxHash || !invoice.payerPublicKey)
+      ) {
+        throw new Error(
+          `Invariant violation: invoice ${invoice.id} has status='PAID' but ` +
+          `one of paidAt, paymentTxHash, payerPublicKey is unset. ` +
+          `markAsPaid must atomically persist all three of {paidAt, paymentTxHash, payerPublicKey}.`
+        );
+      }
+
+      return invoice;
     } catch (error: any) {
       console.error('Error marking invoice as paid:', error);
       throw new Error(`Failed to update invoice: ${error.message}`);
