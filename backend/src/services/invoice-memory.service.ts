@@ -64,6 +64,33 @@ class InvoiceMemoryService {
       throw new Error('Invoice not found');
     }
 
+    // Type-contract invariant (mirrors the typed `Invoice` discriminated-
+    // union PAID variant in `frontend/lib/utils.ts`): when an invoice is
+    // marked PAID, three fields MUST be set atomically — `paidAt`,
+    // `paymentTxHash`, `payerPublicKey`. The frontend discriminated union
+    // tracks this with TypeScript narrowing; the backend enforces it
+    // here with a runtime guard so any future caller or SQL-UPDATE path
+    // that forgets one of the three fails fast at the boundary rather
+    // than at a downstream consumer (the frontend would otherwise
+    // silently read `undefined` for the missing field).
+    //
+    // Today's `memoryStorage.markAsPaid` correctly sets all three in a
+    // single `updateInvoice({…})` call, so this assertion never fires in
+    // normal flow. It's a tripwire for FUTURE drift — e.g. a partial
+    // SQL update path that sets status='PAID' without the on-chain tx
+    // info, or a webhook handler that updates status before the tx hash
+    // is available.
+    if (
+      invoice.status === 'PAID' &&
+      (!invoice.paidAt || !invoice.paymentTxHash || !invoice.payerPublicKey)
+    ) {
+      throw new Error(
+        `Invariant violation: invoice ${invoice.id} has status='PAID' but ` +
+        `one of paidAt, paymentTxHash, payerPublicKey is unset. ` +
+        `markAsPaid must atomically persist all three of {paidAt, paymentTxHash, payerPublicKey}.`
+      );
+    }
+
     console.log('✅ Invoice marked as paid:', invoiceId);
     return invoice;
   }
