@@ -221,14 +221,23 @@ class InvoiceService {
     const query = `
       SELECT 
         COUNT(*) as total_invoices,
-        SUM(CASE WHEN status = 'PAID' THEN 1 ELSE 0 END) as paid_invoices,
-        SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) as pending_invoices,
-        SUM(CASE WHEN status = 'EXPIRED' THEN 1 ELSE 0 END) as expired_invoices,
-        SUM(CASE WHEN status = 'PAID' THEN amount ELSE 0 END) as total_revenue,
-        asset_code
+        COALESCE(SUM(CASE WHEN status = 'PAID' THEN 1 ELSE 0 END), 0) as paid_invoices,
+        COALESCE(SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END), 0) as pending_invoices,
+        COALESCE(SUM(CASE WHEN status = 'EXPIRED' THEN 1 ELSE 0 END), 0) as expired_invoices,
+        COALESCE(
+          (
+            SELECT jsonb_object_agg(asset_code, total_revenue)
+            FROM (
+              SELECT COALESCE(asset_code, 'XLM') as asset_code, SUM(amount) as total_revenue
+              FROM invoices
+              WHERE seller_public_key = $1 AND status = 'PAID'
+              GROUP BY COALESCE(asset_code, 'XLM')
+            ) paid_revenue
+          ),
+          '{}'::jsonb
+        ) as revenue_by_asset
       FROM invoices
       WHERE seller_public_key = $1
-      GROUP BY asset_code
     `;
 
     const result = await pool.query(query, [sellerPublicKey]);

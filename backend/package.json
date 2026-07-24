@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "dev:mvp": "tsx watch src/server-mvp.ts",
+    "test": "node --import tsx --test tests/*.test.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "start:mvp": "tsx src/server-mvp.ts",
@@ -42,4 +43,3 @@
     "typescript": "^5.3.3"
   }
 }
-
