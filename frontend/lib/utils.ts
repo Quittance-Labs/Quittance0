@@ -347,16 +347,3 @@ export function formatCurrency(amount: number, currency: string = 'XLM'): string
   return `${formatAmount(amount, 7)} ${currency}`;
 }
 
-export default {
-  cn,
-  formatAmount,
-  formatAddress,
-  copyToClipboard,
-  formatDate,
-  getTimeRemaining,
-  getShareUrl,
-  interactiveStatus,
-  isValidEmail,
-  formatCurrency,
-};
-
