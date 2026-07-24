@@ -101,35 +101,31 @@ export function getShareUrl(invoiceId: string): string {
  */
 export const STATUS_META: Record<
   InvoiceStatus,
-  { dotClassName: string; labelClassName: string; label: string; chipClassName: string; chipLabel: string }
+  { dotClassName: string; labelClassName: string; label: string; chipClassName: string }
 > = {
   PENDING: {
     dotClassName: 'w-2 h-2 bg-yellow-500 rounded-full animate-pulse',
     labelClassName: 'text-yellow-700 font-semibold',
     label: 'Waiting for Payment',
     chipClassName: 'text-yellow-600 bg-yellow-50',
-    chipLabel: 'PENDING',
   },
   PAID: {
     dotClassName: 'w-2 h-2 bg-green-500 rounded-full',
     labelClassName: 'text-green-700 font-semibold',
     label: 'Paid',
     chipClassName: 'text-green-600 bg-green-50',
-    chipLabel: 'PAID',
   },
   EXPIRED: {
     dotClassName: 'w-2 h-2 bg-red-500 rounded-full',
     labelClassName: 'text-red-700 font-semibold',
     label: 'Expired',
     chipClassName: 'text-red-600 bg-red-50',
-    chipLabel: 'EXPIRED',
   },
   CANCELLED: {
     dotClassName: 'w-2 h-2 bg-gray-500 rounded-full',
     labelClassName: 'text-gray-700 font-semibold',
     label: 'Cancelled',
     chipClassName: 'text-gray-600 bg-gray-50',
-    chipLabel: 'CANCELLED',
   },
 };
 

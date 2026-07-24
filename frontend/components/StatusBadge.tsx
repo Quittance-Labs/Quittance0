@@ -27,9 +27,13 @@ export default function StatusBadge({ invoice, variant = 'badge' }: StatusBadgeP
   const meta = STATUS_META[invoice.status];
 
   if (variant === 'chip') {
+    // Render `{invoice.status}` directly rather than a redundant
+    // `meta.chipLabel` field — every `STATUS_META.<key>.chipLabel`
+    // would be byte-identical to the lookup key, and the typed
+    // `InvoiceStatus` union guarantees the value is uppercase string.
     return (
       <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${meta.chipClassName}`}>
-        {meta.chipLabel}
+        {invoice.status}
       </span>
     );
   }
