@@ -643,9 +643,9 @@ export function generateInvoicePDF(invoice: Invoice): string {
     <tr><td>Invoice ID</td><td style="font-family: monospace; font-size: 12px;">${invoice.id}</td></tr>
     <tr><td>Memo</td><td style="font-family: monospace;">${invoice.memo}</td></tr>
     <tr><td>Seller Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.sellerPublicKey}</td></tr>
-    ${isPaid && invoice.paymentTxHash ? `
+    ${invoice.status === 'PAID' ? `
     <tr><td>Transaction Hash</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.paymentTxHash}</td></tr>
-    <tr><td>Payer Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.payerPublicKey || 'N/A'}</td></tr>
+    <tr><td>Payer Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.payerPublicKey}</td></tr>
     ${invoice.payerName ? `<tr><td>Payer Name</td><td>${invoice.payerName}</td></tr>` : ''}
     ${invoice.payerEmail ? `<tr><td>Payer Email</td><td>${invoice.payerEmail}</td></tr>` : ''}` : ''}
     <tr><td>Network</td><td>${network}</td></tr>
@@ -709,11 +709,11 @@ export function shareInvoiceByEmail(invoice: Invoice) {
   if (invoice.customerName) body += `Client: ${invoice.customerName}\n`;
   if (invoice.description) body += `Description: ${invoice.description}\n`;
   
-  if (invoice.status === 'PAID' && invoice.paymentTxHash) {
+  if (invoice.status === 'PAID') {
     body += `\nPayment Information:\n`;
     body += `Payment Date: ${format(new Date(invoice.paidAt), 'PPpp')}\n`;
     body += `Transaction Hash: ${invoice.paymentTxHash}\n`;
-    if (invoice.payerPublicKey) body += `Payer Address: ${invoice.payerPublicKey}\n`;
+    body += `Payer Address: ${invoice.payerPublicKey}\n`;
     body += `Verified on Stellar Blockchain\n`;
   } else {
     body += `\nQuittance: ${window.location.origin}/pay/${invoice.id}\n`;

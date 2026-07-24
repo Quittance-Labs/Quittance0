@@ -1,23 +1,35 @@
 'use client';
 
-import { formatAmount, formatDate } from '@/lib/utils';
+import { formatAmount, formatDate, type Invoice } from '@/lib/utils';
 import { Check, Download, ExternalLink, FileText, Mail } from 'lucide-react';
 import AssetLogo from './AssetLogo';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { toast } from 'sonner';
 
 interface PaymentReceiptProps {
-  invoice: any;
+  invoice: Invoice;
 }
 
 export default function PaymentReceipt({ invoice }: PaymentReceiptProps) {
+  // PaymentReceipt is only mounted by callers that have already gated on
+  // `invoice.status === 'PAID'` (see app/pay/[id]/page.tsx + invoice/[id]/page.tsx).
+  // Narrow at the function top so the rest of the body sees `InvoicePaid`
+  // where paidAt is a `string` (no `'—'` fallback needed) and the `as any`
+  // casts at the lib/export boundary disappear. The early-return is a
+  // defensive backstop; if a future caller forgets the outer gate, the
+  // cost is a blank receipt rather than a runtime crash from
+  // `format(date(undefined))`.
+  if (invoice.status !== 'PAID') {
+    return null;
+  }
+
   const horizonUrl =
     process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET'
       ? 'https://stellar.expert/explorer/testnet'
       : 'https://stellar.expert/explorer/public';
 
   const handleDownloadPDF = () => {
-    openInvoicePDF(invoice as any);
+    openInvoicePDF(invoice);
     toast.success('Opening payment proof');
   };
 
@@ -26,7 +38,7 @@ export default function PaymentReceipt({ invoice }: PaymentReceiptProps) {
       toast.error('No client email on this invoice');
       return;
     }
-    shareInvoiceByEmail(invoice as any);
+    shareInvoiceByEmail(invoice);
   };
 
   const handleDownload = () => {

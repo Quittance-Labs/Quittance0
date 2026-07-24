@@ -110,6 +110,10 @@ export type InvoiceStatus = 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
  * Common invoice fields, shared between PAID and non-PAID variants.
  * Internal to `@/lib/utils`; components/pages should bind to the
  * `Invoice` discriminated union exported below.
+ *
+ * `paymentTxHash` and `payerPublicKey` are NOT on this base — they
+ * discriminate the PAID variant of `Invoice` (Option B), so reading
+ * them on a non-PAID invoice is a compile error.
  */
 interface InvoiceCommon {
   id: string;
@@ -125,10 +129,8 @@ interface InvoiceCommon {
   sellerPublicKey: string;
   sellerName?: string;
   sellerEmail?: string;
-  payerPublicKey?: string;
   payerName?: string;
   payerEmail?: string;
-  paymentTxHash?: string;
 }
 
 /**
@@ -138,17 +140,22 @@ interface InvoiceCommon {
  * as `InvoiceStatus`; adding a new value is a deliberate union extension
  * that `tsc` will surface at every consumer.
  *
- * Field rules:
- *   - When `status === 'PAID'`, `paidAt: string` is required (matches
- *     the backend `markAsPaid` invariant: status flips to PAID *together*
- *     with `paid_at = NOW()` in a single SQL UPDATE).
- *   - Otherwise `paidAt` is `never`, so a non-PAID read is a compile
+ * Field rules (Option B — atomic backend invariant):
+ *   - When `status === 'PAID'`, three fields become required:
+ *     `paidAt: string`, `paymentTxHash: string`, `payerPublicKey: string`.
+ *     Matches the backend `markAsPaid` invariant: status flips to PAID
+ *     together with `paid_at = NOW()`, `payment_tx_hash = $2`, and
+ *     `payer_public_key = $3` in a single SQL UPDATE — a PAID invoice
+ *     without any of those three is structurally impossible.
+ *   - Otherwise all three are `never`, so a non-PAID read is a compile
  *     error rather than a runtime `undefined` trap.
  *
  * TypeScript narrows on a `status === 'PAID'` discriminator:
  * ```
  * if (invoice.status === 'PAID') {
- *   formatDate(invoice.paidAt);  // string, no `!` needed
+ *   formatDate(invoice.paidAt);          // string
+ *   console.log(invoice.paymentTxHash);  // string
+ *   console.log(invoice.payerPublicKey); // string
  * }
  * ```
  *
@@ -157,10 +164,17 @@ interface InvoiceCommon {
  * narrowed local to get the inference to flow.
  */
 export type Invoice =
-  | (InvoiceCommon & { status: 'PAID'; paidAt: string })
+  | (InvoiceCommon & {
+      status: 'PAID';
+      paidAt: string;
+      paymentTxHash: string;
+      payerPublicKey: string;
+    })
   | (InvoiceCommon & {
       status: 'PENDING' | 'EXPIRED' | 'CANCELLED';
       paidAt?: never;
+      paymentTxHash?: never;
+      payerPublicKey?: never;
     });
 
 /**
