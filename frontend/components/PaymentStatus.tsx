@@ -1,9 +1,10 @@
 'use client';
 
 import { CheckCircle, XCircle, Clock, Loader2 } from 'lucide-react';
+import { type InvoiceStatus } from '@/lib/utils';
 
 interface PaymentStatusProps {
-  status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
+  status: InvoiceStatus;
   txHash?: string;
 }
 

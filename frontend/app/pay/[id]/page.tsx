@@ -10,7 +10,7 @@ import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
 import AssetLogo from '@/components/AssetLogo';
-import { formatAmount, formatDate, getTimeRemaining, copyToClipboard, interactiveStatus, type Invoice } from '@/lib/utils';
+import { formatAmount, formatDate, getTimeRemaining, copyToClipboard, interactiveStatus, paymentCompleted, type Invoice, type InvoiceStatus } from '@/lib/utils';
 import { Copy, ExternalLink, Loader2, Check, FileText, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
@@ -36,17 +36,17 @@ export default function PaymentPage() {
 
   // Auto-refresh for pending invoices
   useEffect(() => {
-    if (!invoice || invoice.status !== 'PENDING' || !polling) {
+    if (!invoice || !interactiveStatus(invoice.status) || !polling) {
       return;
     }
 
     const intervalId = setInterval(async () => {
       try {
       const result = await invoiceApi.getById(id);
-      if (result.data.status !== 'PENDING') {
+      if (!interactiveStatus(result.data.status as InvoiceStatus)) {
         setInvoice(result.data as Invoice);
           setPolling(false);
-          if (result.data.status === 'PAID') {
+          if (paymentCompleted(result.data.status as InvoiceStatus)) {
             toast.success('Payment confirmed!');
           }
         }
@@ -300,7 +300,7 @@ export default function PaymentPage() {
               ) : null}
             </div>
 
-            {invoice.status === 'PAID' && (
+            {paymentCompleted(invoice.status) && (
               <div className="border-t pt-5 flex gap-2">
                 <button
                   onClick={handleDownloadPDF}

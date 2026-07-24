@@ -9,7 +9,7 @@ import PaymentStatus from '@/components/PaymentStatus';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
-import { formatAmount, formatDate, getTimeRemaining, getShareUrl, interactiveStatus, type Invoice } from '@/lib/utils';
+import { formatAmount, formatDate, getTimeRemaining, getShareUrl, interactiveStatus, paymentCompleted, type Invoice } from '@/lib/utils';
 import { ArrowLeft, Share2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -119,7 +119,7 @@ export default function InvoiceDetailPage() {
               ) : (
                 <UserProfile userWallet={userWallet} onDisconnect={() => setUserWallet(null)} />
               )}
-              {invoice.status === 'PENDING' && (
+              {interactiveStatus(invoice.status) && (
                 <button
                   onClick={handleShare}
                   className="btn btn-primary flex items-center gap-2"
@@ -181,7 +181,7 @@ export default function InvoiceDetailPage() {
                   <p className="text-gray-900">{formatDate(invoice.createdAt)}</p>
                 </div>
 
-                {invoice.status === 'PENDING' && (
+                {interactiveStatus(invoice.status) && (
                   <div className="border-b pb-4">
                     <p className="text-sm text-gray-600 mb-1">Expires In</p>
                     <p className="text-gray-900 font-semibold">
@@ -200,11 +200,11 @@ export default function InvoiceDetailPage() {
             </div>
 
             <div className="space-y-6">
-              {invoice.status !== 'PAID' && (
+              {!paymentCompleted(invoice.status) && (
                 <PaymentStatus status={invoice.status} txHash={invoice.paymentTxHash} />
               )}
 
-              {invoice.status === 'PAID' && (
+              {paymentCompleted(invoice.status) && (
                 <PaymentReceipt invoice={invoice} />
               )}
 

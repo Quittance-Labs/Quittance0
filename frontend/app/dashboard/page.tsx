@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { Loader2, Plus, TrendingUp, DollarSign, FileText, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadInvoiceCSV } from '@/lib/export';
+import { paymentCompleted } from '@/lib/utils';
 
 export default function DashboardPage() {
   const { publicKey, connected } = useWalletStore();
@@ -80,7 +81,7 @@ export default function DashboardPage() {
       toast.error('No invoices to export');
       return;
     }
-    const paidInvoices = filteredInvoices.filter(inv => inv.status === 'PAID');
+    const paidInvoices = filteredInvoices.filter(inv => paymentCompleted(inv.status));
     if (paidInvoices.length === 0) {
       toast.error('No paid invoices to export');
       return;
@@ -236,7 +237,7 @@ export default function DashboardPage() {
               <button
                 onClick={handleExportCSV}
                 className="btn btn-primary flex items-center gap-2 whitespace-nowrap"
-                disabled={filteredInvoices.filter(inv => inv.status === 'PAID').length === 0}
+                disabled={filteredInvoices.filter(inv => paymentCompleted(inv.status)).length === 0}
                 title="Export paid invoices only"
               >
                 <Download className="w-5 h-5" />

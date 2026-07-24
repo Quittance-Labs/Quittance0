@@ -83,7 +83,7 @@ export function getShareUrl(invoiceId: string): string {
 /**
  * Get status color
  */
-export function getStatusColor(status: string): string {
+export function getStatusColor(status: InvoiceStatus): string {
   switch (status.toLowerCase()) {
     case 'paid':
       return 'text-green-600 bg-green-50';
@@ -193,6 +193,28 @@ export type Invoice =
  */
 export function interactiveStatus(status: InvoiceStatus): boolean {
   return status === 'PENDING';
+}
+
+/**
+ * Returns true if the invoice is in a fully paid state. Single source of
+ * truth for #19 followup #3 — the boolean complement of `interactiveStatus`.
+ * Mirrors the backend `markAsPaid` invariant: when this returns true,
+ * `paidAt`, `paymentTxHash`, and `payerPublicKey` are non-undefined strings
+ * on the discriminated union in `Invoice` (Option B).
+ *
+ * Use this in:
+ *   - filter ops (`invoices.filter(inv => paymentCompleted(inv.status))`)
+ *   - boolean gates that don't need PAID-field narrowing
+ *     (`{paymentCompleted(invoice.status) && <PostPaidButtonMount />}`)
+ *   - non-narrowing status checks (e.g. menu items, dashboard counts)
+ *
+ * Do NOT use as a discriminator when reading PAID-specific fields
+ * (`paidAt`, `paymentTxHash`, `payerPublicKey`); the helper returns
+ * `boolean`, so it loses the discriminated-union narrow. Use the raw
+ * `invoice.status === 'PAID'` ternary for those.
+ */
+export function paymentCompleted(status: InvoiceStatus): boolean {
+  return status === 'PAID';
 }
 
 /**

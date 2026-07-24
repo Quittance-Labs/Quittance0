@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { formatAmount, formatDate, getStatusColor, getTimeRemaining, interactiveStatus, type Invoice } from '@/lib/utils';
+import { formatAmount, formatDate, getStatusColor, getTimeRemaining, interactiveStatus, paymentCompleted, type Invoice } from '@/lib/utils';
 import { Clock, ExternalLink, Copy, Check, Mail, Download } from 'lucide-react';
 import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -102,7 +102,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
             )}
           </button>
         )}
-        {invoice.status === 'PAID' && (
+        {paymentCompleted(invoice.status) && (
           <button
             onClick={handleDownloadPDF}
             className="btn btn-primary flex-1 flex items-center justify-center gap-2 text-sm"
@@ -111,7 +111,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
             Download Proof
           </button>
         )}
-        {invoice.status === 'PAID' && (
+        {paymentCompleted(invoice.status) && (
           <button
             onClick={!invoice.customerEmail ? undefined : handleEmailShare}
             disabled={!invoice.customerEmail}

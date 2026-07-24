@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { interactiveStatus, type InvoiceStatus } from './utils';
+import {
+  interactiveStatus,
+  paymentCompleted,
+  getStatusColor,
+  type InvoiceStatus,
+} from './utils';
 
 /**
  * Single source of truth for `#19` ("Hide QR and Pay controls on EXPIRED
@@ -16,5 +21,54 @@ describe('interactiveStatus (#19 contract)', () => {
     ['CANCELLED', false],
   ])('%s → show controls = %s', (status, expected) => {
     expect(interactiveStatus(status)).toBe(expected);
+  });
+});
+
+/**
+ * #19 followup #3 — typed-status contract end-to-end.
+ *
+ * Contract: `paymentCompleted(status)` is true iff `status === 'PAID'`.
+ * Mirrors the backend `markAsPaid` invariant — see PR #1 commit `2007bc4`.
+ */
+describe('paymentCompleted (#19 followup #3)', () => {
+  it.each<[InvoiceStatus, boolean]>([
+    ['PAID', true],
+    ['PENDING', false],
+    ['EXPIRED', false],
+    ['CANCELLED', false],
+  ])('%s → paid = %s', (status, expected) => {
+    expect(paymentCompleted(status)).toBe(expected);
+  });
+});
+
+/**
+ * #19 followup #3 — typed status color helper.
+ *
+ * Contract: `getStatusColor` accepts the same `InvoiceStatus` union as
+ * everything else in the contract; the parameter was tightened from
+ * `string` to `InvoiceStatus` to eliminate the string-typed boundary.
+ */
+describe('getStatusColor (#19 followup #3 — typed union)', () => {
+  it.each<[InvoiceStatus, string]>([
+    ['PAID', 'text-green-600 bg-green-50'],
+    ['PENDING', 'text-yellow-600 bg-yellow-50'],
+    ['EXPIRED', 'text-red-600 bg-red-50'],
+    ['CANCELLED', 'text-gray-600 bg-gray-50'],
+  ])('%s → className = %s', (status, expected) => {
+    expect(getStatusColor(status)).toBe(expected);
+  });
+});
+
+/**
+ * Sanity invariant (#19 followup #3): neither predicate returns true
+ * simultaneously. Catches drift if `interactiveStatus` is widened to
+ * cover PAID (or vice versa). NOT a XOR — terminal statuses (EXPIRED,
+ * CANCELLED) return false from BOTH.
+ */
+describe('interactiveStatus AND paymentCompleted are mutually exclusive (#19 followup #3)', () => {
+  it.each<[InvoiceStatus]>([
+    ['PENDING'], ['PAID'], ['EXPIRED'], ['CANCELLED'],
+  ])('%s', (status) => {
+    expect(interactiveStatus(status) && paymentCompleted(status)).toBe(false);
   });
 });
