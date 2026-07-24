@@ -1,6 +1,18 @@
 import { format } from 'date-fns';
 import type { Transaction } from '@/components/TransactionHistory';
 
+const HTML_ESCAPE_CHARACTERS: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#039;',
+};
+
+export function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => HTML_ESCAPE_CHARACTERS[character]);
+}
+
 interface Invoice {
   id: string;
   amount: number;
@@ -253,7 +265,7 @@ export function generatePDFContent(
   <div class="info-section">
     <div class="info-row">
       <span class="info-label">Account Address:</span>
-      <span class="info-value address">${publicKey}</span>
+      <span class="info-value address">${escapeHtml(publicKey)}</span>
     </div>
     <div class="info-row">
       <span class="info-label">Network:</span>
@@ -303,19 +315,19 @@ export function generatePDFContent(
         <tr>
           <td>${format(new Date(tx.createdAt), 'MMM dd, yyyy HH:mm')}</td>
           <td>
-            <span class="type-badge type-${tx.type}">
+            <span class="type-badge type-${escapeHtml(tx.type)}">
               ${tx.type === 'received' ? '↓ Received' : '↑ Sent'}
             </span>
           </td>
           <td class="address">
-            ${tx.type === 'received' ? tx.from : tx.to}
+            ${escapeHtml(tx.type === 'received' ? tx.from : tx.to)}
           </td>
-          <td class="amount-${tx.type}">
+          <td class="amount-${escapeHtml(tx.type)}">
             ${tx.type === 'received' ? '+' : '-'}${parseFloat(tx.amount).toFixed(2)}
           </td>
-          <td>${tx.assetCode}</td>
-          <td>${tx.memo || '-'}</td>
-          <td class="address">${tx.hash.substring(0, 16)}...</td>
+          <td>${escapeHtml(tx.assetCode)}</td>
+          <td>${escapeHtml(tx.memo || '-')}</td>
+          <td class="address">${escapeHtml(tx.hash.substring(0, 16))}...</td>
         </tr>
       `
         )
@@ -481,7 +493,7 @@ export function generateInvoicePDF(invoice: Invoice): string {
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Invoice ${invoice.id}</title>
+  <title>Invoice ${escapeHtml(invoice.id)}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { 
@@ -629,16 +641,16 @@ export function generateInvoicePDF(invoice: Invoice): string {
     <div class="logo">Quittance</div>
     <div class="invoice-title">
       <h1>INVOICE</h1>
-      <div class="invoice-number">#${invoice.id.substring(0, 8).toUpperCase()}</div>
-      <span class="status-badge status-${invoice.status.toLowerCase()}">${invoice.status}</span>
+      <div class="invoice-number">#${escapeHtml(invoice.id.substring(0, 8).toUpperCase())}</div>
+      <span class="status-badge status-${escapeHtml(invoice.status.toLowerCase())}">${escapeHtml(invoice.status)}</span>
     </div>
   </div>
 
   <div class="info-grid">
     <div class="info-section">
       <h3>Bill To</h3>
-      ${invoice.customerName ? `<div class="info-row"><div class="info-label">Customer Name</div><div class="info-value">${invoice.customerName}</div></div>` : ''}
-      ${invoice.customerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${invoice.customerEmail}</div></div>` : ''}
+      ${invoice.customerName ? `<div class="info-row"><div class="info-label">Customer Name</div><div class="info-value">${escapeHtml(invoice.customerName)}</div></div>` : ''}
+      ${invoice.customerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${escapeHtml(invoice.customerEmail)}</div></div>` : ''}
       ${!invoice.customerName && !invoice.customerEmail ? `<div class="info-value">N/A</div>` : ''}
     </div>
 
@@ -659,34 +671,34 @@ export function generateInvoicePDF(invoice: Invoice): string {
   ${invoice.sellerName || invoice.sellerEmail ? `
   <div class="info-section" style="margin-bottom: 20px;">
     <h3>Seller Information</h3>
-    ${invoice.sellerName ? `<div class="info-row"><div class="info-label">Name</div><div class="info-value">${invoice.sellerName}</div></div>` : ''}
-    ${invoice.sellerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${invoice.sellerEmail}</div></div>` : ''}
+    ${invoice.sellerName ? `<div class="info-row"><div class="info-label">Name</div><div class="info-value">${escapeHtml(invoice.sellerName)}</div></div>` : ''}
+    ${invoice.sellerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${escapeHtml(invoice.sellerEmail)}</div></div>` : ''}
   </div>` : ''}
 
   ${isPaid && (invoice.payerName || invoice.payerEmail) ? `
   <div class="info-section" style="margin-bottom: 20px;">
     <h3>Payer Information</h3>
-    ${invoice.payerName ? `<div class="info-row"><div class="info-label">Name</div><div class="info-value">${invoice.payerName}</div></div>` : ''}
-    ${invoice.payerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${invoice.payerEmail}</div></div>` : ''}
+    ${invoice.payerName ? `<div class="info-row"><div class="info-label">Name</div><div class="info-value">${escapeHtml(invoice.payerName)}</div></div>` : ''}
+    ${invoice.payerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${escapeHtml(invoice.payerEmail)}</div></div>` : ''}
   </div>` : ''}
 
   <div class="amount-section">
     <div class="amount-label">Amount ${isPaid ? 'Paid' : 'Due'}</div>
     <div class="amount-value">${invoice.amount}</div>
-    <div class="amount-asset">${invoice.assetCode}</div>
+    <div class="amount-asset">${escapeHtml(invoice.assetCode)}</div>
   </div>
 
-  ${invoice.description ? `<div class="info-section" style="margin-bottom: 20px;"><h3>Description</h3><p style="color: #1f2937; line-height: 1.6;">${invoice.description}</p></div>` : ''}
+  ${invoice.description ? `<div class="info-section" style="margin-bottom: 20px;"><h3>Description</h3><p style="color: #1f2937; line-height: 1.6;">${escapeHtml(invoice.description)}</p></div>` : ''}
 
   <table class="details-table">
-    <tr><td>Invoice ID</td><td style="font-family: monospace; font-size: 12px;">${invoice.id}</td></tr>
-    <tr><td>Memo</td><td style="font-family: monospace;">${invoice.memo}</td></tr>
-    <tr><td>Seller Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.sellerPublicKey}</td></tr>
+    <tr><td>Invoice ID</td><td style="font-family: monospace; font-size: 12px;">${escapeHtml(invoice.id)}</td></tr>
+    <tr><td>Memo</td><td style="font-family: monospace;">${escapeHtml(invoice.memo)}</td></tr>
+    <tr><td>Seller Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${escapeHtml(invoice.sellerPublicKey)}</td></tr>
     ${isPaid && invoice.paymentTxHash ? `
-    <tr><td>Transaction Hash</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.paymentTxHash}</td></tr>
-    <tr><td>Payer Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.payerPublicKey || 'N/A'}</td></tr>
-    ${invoice.payerName ? `<tr><td>Payer Name</td><td>${invoice.payerName}</td></tr>` : ''}
-    ${invoice.payerEmail ? `<tr><td>Payer Email</td><td>${invoice.payerEmail}</td></tr>` : ''}` : ''}
+    <tr><td>Transaction Hash</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${escapeHtml(invoice.paymentTxHash)}</td></tr>
+    <tr><td>Payer Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${escapeHtml(invoice.payerPublicKey || 'N/A')}</td></tr>
+    ${invoice.payerName ? `<tr><td>Payer Name</td><td>${escapeHtml(invoice.payerName)}</td></tr>` : ''}
+    ${invoice.payerEmail ? `<tr><td>Payer Email</td><td>${escapeHtml(invoice.payerEmail)}</td></tr>` : ''}` : ''}
     <tr><td>Network</td><td>${network}</td></tr>
   </table>
 
@@ -763,4 +775,3 @@ export function shareInvoiceByEmail(invoice: Invoice) {
   const mailtoLink = `mailto:${invoice.customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   window.location.href = mailtoLink;
 }
-
