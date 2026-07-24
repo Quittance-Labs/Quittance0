@@ -390,7 +390,7 @@ export default function PaymentPage() {
               </div>
             )}
 
-            {interactiveStatus(invoice.status) && !invoice.paymentTxHash && (
+            {interactiveStatus(invoice.status) && (
               <>
                 <div className="card">
                   <h3 className="text-lg font-semibold text-center mb-4">Scan QR Code</h3>
