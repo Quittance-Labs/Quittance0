@@ -9,7 +9,7 @@ import PaymentStatus from '@/components/PaymentStatus';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
-import { formatAmount, formatDate, getTimeRemaining, getShareUrl } from '@/lib/utils';
+import { formatAmount, formatDate, getTimeRemaining, getShareUrl, interactiveStatus } from '@/lib/utils';
 import { ArrowLeft, Share2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -207,7 +207,7 @@ export default function InvoiceDetailPage() {
                 <PaymentReceipt invoice={invoice} />
               )}
 
-              {invoice.status === 'PENDING' && paymentInfo && (
+              {interactiveStatus(invoice.status) && paymentInfo && (
                 <div className="card">
                   <h3 className="text-lg font-semibold mb-4 text-center">
                     Payment QR Code

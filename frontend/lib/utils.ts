@@ -99,6 +99,31 @@ export function getStatusColor(status: string): string {
 }
 
 /**
+ * Invoice status union — exported for documentation and IDE hover-hint
+ * at call sites. Tightening `interactiveStatus`'s parameter (and the
+ * `Invoice` interfaces in components / page state) to this union is a
+ * follow-up that touches each call site — see issue #19 design proposal.
+ */
+export type InvoiceStatus = 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
+
+/**
+ * Returns true if interactive payment controls (QR, Pay button, copy link)
+ * should be rendered for the given invoice status.
+ *
+ * Contract: show iff status === 'PENDING'. Single source of truth for
+ * `#19` ("Hide QR and Pay controls on EXPIRED invoices only").
+ *
+ * The parameter is typed as `string` (not the union) to fit existing
+ * component interfaces — `InvoiceCard` declares `status: string`, and the
+ * two page components cast through `any`. Unknown statuses (including any
+ * future enum value the backend might add before the union is updated)
+ * default to `false` (hide) as a safe fallback.
+ */
+export function interactiveStatus(status: string): boolean {
+  return status === 'PENDING';
+}
+
+/**
  * Validate email
  */
 export function isValidEmail(email: string): boolean {
@@ -122,6 +147,7 @@ export default {
   getTimeRemaining,
   getShareUrl,
   getStatusColor,
+  interactiveStatus,
   isValidEmail,
   formatCurrency,
 };

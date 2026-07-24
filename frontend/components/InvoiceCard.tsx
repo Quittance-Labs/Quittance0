@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { formatAmount, formatDate, getStatusColor, getTimeRemaining } from '@/lib/utils';
+import { formatAmount, formatDate, getStatusColor, getTimeRemaining, interactiveStatus } from '@/lib/utils';
 import { Clock, ExternalLink, Copy, Check, Mail, Download } from 'lucide-react';
 import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -105,7 +105,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
           <ExternalLink className="w-4 h-4" />
           View
         </Link>
-        {invoice.status === 'PENDING' && (
+        {interactiveStatus(invoice.status) && (
           <button
             onClick={handleCopyLink}
             className="btn btn-secondary flex items-center justify-center gap-2 px-3"

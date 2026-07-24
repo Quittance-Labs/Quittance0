@@ -10,7 +10,7 @@ import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
 import AssetLogo from '@/components/AssetLogo';
-import { formatAmount, formatDate, getTimeRemaining, copyToClipboard } from '@/lib/utils';
+import { formatAmount, formatDate, getTimeRemaining, copyToClipboard, interactiveStatus } from '@/lib/utils';
 import { Copy, ExternalLink, Loader2, Check, FileText, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
@@ -390,7 +390,7 @@ export default function PaymentPage() {
               </div>
             )}
 
-            {invoice.status === 'PENDING' && !invoice.paymentTxHash && (
+            {interactiveStatus(invoice.status) && !invoice.paymentTxHash && (
               <>
                 <div className="card">
                   <h3 className="text-lg font-semibold text-center mb-4">Scan QR Code</h3>
