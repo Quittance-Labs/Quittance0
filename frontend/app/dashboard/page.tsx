@@ -11,16 +11,16 @@ import Link from 'next/link';
 import { Loader2, Plus, TrendingUp, DollarSign, FileText, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadInvoiceCSV } from '@/lib/export';
-import { paymentCompleted } from '@/lib/utils';
+import { paymentCompleted, type Invoice, type InvoiceStats } from '@/lib/utils';
 
 export default function DashboardPage() {
   const { publicKey, connected } = useWalletStore();
-  const [invoices, setInvoices] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [stats, setStats] = useState<InvoiceStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [filteredInvoices, setFilteredInvoices] = useState<any[]>([]);
+  const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
   const [viewMode, setViewMode] = useState<'invoices' | 'transactions'>('invoices');
   const hasAnyInvoices = Number(stats?.total_invoices || 0) > 0;
 
@@ -68,7 +68,7 @@ export default function DashboardPage() {
         invoiceApi.getStats(publicKey),
       ]);
       setInvoices(invoicesResult.data);
-      setStats(statsResult.data[0] || {});
+      setStats(statsResult.data[0] ?? null);
     } catch (error) {
       toast.error('Failed to load data');
     } finally {
@@ -86,7 +86,7 @@ export default function DashboardPage() {
       toast.error('No paid invoices to export');
       return;
     }
-    downloadInvoiceCSV(paidInvoices as any);
+    downloadInvoiceCSV(paidInvoices);
     toast.success(`Exported ${paidInvoices.length} paid invoices to CSV`);
   };
 
@@ -215,7 +215,7 @@ export default function DashboardPage() {
                 <div>
                   <p className="text-sm text-gray-600">Revenue</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {parseFloat(stats.total_revenue || 0).toFixed(2)}
+                    {parseFloat(String(stats.total_revenue ?? 0)).toFixed(2)}
                   </p>
                   <p className="text-xs text-gray-500">{stats.asset_code || 'XLM'}</p>
                 </div>

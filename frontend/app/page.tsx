@@ -12,12 +12,13 @@ import { useWalletStore } from '@/lib/store';
 import { Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { shareInvoiceByEmail } from '@/lib/export';
+import { type PaymentSession } from '@/lib/utils';
 
 export default function HomePage() {
-  const [createdInvoice, setCreatedInvoice] = useState<any>(null);
+  const [createdInvoice, setCreatedInvoice] = useState<PaymentSession | null>(null);
   const { publicKey, connected } = useWalletStore();
 
-  const handleInvoiceCreated = (result: any) => setCreatedInvoice(result);
+  const handleInvoiceCreated = (result: PaymentSession) => setCreatedInvoice(result);
   const handleWalletDisconnected = () => setCreatedInvoice(null);
 
   const scrollToCreate = () => {

@@ -178,6 +178,89 @@ export type Invoice =
     });
 
 /**
+ * Common envelope for every Quittance0 backend endpoint response.
+ * Mirrors the shape produced by `backend/src/controllers/invoice.controller.ts`:
+ * `{ success: true, data: T, pagination?: {...} }` on success and
+ * `{ success: false, error: string }` on error. Typed here so the
+ * frontend `lib/api.ts` retype stays a mechanical, single-value
+ * exercise instead of inventing structures ad hoc per endpoint.
+ *
+ * `T` is the payload the consumer cares about (the `.data` field).
+ */
+export interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  error?: string;
+  pagination?: {
+    limit: number;
+    offset: number;
+    total: number;
+  };
+}
+
+/**
+ * Response from POST /invoices (create) and GET /invoices/:id/payment-info.
+ * The two endpoints are structurally identical — both return the freshly
+ * created (or freshly loaded) invoice plus its shareable payment surface.
+ * Mirrors `backend/src/controllers/invoice.controller.ts`:
+ *   - `createInvoice`: `{ invoice, paymentUrl, qrCode, stellarQrCode }`
+ *   - `getPaymentInfo`: `{ invoice, paymentUrl, qrCode, stellarQrCode }`
+ */
+export interface PaymentSession {
+  invoice: Invoice;
+  paymentUrl: string;
+  qrCode: string;
+  stellarQrCode: string;
+}
+
+/**
+ * Per-asset aggregate row returned by GET /invoices/stats.
+ * The backend query (`backend/src/services/invoice.service.ts:228-247`)
+ * SELECTs `COUNT(*) ... SUM(CASE WHEN ...) ... GROUP BY asset_code`, so
+ * `total_invoices`, `paid_invoices`, `pending_invoices`,
+ * `expired_invoices`, and `total_revenue` arrive as **strings** from
+ * node-postgres by default (BigInt-supporting drivers can return string).
+ * The shape is kept as `string | number` so any future conversion at
+ * the SQL layer doesn't force re-typing this struct.
+ */
+export interface InvoiceStats {
+  total_invoices: string | number;
+  paid_invoices: string | number;
+  pending_invoices: string | number;
+  expired_invoices: string | number;
+  total_revenue: string | number;
+  asset_code: string;
+}
+
+/**
+ * Frontend-side input shape for POST /invoices. Mirrors the backend's
+ * `CreateInvoiceInput` (`backend/src/utils/validation.ts`). Kept here
+ * as the canonical frontend view so `lib/api.ts` doesn't have to
+ * duplicate the field list.
+ */
+export interface CreateInvoiceInput {
+  amount: number;
+  assetCode?: string;
+  assetIssuer?: string;
+  description?: string;
+  customerName?: string;
+  customerEmail?: string;
+  expiresInDays?: number;
+  sellerPublicKey?: string;
+  sellerName?: string;
+  sellerEmail?: string;
+}
+
+/**
+ * Frontend-side input shape for POST /invoices/:id/verify.
+ */
+export interface VerifyInvoiceInput {
+  txHash: string;
+  payerName?: string;
+  payerEmail?: string;
+}
+
+/**
  * Returns true if interactive payment controls (QR, Pay button, copy link)
  * should be rendered for the given invoice status. Single source of truth
  * for `#19` ("Hide QR and Pay controls on EXPIRED invoices only").

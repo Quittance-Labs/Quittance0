@@ -1,5 +1,12 @@
 import axios from 'axios';
 import { mockInvoiceApi, mockStellarApi, mockHealthCheck } from './mock-api';
+import {
+  type ApiResponse,
+  type Invoice,
+  type InvoiceStats,
+  type PaymentSession,
+  type CreateInvoiceInput,
+} from './utils';
 
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
@@ -18,25 +25,38 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
-export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
-  create: async (data: {
-    amount: number;
-    assetCode?: string;
-    assetIssuer?: string;
-    description?: string;
-    customerName?: string;
-    customerEmail?: string;
-    expiresInDays?: number;
-    sellerPublicKey?: string;
-    sellerName?: string;
-    sellerEmail?: string;
-  }) => {
-    const response = await api.post('/invoices', data);
+
+/**
+ * Typed shape for every Quittance0 invoice endpoint.
+ * Real (`api`-backed) implementation below; mock implementation imported
+ * alongside and re-cast to this shape at the export boundary so the
+ * conditional union collapses cleanly for downstream consumers.
+ *
+ * Returns an `ApiResponse<T>` envelope (mirrors the shape produced by
+ * `backend/src/controllers/invoice.controller.ts`:
+ *   `{ success: true, data: T, pagination?: {...} }` on success and
+ *   `{ success: false, error: string }` on error). Consumers access
+ *   `.data` to retrieve the typed payload — e.g. `result.data` is
+ *   `Invoice`, `PaymentSession`, `Invoice[]`, or `InvoiceStats[]`
+ *   depending on the endpoint.
+ *
+ * The mock branch is intentionally re-cast to `typeof realInvoiceApi`
+ * because `mockInvoiceApi` from `./mock-api` is a loosely-typed module
+ * (its `mockInvoices` list is an inferred array whose element shapes
+ * don't satisfy the discriminated `Invoice` union). The cast is at the
+ * api/mock boundary only — nothing on consumer sites — and the mock
+ * shape is, at runtime, structurally compatible with the typed shape
+ * (same field names; status is a literal in both). Re-typing
+ * `mock-api.ts` is a separate followup (out of scope for this PR).
+ */
+const realInvoiceApi = {
+  create: async (data: CreateInvoiceInput): Promise<ApiResponse<PaymentSession>> => {
+    const response = await api.post<ApiResponse<PaymentSession>>('/invoices', data);
     return response.data;
   },
 
-  getById: async (id: string) => {
-    const response = await api.get(`/invoices/${id}`);
+  getById: async (id: string): Promise<ApiResponse<Invoice>> => {
+    const response = await api.get<ApiResponse<Invoice>>(`/invoices/${id}`);
     return response.data;
   },
 
@@ -45,38 +65,43 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     limit?: number;
     offset?: number;
     sellerPublicKey?: string;
-  }) => {
-    const response = await api.get('/invoices', { params });
+  }): Promise<ApiResponse<Invoice[]>> => {
+    const response = await api.get<ApiResponse<Invoice[]>>('/invoices', { params });
     return response.data;
   },
 
-  getPaymentInfo: async (id: string) => {
-    const response = await api.get(`/invoices/${id}/payment-info`);
+  getPaymentInfo: async (id: string): Promise<ApiResponse<PaymentSession>> => {
+    const response = await api.get<ApiResponse<PaymentSession>>(`/invoices/${id}/payment-info`);
     return response.data;
   },
 
-  cancel: async (id: string) => {
-    const response = await api.post(`/invoices/${id}/cancel`);
+  cancel: async (id: string): Promise<ApiResponse<Invoice>> => {
+    const response = await api.post<ApiResponse<Invoice>>(`/invoices/${id}/cancel`);
     return response.data;
   },
 
-  verify: async (id: string, txHash: string, payerInfo?: { payerName?: string; payerEmail?: string }) => {
-    const response = await api.post(`/invoices/${id}/verify`, { 
+  verify: async (id: string, txHash: string, payerInfo?: { payerName?: string; payerEmail?: string }): Promise<ApiResponse<Invoice>> => {
+    const response = await api.post<ApiResponse<Invoice>>(`/invoices/${id}/verify`, {
       txHash,
-      ...payerInfo 
+      ...payerInfo,
     });
     return response.data;
   },
 
-  getStats: async (sellerPublicKey?: string) => {
-    const response = await api.get('/invoices/stats', {
+  getStats: async (sellerPublicKey?: string): Promise<ApiResponse<InvoiceStats[]>> => {
+    const response = await api.get<ApiResponse<InvoiceStats[]>>('/invoices/stats', {
       params: sellerPublicKey ? { sellerPublicKey } : undefined,
     });
     return response.data;
   },
 };
 
+export const invoiceApi: typeof realInvoiceApi = USE_MOCK_API
+  ? (mockInvoiceApi as typeof realInvoiceApi)
+  : realInvoiceApi;
+
 // Stellar APIs
+// (out of cohesive-cleanup scope; intentionally any-typed — see PR #1 "Known followups")
 export const stellarApi = USE_MOCK_API ? mockStellarApi : {
   getAccount: async (publicKey?: string) => {
     const response = await api.get('/stellar/account', {
@@ -114,4 +139,3 @@ export const healthCheck = USE_MOCK_API ? mockHealthCheck : async () => {
 };
 
 export default api;
-

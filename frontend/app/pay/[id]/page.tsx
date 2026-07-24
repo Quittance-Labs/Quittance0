@@ -10,7 +10,7 @@ import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
 import AssetLogo from '@/components/AssetLogo';
-import { formatAmount, formatDate, getTimeRemaining, copyToClipboard, interactiveStatus, paymentCompleted, type Invoice, type InvoiceStatus } from '@/lib/utils';
+import { formatAmount, formatDate, getTimeRemaining, copyToClipboard, interactiveStatus, paymentCompleted, type Invoice, type PaymentSession } from '@/lib/utils';
 import { Copy, ExternalLink, Loader2, Check, FileText, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
@@ -21,7 +21,7 @@ export default function PaymentPage() {
 
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
-  const [paymentInfo, setPaymentInfo] = useState<any>(null);
+  const [paymentInfo, setPaymentInfo] = useState<PaymentSession | null>(null);
   const [polling, setPolling] = useState(true);
   const [userWallet, setUserWallet] = useState<string | null>(null);
   // New state for manual verification
@@ -43,10 +43,10 @@ export default function PaymentPage() {
     const intervalId = setInterval(async () => {
       try {
       const result = await invoiceApi.getById(id);
-      if (!interactiveStatus(result.data.status as InvoiceStatus)) {
-        setInvoice(result.data as Invoice);
+      if (!interactiveStatus(result.data.status)) {
+        setInvoice(result.data);
           setPolling(false);
-          if (paymentCompleted(result.data.status as InvoiceStatus)) {
+          if (paymentCompleted(result.data.status)) {
             toast.success('Payment confirmed!');
           }
         }
@@ -64,7 +64,7 @@ export default function PaymentPage() {
         invoiceApi.getById(id),
         invoiceApi.getPaymentInfo(id),
       ]);
-      setInvoice(invoiceResult.data as Invoice);
+      setInvoice(invoiceResult.data);
       setPaymentInfo(paymentResult.data);
     } catch (error: any) {
       toast.error('Failed to load invoice');
@@ -395,7 +395,7 @@ export default function PaymentPage() {
                 <div className="card">
                   <h3 className="text-lg font-semibold text-center mb-4">Scan QR Code</h3>
                   <QRCodeDisplay
-                    value={paymentInfo?.stellarQrCode || paymentInfo?.paymentUrl}
+                    value={paymentInfo?.stellarQrCode ?? paymentInfo?.paymentUrl ?? ''}
                     title=""
                     size={220}
                   />
