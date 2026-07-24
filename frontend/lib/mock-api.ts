@@ -157,14 +157,28 @@ export const mockInvoiceApi = {
     };
   },
 
-  verify: async (id: string, txHash: string) => {
+  verify: async (
+    id: string,
+    txHash: string,
+    payerInfo?: { payerPublicKey?: string; payerName?: string; payerEmail?: string }
+  ): Promise<{ success: true; data: any }> => {
     await delay(1000);
     const invoice = mockInvoices.find(inv => inv.id === id);
-    
+
     if (invoice) {
       invoice.status = 'PAID';
       invoice.paymentTxHash = txHash;
       invoice.paidAt = new Date().toISOString();
+      // Atomic-mirror of backend `markAsPaid`: PAID invoice must carry all
+      // three of {paidAt, paymentTxHash, payerPublicKey}. The typed
+      // `Invoice` discriminated-union PAID variant in `@/lib/utils` makes
+      // payerPublicKey required when status === 'PAID', so we fall back
+      // to a demo wallet address when the caller doesn't provide one
+      // (e.g. the manual "type tx hash from another device" flow). Hard-
+      // coded fallback is acceptable because this is mock-mode: there is
+      // no real on-chain payer identity to mirror.
+      invoice.payerPublicKey =
+        payerInfo?.payerPublicKey || 'GXYZ789EXAMPLE123';
     }
 
     return {

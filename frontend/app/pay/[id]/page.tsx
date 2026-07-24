@@ -10,7 +10,8 @@ import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
 import AssetLogo from '@/components/AssetLogo';
-import { formatAmount, formatDate, getTimeRemaining, copyToClipboard } from '@/lib/utils';
+import StatusBadge from '@/components/StatusBadge';
+import { formatAmount, formatDate, getTimeRemaining, copyToClipboard, interactiveStatus, paymentCompleted, type Invoice, type PaymentSession } from '@/lib/utils';
 import { Copy, ExternalLink, Loader2, Check, FileText, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
@@ -19,9 +20,9 @@ export default function PaymentPage() {
   const params = useParams();
   const id = params.id as string;
 
-  const [invoice, setInvoice] = useState<any>(null);
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
-  const [paymentInfo, setPaymentInfo] = useState<any>(null);
+  const [paymentInfo, setPaymentInfo] = useState<PaymentSession | null>(null);
   const [polling, setPolling] = useState(true);
   const [userWallet, setUserWallet] = useState<string | null>(null);
   // New state for manual verification
@@ -36,17 +37,17 @@ export default function PaymentPage() {
 
   // Auto-refresh for pending invoices
   useEffect(() => {
-    if (!invoice || invoice.status !== 'PENDING' || !polling) {
+    if (!invoice || !interactiveStatus(invoice.status) || !polling) {
       return;
     }
 
     const intervalId = setInterval(async () => {
       try {
-        const result = await invoiceApi.getById(id);
-        if (result.data.status !== 'PENDING') {
-          setInvoice(result.data);
+      const result = await invoiceApi.getById(id);
+      if (!interactiveStatus(result.data.status)) {
+        setInvoice(result.data);
           setPolling(false);
-          if (result.data.status === 'PAID') {
+          if (paymentCompleted(result.data.status)) {
             toast.success('Payment confirmed!');
           }
         }
@@ -96,6 +97,7 @@ export default function PaymentPage() {
     try {
       toast.loading('Verifying transaction...', { id: 'verify-toast' });
       await invoiceApi.verify(id, verifyTxHash.trim(), {
+        payerPublicKey: userWallet || undefined,
         payerName: payerName.trim() || undefined,
         payerEmail: normalizedPayerEmail || undefined,
       });
@@ -120,7 +122,7 @@ export default function PaymentPage() {
 
   const handleDownloadPDF = () => {
     if (invoice) {
-      openInvoicePDF(invoice as any);
+      openInvoicePDF(invoice);
       toast.success('Opening payment proof');
     }
   };
@@ -131,7 +133,7 @@ export default function PaymentPage() {
       toast.error('No client email on this invoice');
       return;
     }
-    shareInvoiceByEmail(invoice as any);
+    shareInvoiceByEmail(invoice);
   };
 
   if (loading) {
@@ -260,24 +262,7 @@ export default function PaymentPage() {
               <div className="border-b pb-4">
                 <p className="text-sm text-gray-600 mb-1">Status</p>
                 <div className="inline-flex items-center gap-2 mt-1">
-                  {invoice.status === 'PENDING' && (
-                    <>
-                      <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
-                      <span className="text-yellow-700 font-semibold">Waiting for Payment</span>
-                    </>
-                  )}
-                  {invoice.status === 'PAID' && (
-                    <>
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      <span className="text-green-700 font-semibold">Paid</span>
-                    </>
-                  )}
-                  {invoice.status === 'EXPIRED' && (
-                    <>
-                      <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                      <span className="text-red-700 font-semibold">Expired</span>
-                    </>
-                  )}
+                  <StatusBadge invoice={invoice} />
                 </div>
               </div>
 
@@ -290,17 +275,17 @@ export default function PaymentPage() {
                 </div>
               )}
 
-              {invoice.status === 'PAID' && (
+              {invoice.status === 'PAID' ? (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <p className="text-sm text-green-800 font-semibold mb-1">Payment Completed</p>
                   <p className="text-green-700 font-semibold">
                     {formatDate(invoice.paidAt)}
                   </p>
                 </div>
-              )}
+              ) : null}
             </div>
 
-            {invoice.status === 'PAID' && (
+            {paymentCompleted(invoice.status) && (
               <div className="border-t pt-5 flex gap-2">
                 <button
                   onClick={handleDownloadPDF}
@@ -390,12 +375,12 @@ export default function PaymentPage() {
               </div>
             )}
 
-            {invoice.status === 'PENDING' && !invoice.paymentTxHash && (
+            {interactiveStatus(invoice.status) && (
               <>
                 <div className="card">
                   <h3 className="text-lg font-semibold text-center mb-4">Scan QR Code</h3>
                   <QRCodeDisplay
-                    value={paymentInfo?.stellarQrCode || paymentInfo?.paymentUrl}
+                    value={paymentInfo?.stellarQrCode ?? paymentInfo?.paymentUrl ?? ''}
                     title=""
                     size={220}
                   />
@@ -460,6 +445,7 @@ export default function PaymentPage() {
                     assetCode={invoice.assetCode}
                     assetIssuer={invoice.assetIssuer}
                     invoiceId={invoice.id}
+                    payerPublicKey={userWallet || undefined}
                     payerName={payerName}
                     payerEmail={payerEmail}
                     onSuccess={handlePaymentSuccess}

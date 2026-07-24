@@ -2,33 +2,17 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { formatAmount, formatDate, getStatusColor, getTimeRemaining } from '@/lib/utils';
+import { formatAmount, formatDate, getTimeRemaining, interactiveStatus, paymentCompleted, type Invoice } from '@/lib/utils';
 import { Clock, ExternalLink, Copy, Check, Mail, Download } from 'lucide-react';
 import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import AssetLogo from './AssetLogo';
+import StatusBadge from './StatusBadge';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 
-interface Invoice {
-  id: string;
-  amount: number;
-  assetCode: string;
-  description?: string;
-  customerName?: string;
-  customerEmail?: string;
-  status: string;
-  createdAt: string;
-  expiresAt: string;
-  memo: string;
-  sellerPublicKey?: string;
-  sellerName?: string;
-  sellerEmail?: string;
-  payerPublicKey?: string;
-  payerName?: string;
-  payerEmail?: string;
-  paymentTxHash?: string;
-  paidAt?: string;
-}
+// `Invoice` is the shared type from `@/lib/utils` — single source of truth
+// for the #19 contract; `status: InvoiceStatus` here means adding a new
+// status surfaces at this file through tsc.
 
 interface InvoiceCardProps {
   invoice: Invoice;
@@ -36,7 +20,6 @@ interface InvoiceCardProps {
 
 export default function InvoiceCard({ invoice }: InvoiceCardProps) {
   const [linkCopied, setLinkCopied] = useState(false);
-  const statusColor = getStatusColor(invoice.status);
   const paymentUrl = `${window.location.origin}/pay/${invoice.id}`;
 
   const handleCopyLink = async () => {
@@ -51,12 +34,12 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
   };
 
   const handleDownloadPDF = () => {
-    openInvoicePDF(invoice as any);
+    openInvoicePDF(invoice);
     toast.success('Opening payment proof');
   };
 
   const handleEmailShare = () => {
-    shareInvoiceByEmail(invoice as any);
+    shareInvoiceByEmail(invoice);
   };
 
   return (
@@ -73,9 +56,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
             <p className="text-sm text-gray-600">{invoice.customerName}</p>
           )}
         </div>
-        <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${statusColor}`}>
-          {invoice.status}
-        </span>
+        <StatusBadge invoice={invoice} variant="chip" />
       </div>
 
       {invoice.description && (
@@ -105,7 +86,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
           <ExternalLink className="w-4 h-4" />
           View
         </Link>
-        {invoice.status === 'PENDING' && (
+        {interactiveStatus(invoice.status) && (
           <button
             onClick={handleCopyLink}
             className="btn btn-secondary flex items-center justify-center gap-2 px-3"
@@ -119,7 +100,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
             )}
           </button>
         )}
-        {invoice.status === 'PAID' && (
+        {paymentCompleted(invoice.status) && (
           <button
             onClick={handleDownloadPDF}
             className="btn btn-primary flex-1 flex items-center justify-center gap-2 text-sm"
@@ -128,7 +109,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
             Download Proof
           </button>
         )}
-        {invoice.status === 'PAID' && (
+        {paymentCompleted(invoice.status) && (
           <button
             onClick={!invoice.customerEmail ? undefined : handleEmailShare}
             disabled={!invoice.customerEmail}

@@ -4,7 +4,39 @@ import { generateInvoiceMemo } from '../utils/memo';
 import { CreateInvoiceInput } from '../utils/validation';
 import { SELLER_PUBLIC_KEY } from '../config/stellar';
 
-export interface Invoice {
+/**
+ * Backend SQL-service `Invoice` shape — discriminated union over `status`.
+ * Mirrors the frontend's `Invoice` (`frontend/lib/utils.ts`) and the
+ * in-memory storage's union (`backend/src/storage/memory-storage.ts`)
+ * so a PAID-shape drift on the SQL path is caught at compile time.
+ *
+ * Field rules (mirrors Option B from the frontend):
+ *   - When `status === 'PAID'`, three fields become required:
+ *     `paidAt: Date`, `paymentTxHash: string`, `payerPublicKey: string`.
+ *     Matches the SQL UPDATE in `markAsPaid` which atomically sets
+ *     `status='PAID', payment_tx_hash=$2, payer_public_key=$3,
+ *      paid_at=NOW()` in a single statement.
+ *   - Otherwise all three are `?: never`, so a non-PAID read is a compile
+ *     error rather than a runtime `undefined` trap.
+ *
+ * SQL-only fields (`userId`, `metadata`) live on `InvoiceCommon` so
+ * they're available across PAID and non-PAID variants — same field is
+ * the consumer-facing view of a SQL row's optional columns. `metadata`
+ * is typed as `Record<string, unknown>` — forces narrowing before
+ * property access; not as permissive as `any` but covers the dominant
+ * JSONB-object forward-compat case (the column is currently empty
+ * but the schema declares it as `JSONB`, so future writers can
+ * populate it with arbitrary JSON key/value pairs).
+ *
+ * RUNTIME TRIPWIRE: the post-write `if (invoice.status === 'PAID' && ...)`
+ * invariant in `markAsPaid` (commit `c09a61a`) remains the source of
+ * truth on data integrity — the discriminated union's compile-time
+ * narrowing is the defensive layer that catches future drift BEFORE
+ * the runtime fires. See `mapRowToInvoice` for how a malformed SQL row
+ * still passes type-checking (via `row: any`) but trips the runtime
+ * guard on the way out.
+ */
+interface InvoiceCommon {
   id: string;
   userId?: string;
   sellerPublicKey: string;
@@ -17,16 +49,28 @@ export interface Invoice {
   description?: string;
   customerName?: string;
   customerEmail?: string;
-  status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
-  paymentTxHash?: string;
-  payerPublicKey?: string;
   payerName?: string;
   payerEmail?: string;
   createdAt: Date;
-  paidAt?: Date;
   expiresAt: Date;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
 }
+
+type InvoicePaid = InvoiceCommon & {
+  status: 'PAID';
+  paidAt: Date;
+  paymentTxHash: string;
+  payerPublicKey: string;
+};
+
+type InvoiceNonPaid = InvoiceCommon & {
+  status: 'PENDING' | 'EXPIRED' | 'CANCELLED';
+  paidAt?: never;
+  paymentTxHash?: never;
+  payerPublicKey?: never;
+};
+
+export type Invoice = InvoicePaid | InvoiceNonPaid;
 
 class InvoiceService {
   /**
@@ -135,7 +179,37 @@ class InvoiceService {
         payerPublicKey,
       });
 
-      return this.mapRowToInvoice(result.rows[0]);
+      const invoice = this.mapRowToInvoice(result.rows[0]);
+
+      // Type-contract invariant (mirrors the typed `Invoice` discriminated-
+      // union PAID variant in `frontend/lib/utils.ts`): when an invoice is
+      // marked PAID, three fields MUST be set atomically — `paidAt`,
+      // `paymentTxHash`, `payerPublicKey`. The frontend discriminated union
+      // tracks this with TypeScript narrowing; the backend enforces it
+      // here with a runtime guard so any future caller or partial SQL
+      // UPDATE that forgets one of the three fails fast at the boundary
+      // rather than at a downstream consumer (the frontend would
+      // otherwise silently read `undefined` for the missing field).
+      //
+      // The SQL UPDATE above is a single statement setting all four
+      // columns atomically (`status='PAID', payment_tx_hash=$2,
+      // payer_public_key=$3, paid_at=NOW()`), so today's normal flow
+      // never fires this assertion. It's a tripwire for FUTURE drift —
+      // e.g. a partial UPDATE path that flips status without the
+      // on-chain tx info, or a racing webhook handler that updates
+      // status before the tx hash is available.
+      if (
+        invoice.status === 'PAID' &&
+        (!invoice.paidAt || !invoice.paymentTxHash || !invoice.payerPublicKey)
+      ) {
+        throw new Error(
+          `Invariant violation: invoice ${invoice.id} has status='PAID' but ` +
+          `one of paidAt, paymentTxHash, payerPublicKey is unset. ` +
+          `markAsPaid must atomically persist all three of {paidAt, paymentTxHash, payerPublicKey}.`
+        );
+      }
+
+      return invoice;
     } catch (error: any) {
       console.error('Error marking invoice as paid:', error);
       throw new Error(`Failed to update invoice: ${error.message}`);
@@ -236,10 +310,20 @@ class InvoiceService {
   }
 
   /**
-   * Map database row to Invoice object
+   * Map database row to Invoice object.
+   *
+   * The discriminated union narrowing happens here: PAID-shape rows
+   * are constructed as `InvoicePaid` (with all three required fields
+   * populated), non-PAID rows as `InvoiceNonPaid` (with the discriminator
+   * fields omitted). `row: any` lets us read whatever node-postgres
+   * sent back without enforcing structural correctness at the type
+   * level — the runtime invariant in `markAsPaid` (commit `c09a61a`)
+   * is the tripwire for any malformed PAID-shape row that slipped
+   * through (e.g. a future partial SQL UPDATE that set status without
+   * the on-chain tx info).
    */
   private mapRowToInvoice(row: any): Invoice {
-    return {
+    const common: InvoiceCommon = {
       id: row.id,
       userId: row.user_id,
       sellerPublicKey: row.seller_public_key,
@@ -252,15 +336,26 @@ class InvoiceService {
       description: row.description,
       customerName: row.customer_name,
       customerEmail: row.customer_email,
-      status: row.status,
-      paymentTxHash: row.payment_tx_hash,
-      payerPublicKey: row.payer_public_key,
       payerName: row.payer_name,
       payerEmail: row.payer_email,
       createdAt: row.created_at,
-      paidAt: row.paid_at,
       expiresAt: row.expires_at,
-      metadata: row.metadata,
+      metadata: row.metadata as Record<string, unknown>,
+    };
+
+    if (row.status === 'PAID') {
+      return {
+        ...common,
+        status: 'PAID',
+        paidAt: row.paid_at as Date,
+        paymentTxHash: row.payment_tx_hash as string,
+        payerPublicKey: row.payer_public_key as string,
+      };
+    }
+
+    return {
+      ...common,
+      status: row.status as 'PENDING' | 'EXPIRED' | 'CANCELLED',
     };
   }
 }

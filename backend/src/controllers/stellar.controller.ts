@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import stellarService from '../services/stellar.service';
+import { stellarService } from '../services/stellar.service';
 import { SELLER_PUBLIC_KEY } from '../config/stellar';
 
 class StellarController {

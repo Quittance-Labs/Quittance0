@@ -1,27 +1,8 @@
 import { format } from 'date-fns';
 import type { Transaction } from '@/components/TransactionHistory';
+import type { Invoice } from '@/lib/utils';
 
-interface Invoice {
-  id: string;
-  amount: number;
-  assetCode: string;
-  assetIssuer?: string;
-  description?: string;
-  customerName?: string;
-  customerEmail?: string;
-  sellerName?: string;
-  sellerEmail?: string;
-  payerName?: string;
-  payerEmail?: string;
-  status: string;
-  createdAt: string;
-  expiresAt: string;
-  paidAt?: string;
-  memo: string;
-  sellerPublicKey: string;
-  payerPublicKey?: string;
-  paymentTxHash?: string;
-}
+
 
 /**
  * Convert transactions to CSV format
@@ -386,27 +367,7 @@ export function downloadJSON(transactions: Transaction[], filename?: string) {
   URL.revokeObjectURL(url);
 }
 
-interface Invoice {
-  id: string;
-  amount: number;
-  assetCode: string;
-  assetIssuer?: string;
-  description?: string;
-  customerName?: string;
-  customerEmail?: string;
-  sellerName?: string;
-  sellerEmail?: string;
-  payerName?: string;
-  payerEmail?: string;
-  status: string;
-  createdAt: string;
-  expiresAt: string;
-  paidAt?: string;
-  memo: string;
-  sellerPublicKey: string;
-  payerPublicKey?: string;
-  paymentTxHash?: string;
-}
+
 
 export function generateInvoiceCSV(invoices: Invoice[]): string {
   const headers = [
@@ -652,7 +613,7 @@ export function generateInvoicePDF(invoice: Invoice): string {
         <div class="info-label">Expires</div>
         <div class="info-value">${format(new Date(invoice.expiresAt), 'MMM dd, yyyy')}</div>
       </div>
-      ${isPaid ? `<div class="info-row"><div class="info-label">Payment Date</div><div class="info-value">${format(new Date(invoice.paidAt!), 'MMM dd, yyyy HH:mm')}</div></div>` : ''}
+      ${invoice.status === 'PAID' ? `<div class="info-row"><div class="info-label">Payment Date</div><div class="info-value">${format(new Date(invoice.paidAt), 'MMM dd, yyyy HH:mm')}</div></div>` : ''}
     </div>
   </div>
 
@@ -682,9 +643,9 @@ export function generateInvoicePDF(invoice: Invoice): string {
     <tr><td>Invoice ID</td><td style="font-family: monospace; font-size: 12px;">${invoice.id}</td></tr>
     <tr><td>Memo</td><td style="font-family: monospace;">${invoice.memo}</td></tr>
     <tr><td>Seller Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.sellerPublicKey}</td></tr>
-    ${isPaid && invoice.paymentTxHash ? `
+    ${invoice.status === 'PAID' ? `
     <tr><td>Transaction Hash</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.paymentTxHash}</td></tr>
-    <tr><td>Payer Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.payerPublicKey || 'N/A'}</td></tr>
+    <tr><td>Payer Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.payerPublicKey}</td></tr>
     ${invoice.payerName ? `<tr><td>Payer Name</td><td>${invoice.payerName}</td></tr>` : ''}
     ${invoice.payerEmail ? `<tr><td>Payer Email</td><td>${invoice.payerEmail}</td></tr>` : ''}` : ''}
     <tr><td>Network</td><td>${network}</td></tr>
@@ -748,11 +709,11 @@ export function shareInvoiceByEmail(invoice: Invoice) {
   if (invoice.customerName) body += `Client: ${invoice.customerName}\n`;
   if (invoice.description) body += `Description: ${invoice.description}\n`;
   
-  if (isPaid && invoice.paymentTxHash) {
+  if (invoice.status === 'PAID') {
     body += `\nPayment Information:\n`;
-    body += `Payment Date: ${format(new Date(invoice.paidAt!), 'PPpp')}\n`;
+    body += `Payment Date: ${format(new Date(invoice.paidAt), 'PPpp')}\n`;
     body += `Transaction Hash: ${invoice.paymentTxHash}\n`;
-    if (invoice.payerPublicKey) body += `Payer Address: ${invoice.payerPublicKey}\n`;
+    body += `Payer Address: ${invoice.payerPublicKey}\n`;
     body += `Verified on Stellar Blockchain\n`;
   } else {
     body += `\nQuittance: ${window.location.origin}/pay/${invoice.id}\n`;
