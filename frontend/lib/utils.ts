@@ -99,6 +99,45 @@ export function getStatusColor(status: InvoiceStatus): string {
 }
 
 /**
+ * Per-status badge meta for the `<StatusBadge>` component. Single source
+ * of truth for the dot-color + label-text-color + label-text triple
+ * that recurred in `pay/[id]/page.tsx`'s PENDING/PAID/EXPIRED/CANCELLED
+ * header block (3 inline `<><div/><span/></>` blocks — now consolidated
+ * into `<StatusBadge invoice={invoice} />`). Typed as
+ * `Record<InvoiceStatus, …>` so adding a new status surfaces at every
+ * `<StatusBadge>` call site via `tsc` — no missing-key silent
+ * fallback. CANCELLED is included for completeness even though the
+ * pay page does not display CANCELLED in the header chip today;
+ * defining it here means a future migration to a generic status header
+ * is type-safe out of the box.
+ */
+export const STATUS_META: Record<
+  InvoiceStatus,
+  { dotClassName: string; labelClassName: string; label: string }
+> = {
+  PENDING: {
+    dotClassName: 'w-2 h-2 bg-yellow-500 rounded-full animate-pulse',
+    labelClassName: 'text-yellow-700 font-semibold',
+    label: 'Waiting for Payment',
+  },
+  PAID: {
+    dotClassName: 'w-2 h-2 bg-green-500 rounded-full',
+    labelClassName: 'text-green-700 font-semibold',
+    label: 'Paid',
+  },
+  EXPIRED: {
+    dotClassName: 'w-2 h-2 bg-red-500 rounded-full',
+    labelClassName: 'text-red-700 font-semibold',
+    label: 'Expired',
+  },
+  CANCELLED: {
+    dotClassName: 'w-2 h-2 bg-gray-500 rounded-full',
+    labelClassName: 'text-gray-700 font-semibold',
+    label: 'Cancelled',
+  },
+};
+
+/**
  * Invoice status union — exported for documentation and IDE hover-hint
  * at call sites. Tightening `interactiveStatus`'s parameter (and the
  * `Invoice` interfaces in components / page state) to this union is a

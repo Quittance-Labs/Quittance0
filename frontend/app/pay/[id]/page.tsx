@@ -10,6 +10,7 @@ import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
 import AssetLogo from '@/components/AssetLogo';
+import StatusBadge from '@/components/StatusBadge';
 import { formatAmount, formatDate, getTimeRemaining, copyToClipboard, interactiveStatus, paymentCompleted, type Invoice, type PaymentSession } from '@/lib/utils';
 import { Copy, ExternalLink, Loader2, Check, FileText, Mail } from 'lucide-react';
 import { toast } from 'sonner';
@@ -260,24 +261,7 @@ export default function PaymentPage() {
               <div className="border-b pb-4">
                 <p className="text-sm text-gray-600 mb-1">Status</p>
                 <div className="inline-flex items-center gap-2 mt-1">
-                  {invoice.status === 'PENDING' && (
-                    <>
-                      <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
-                      <span className="text-yellow-700 font-semibold">Waiting for Payment</span>
-                    </>
-                  )}
-                  {invoice.status === 'PAID' && (
-                    <>
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      <span className="text-green-700 font-semibold">Paid</span>
-                    </>
-                  )}
-                  {invoice.status === 'EXPIRED' && (
-                    <>
-                      <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                      <span className="text-red-700 font-semibold">Expired</span>
-                    </>
-                  )}
+                  <StatusBadge invoice={invoice} />
                 </div>
               </div>
 
