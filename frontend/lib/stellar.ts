@@ -274,19 +274,3 @@ export const isValidPublicKey = (publicKey: string): boolean => {
     return false;
   }
 };
-
-export default {
-  server,
-  NETWORK_PASSPHRASE,
-  checkWalletConnection,
-  requestWalletAccess,
-  getUserPublicKey,
-  loadAccount,
-  getAccountBalance,
-  sendPayment,
-  getTransaction,
-  checkTransactionStatus,
-  streamPayments,
-  formatStellarAmount,
-  isValidPublicKey,
-};
