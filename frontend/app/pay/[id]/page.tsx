@@ -10,7 +10,7 @@ import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
 import AssetLogo from '@/components/AssetLogo';
-import { formatAmount, formatDate, getTimeRemaining, copyToClipboard, interactiveStatus } from '@/lib/utils';
+import { formatAmount, formatDate, getTimeRemaining, copyToClipboard, interactiveStatus, type Invoice } from '@/lib/utils';
 import { Copy, ExternalLink, Loader2, Check, FileText, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
@@ -19,7 +19,7 @@ export default function PaymentPage() {
   const params = useParams();
   const id = params.id as string;
 
-  const [invoice, setInvoice] = useState<any>(null);
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
   const [polling, setPolling] = useState(true);
@@ -42,9 +42,9 @@ export default function PaymentPage() {
 
     const intervalId = setInterval(async () => {
       try {
-        const result = await invoiceApi.getById(id);
-        if (result.data.status !== 'PENDING') {
-          setInvoice(result.data);
+      const result = await invoiceApi.getById(id);
+      if (result.data.status !== 'PENDING') {
+        setInvoice(result.data as Invoice);
           setPolling(false);
           if (result.data.status === 'PAID') {
             toast.success('Payment confirmed!');
@@ -64,7 +64,7 @@ export default function PaymentPage() {
         invoiceApi.getById(id),
         invoiceApi.getPaymentInfo(id),
       ]);
-      setInvoice(invoiceResult.data);
+      setInvoice(invoiceResult.data as Invoice);
       setPaymentInfo(paymentResult.data);
     } catch (error: any) {
       toast.error('Failed to load invoice');
@@ -294,7 +294,7 @@ export default function PaymentPage() {
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <p className="text-sm text-green-800 font-semibold mb-1">Payment Completed</p>
                   <p className="text-green-700 font-semibold">
-                    {formatDate(invoice.paidAt)}
+                    {invoice.paidAt ? formatDate(invoice.paidAt) : '—'}
                   </p>
                 </div>
               )}

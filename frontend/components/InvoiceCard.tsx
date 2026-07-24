@@ -2,33 +2,16 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { formatAmount, formatDate, getStatusColor, getTimeRemaining, interactiveStatus } from '@/lib/utils';
+import { formatAmount, formatDate, getStatusColor, getTimeRemaining, interactiveStatus, type Invoice } from '@/lib/utils';
 import { Clock, ExternalLink, Copy, Check, Mail, Download } from 'lucide-react';
 import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import AssetLogo from './AssetLogo';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 
-interface Invoice {
-  id: string;
-  amount: number;
-  assetCode: string;
-  description?: string;
-  customerName?: string;
-  customerEmail?: string;
-  status: string;
-  createdAt: string;
-  expiresAt: string;
-  memo: string;
-  sellerPublicKey?: string;
-  sellerName?: string;
-  sellerEmail?: string;
-  payerPublicKey?: string;
-  payerName?: string;
-  payerEmail?: string;
-  paymentTxHash?: string;
-  paidAt?: string;
-}
+// `Invoice` is the shared type from `@/lib/utils` — single source of truth
+// for the #19 contract; `status: InvoiceStatus` here means adding a new
+// status surfaces at this file through tsc.
 
 interface InvoiceCardProps {
   invoice: Invoice;

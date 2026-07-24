@@ -107,19 +107,50 @@ export function getStatusColor(status: string): string {
 export type InvoiceStatus = 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
 
 /**
- * Returns true if interactive payment controls (QR, Pay button, copy link)
- * should be rendered for the given invoice status.
- *
- * Contract: show iff status === 'PENDING'. Single source of truth for
- * `#19` ("Hide QR and Pay controls on EXPIRED invoices only").
- *
- * The parameter is typed as `string` (not the union) to fit existing
- * component interfaces — `InvoiceCard` declares `status: string`, and the
- * two page components cast through `any`. Unknown statuses (including any
- * future enum value the backend might add before the union is updated)
- * default to `false` (hide) as a safe fallback.
+ * Frontend `Invoice` shape — mirrors the in-memory invoice object returned
+ * by the MVP backend (`backend/src/services/invoice-memory.service.ts`).
+ * Centralised here so that `InvoiceCard`'s prop type and the two page
+ * components' state share a single source of truth. `status` is typed as
+ * `InvoiceStatus` (not `string`); adding a new enum value is a deliberate
+ * union extension that `tsc` will surface at every consumer.
  */
-export function interactiveStatus(status: string): boolean {
+export interface Invoice {
+  id: string;
+  amount: number;
+  assetCode: string;
+  assetIssuer?: string;
+  description?: string;
+  customerName?: string;
+  customerEmail?: string;
+  status: InvoiceStatus;
+  createdAt: string;
+  expiresAt: string;
+  memo: string;
+  sellerPublicKey: string;
+  sellerName?: string;
+  sellerEmail?: string;
+  payerPublicKey?: string;
+  payerName?: string;
+  payerEmail?: string;
+  paymentTxHash?: string;
+  paidAt?: string;
+}
+
+/**
+ * Returns true if interactive payment controls (QR, Pay button, copy link)
+ * should be rendered for the given invoice status. Single source of truth
+ * for `#19` ("Hide QR and Pay controls on EXPIRED invoices only").
+ *
+ * Contract: show iff status === 'PENDING'.
+ *
+ * The parameter is `InvoiceStatus`. Adding a new status is a deliberate
+ * union extension: `tsc` will then surface every switch / helper / call
+ * site that needs handling, and `interactiveStatus` continues to return
+ * `false` for any non-PENDING union member. The previous runtime
+ * fallback to `false` for unknown strings is intentionally gone — tsc is
+ * the guard now.
+ */
+export function interactiveStatus(status: InvoiceStatus): boolean {
   return status === 'PENDING';
 }
 

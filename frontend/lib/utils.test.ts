@@ -17,10 +17,4 @@ describe('interactiveStatus (#19 contract)', () => {
   ])('%s → show controls = %s', (status, expected) => {
     expect(interactiveStatus(status)).toBe(expected);
   });
-
-  it('defaults to hiding controls for unknown statuses (safe fallback)', () => {
-    expect(interactiveStatus('REJECTED')).toBe(false);
-    expect(interactiveStatus('')).toBe(false);
-    expect(interactiveStatus('pending')).toBe(false); // case-sensitive: only 'PENDING'
-  });
 });
