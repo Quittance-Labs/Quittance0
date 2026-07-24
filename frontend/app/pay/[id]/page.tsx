@@ -120,7 +120,7 @@ export default function PaymentPage() {
 
   const handleDownloadPDF = () => {
     if (invoice) {
-      openInvoicePDF(invoice as any);
+      openInvoicePDF(invoice);
       toast.success('Opening payment proof');
     }
   };
@@ -131,7 +131,7 @@ export default function PaymentPage() {
       toast.error('No client email on this invoice');
       return;
     }
-    shareInvoiceByEmail(invoice as any);
+    shareInvoiceByEmail(invoice);
   };
 
   if (loading) {
