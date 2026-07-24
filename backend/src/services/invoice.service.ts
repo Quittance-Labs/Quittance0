@@ -22,7 +22,11 @@ import { SELLER_PUBLIC_KEY } from '../config/stellar';
  * SQL-only fields (`userId`, `metadata`) live on `InvoiceCommon` so
  * they're available across PAID and non-PAID variants — same field is
  * the consumer-facing view of a SQL row's optional columns. `metadata`
- * stays `any` for forward-compat with the `JSON` column type.
+ * is typed as `Record<string, unknown>` — forces narrowing before
+ * property access; not as permissive as `any` but covers the dominant
+ * JSONB-object forward-compat case (the column is currently empty
+ * but the schema declares it as `JSONB`, so future writers can
+ * populate it with arbitrary JSON key/value pairs).
  *
  * RUNTIME TRIPWIRE: the post-write `if (invoice.status === 'PAID' && ...)`
  * invariant in `markAsPaid` (commit `c09a61a`) remains the source of
@@ -49,7 +53,7 @@ interface InvoiceCommon {
   payerEmail?: string;
   createdAt: Date;
   expiresAt: Date;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
 }
 
 type InvoicePaid = InvoiceCommon & {
@@ -336,7 +340,7 @@ class InvoiceService {
       payerEmail: row.payer_email,
       createdAt: row.created_at,
       expiresAt: row.expires_at,
-      metadata: row.metadata,
+      metadata: row.metadata as Record<string, unknown>,
     };
 
     if (row.status === 'PAID') {
