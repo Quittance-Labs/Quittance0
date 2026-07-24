@@ -223,5 +223,11 @@ class StellarService {
   }
 }
 
-export default new StellarService();
+// Named singleton export (replaces the prior `export default new StellarService()`).
+// Renamed to a named export so future ESLint rules like
+// `import/no-anonymous-default-export` and tooling that
+// static-analyzes which files consume this singleton have a
+// stable binding name to resolve. Call sites import
+// `import { stellarService } from './stellar.service'`.
+export const stellarService = new StellarService();
 

@@ -1,4 +1,4 @@
-import stellarService, { PaymentRecord } from './stellar.service';
+import { stellarService, PaymentRecord } from './stellar.service';
 import invoiceService from './invoice.service';
 import { SELLER_PUBLIC_KEY } from '../config/stellar';
 import { pool } from '../config/database';

@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import { createInvoiceSchema } from './utils/validation';
 import invoiceService from './services/invoice-memory.service';
 import { generatePaymentQR, generateStellarPaymentQR } from './utils/qrcode';
-import stellarService from './services/stellar.service';
+import { stellarService } from './services/stellar.service';
 
 // Load environment variables
 dotenv.config();
