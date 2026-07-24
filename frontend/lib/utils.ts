@@ -107,14 +107,11 @@ export function getStatusColor(status: string): string {
 export type InvoiceStatus = 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
 
 /**
- * Frontend `Invoice` shape — mirrors the in-memory invoice object returned
- * by the MVP backend (`backend/src/services/invoice-memory.service.ts`).
- * Centralised here so that `InvoiceCard`'s prop type and the two page
- * components' state share a single source of truth. `status` is typed as
- * `InvoiceStatus` (not `string`); adding a new enum value is a deliberate
- * union extension that `tsc` will surface at every consumer.
+ * Common invoice fields, shared between PAID and non-PAID variants.
+ * Internal to `@/lib/utils`; components/pages should bind to the
+ * `Invoice` discriminated union exported below.
  */
-export interface Invoice {
+interface InvoiceCommon {
   id: string;
   amount: number;
   assetCode: string;
@@ -122,7 +119,6 @@ export interface Invoice {
   description?: string;
   customerName?: string;
   customerEmail?: string;
-  status: InvoiceStatus;
   createdAt: string;
   expiresAt: string;
   memo: string;
@@ -133,8 +129,39 @@ export interface Invoice {
   payerName?: string;
   payerEmail?: string;
   paymentTxHash?: string;
-  paidAt?: string;
 }
+
+/**
+ * Frontend `Invoice` shape — discriminated union over `status`. Mirrors
+ * the in-memory invoice object returned by the MVP backend
+ * (`backend/src/services/invoice-memory.service.ts`). `status` is typed
+ * as `InvoiceStatus`; adding a new value is a deliberate union extension
+ * that `tsc` will surface at every consumer.
+ *
+ * Field rules:
+ *   - When `status === 'PAID'`, `paidAt: string` is required (matches
+ *     the backend `markAsPaid` invariant: status flips to PAID *together*
+ *     with `paid_at = NOW()` in a single SQL UPDATE).
+ *   - Otherwise `paidAt` is `never`, so a non-PAID read is a compile
+ *     error rather than a runtime `undefined` trap.
+ *
+ * TypeScript narrows on a `status === 'PAID'` discriminator:
+ * ```
+ * if (invoice.status === 'PAID') {
+ *   formatDate(invoice.paidAt);  // string, no `!` needed
+ * }
+ * ```
+ *
+ * Consumers that gate on `status` with a JSX `&&` do NOT auto-narrow
+ * inside the JSX subtree; use `cond ? <jsx /> : null` or pre-compute a
+ * narrowed local to get the inference to flow.
+ */
+export type Invoice =
+  | (InvoiceCommon & { status: 'PAID'; paidAt: string })
+  | (InvoiceCommon & {
+      status: 'PENDING' | 'EXPIRED' | 'CANCELLED';
+      paidAt?: never;
+    });
 
 /**
  * Returns true if interactive payment controls (QR, Pay button, copy link)

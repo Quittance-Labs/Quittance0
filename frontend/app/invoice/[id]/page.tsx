@@ -190,12 +190,12 @@ export default function InvoiceDetailPage() {
                   </div>
                 )}
 
-                {invoice.paidAt && (
+                {invoice.status === 'PAID' ? (
                   <div className="border-b pb-4">
                     <p className="text-sm text-gray-600 mb-1">Paid At</p>
                     <p className="text-gray-900">{formatDate(invoice.paidAt)}</p>
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
 

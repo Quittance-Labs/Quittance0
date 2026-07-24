@@ -34,12 +34,12 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
   };
 
   const handleDownloadPDF = () => {
-    openInvoicePDF(invoice as any);
+    openInvoicePDF(invoice);
     toast.success('Opening payment proof');
   };
 
   const handleEmailShare = () => {
-    shareInvoiceByEmail(invoice as any);
+    shareInvoiceByEmail(invoice);
   };
 
   return (

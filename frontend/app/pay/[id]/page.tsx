@@ -290,14 +290,14 @@ export default function PaymentPage() {
                 </div>
               )}
 
-              {invoice.status === 'PAID' && (
+              {invoice.status === 'PAID' ? (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <p className="text-sm text-green-800 font-semibold mb-1">Payment Completed</p>
                   <p className="text-green-700 font-semibold">
-                    {invoice.paidAt ? formatDate(invoice.paidAt) : '—'}
+                    {formatDate(invoice.paidAt)}
                   </p>
                 </div>
-              )}
+              ) : null}
             </div>
 
             {invoice.status === 'PAID' && (
