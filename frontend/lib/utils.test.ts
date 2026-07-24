@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   interactiveStatus,
   paymentCompleted,
-  getStatusColor,
+  STATUS_META,
   type InvoiceStatus,
 } from './utils';
 
@@ -42,20 +42,23 @@ describe('paymentCompleted (#19 followup #3)', () => {
 });
 
 /**
- * #19 followup #3 — typed status color helper.
+ * #19 followup — `STATUS_META.chipClassName` is the typed chip-variant
+ * lookup that replaced the prior `getStatusColor` function. Consolidates
+ * the chip color pair (bg + text) into the same `Record<InvoiceStatus, …>`
+ * that powers `<StatusBadge variant="chip" />` in `InvoiceCard.tsx`.
  *
- * Contract: `getStatusColor` accepts the same `InvoiceStatus` union as
- * everything else in the contract; the parameter was tightened from
- * `string` to `InvoiceStatus` to eliminate the string-typed boundary.
+ * Adding a new `InvoiceStatus` union member surfaces at tsc — the
+ * matrix below (and the `STATUS_META` initializer in `@/lib/utils`)
+ * both fail to compile until the new status is fully defined.
  */
-describe('getStatusColor (#19 followup #3 — typed union)', () => {
+describe('STATUS_META.chipClassName (#19 followup — typed chip variant)', () => {
   it.each<[InvoiceStatus, string]>([
     ['PAID', 'text-green-600 bg-green-50'],
     ['PENDING', 'text-yellow-600 bg-yellow-50'],
     ['EXPIRED', 'text-red-600 bg-red-50'],
     ['CANCELLED', 'text-gray-600 bg-gray-50'],
-  ])('%s → className = %s', (status, expected) => {
-    expect(getStatusColor(status)).toBe(expected);
+  ])('%s → chipClassName = %s', (status, expected) => {
+    expect(STATUS_META[status].chipClassName).toBe(expected);
   });
 });
 

@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { formatAmount, formatDate, getStatusColor, getTimeRemaining, interactiveStatus, paymentCompleted, type Invoice } from '@/lib/utils';
+import { formatAmount, formatDate, getTimeRemaining, interactiveStatus, paymentCompleted, type Invoice } from '@/lib/utils';
 import { Clock, ExternalLink, Copy, Check, Mail, Download } from 'lucide-react';
 import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import AssetLogo from './AssetLogo';
+import StatusBadge from './StatusBadge';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 
 // `Invoice` is the shared type from `@/lib/utils` — single source of truth
@@ -19,7 +20,6 @@ interface InvoiceCardProps {
 
 export default function InvoiceCard({ invoice }: InvoiceCardProps) {
   const [linkCopied, setLinkCopied] = useState(false);
-  const statusColor = getStatusColor(invoice.status);
   const paymentUrl = `${window.location.origin}/pay/${invoice.id}`;
 
   const handleCopyLink = async () => {
@@ -56,9 +56,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
             <p className="text-sm text-gray-600">{invoice.customerName}</p>
           )}
         </div>
-        <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${statusColor}`}>
-          {invoice.status}
-        </span>
+        <StatusBadge invoice={invoice} variant="chip" />
       </div>
 
       {invoice.description && (

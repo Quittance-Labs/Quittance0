@@ -81,59 +81,55 @@ export function getShareUrl(invoiceId: string): string {
 }
 
 /**
- * Get status color
- */
-export function getStatusColor(status: InvoiceStatus): string {
-  switch (status.toLowerCase()) {
-    case 'paid':
-      return 'text-green-600 bg-green-50';
-    case 'pending':
-      return 'text-yellow-600 bg-yellow-50';
-    case 'expired':
-      return 'text-red-600 bg-red-50';
-    case 'cancelled':
-      return 'text-gray-600 bg-gray-50';
-    default:
-      return 'text-gray-600 bg-gray-50';
-  }
-}
-
-/**
- * Per-status badge meta for the `<StatusBadge>` component. Single source
- * of truth for the dot-color + label-text-color + label-text triple
- * that recurred in `pay/[id]/page.tsx`'s PENDING/PAID/EXPIRED/CANCELLED
- * header block (3 inline `<><div/><span/></>` blocks — now consolidated
- * into `<StatusBadge invoice={invoice} />`). Typed as
- * `Record<InvoiceStatus, …>` so adding a new status surfaces at every
- * `<StatusBadge>` call site via `tsc` — no missing-key silent
- * fallback. CANCELLED is included for completeness even though the
- * pay page does not display CANCELLED in the header chip today;
- * defining it here means a future migration to a generic status header
- * is type-safe out of the box.
+ * Per-status meta for the `<StatusBadge>` component. Single source of
+ * truth for both rendering variants (`badge` — dot + friendly label
+ * for the pay-page header, and `chip` — bg+text-pill for the
+ * dashboard `<InvoiceCard>`). Typed as `Record<InvoiceStatus, …>` so
+ * adding a new status surfaces at every consumer via `tsc` — no
+ * missing-key silent fallback.
+ *
+ * Shape per status:
+ *   - `dotClassName`     — the badge variant's pulsing/solid dot.
+ *   - `labelClassName`   — the badge variant's <span> text styling.
+ *   - `label`            — friendly text for the badge variant
+ *                          (e.g. "Waiting for Payment" not "PENDING").
+ *   - `chipClassName`    — the chip variant's bg + text-color combo.
+ *   - `chipLabel`        — literal uppercase status text for chip
+ *                          (e.g. "PENDING"). Mirrors `invoice.status`.
+ * Both variants are defined for every status so the union is exhaustive
+ * and consumers can switch between badge and chip freely.
  */
 export const STATUS_META: Record<
   InvoiceStatus,
-  { dotClassName: string; labelClassName: string; label: string }
+  { dotClassName: string; labelClassName: string; label: string; chipClassName: string; chipLabel: string }
 > = {
   PENDING: {
     dotClassName: 'w-2 h-2 bg-yellow-500 rounded-full animate-pulse',
     labelClassName: 'text-yellow-700 font-semibold',
     label: 'Waiting for Payment',
+    chipClassName: 'text-yellow-600 bg-yellow-50',
+    chipLabel: 'PENDING',
   },
   PAID: {
     dotClassName: 'w-2 h-2 bg-green-500 rounded-full',
     labelClassName: 'text-green-700 font-semibold',
     label: 'Paid',
+    chipClassName: 'text-green-600 bg-green-50',
+    chipLabel: 'PAID',
   },
   EXPIRED: {
     dotClassName: 'w-2 h-2 bg-red-500 rounded-full',
     labelClassName: 'text-red-700 font-semibold',
     label: 'Expired',
+    chipClassName: 'text-red-600 bg-red-50',
+    chipLabel: 'EXPIRED',
   },
   CANCELLED: {
     dotClassName: 'w-2 h-2 bg-gray-500 rounded-full',
     labelClassName: 'text-gray-700 font-semibold',
     label: 'Cancelled',
+    chipClassName: 'text-gray-600 bg-gray-50',
+    chipLabel: 'CANCELLED',
   },
 };
 
@@ -363,7 +359,6 @@ export default {
   formatDate,
   getTimeRemaining,
   getShareUrl,
-  getStatusColor,
   interactiveStatus,
   isValidEmail,
   formatCurrency,
