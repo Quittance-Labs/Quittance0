@@ -13,6 +13,7 @@ interface PaymentButtonProps {
   assetCode?: string;
   assetIssuer?: string;
   invoiceId?: string;
+  payerPublicKey?: string;
   payerName?: string;
   payerEmail?: string;
   onSuccess?: (txHash: string) => void;
@@ -27,6 +28,7 @@ export default function PaymentButton({
   assetCode = 'XLM',
   assetIssuer,
   invoiceId,
+  payerPublicKey,
   payerName,
   payerEmail,
   onSuccess,
@@ -58,6 +60,7 @@ export default function PaymentButton({
         toast.loading('Verifying payment...', { id: PAY_TOAST_ID });
         try {
           await invoiceApi.verify(invoiceId, txHash, {
+            payerPublicKey,
             payerName: payerName?.trim() || undefined,
             payerEmail: normalizedPayerEmail || undefined,
           });

@@ -80,7 +80,7 @@ const realInvoiceApi = {
     return response.data;
   },
 
-  verify: async (id: string, txHash: string, payerInfo?: { payerName?: string; payerEmail?: string }): Promise<ApiResponse<Invoice>> => {
+  verify: async (id: string, txHash: string, payerInfo?: { payerPublicKey?: string; payerName?: string; payerEmail?: string }): Promise<ApiResponse<Invoice>> => {
     const response = await api.post<ApiResponse<Invoice>>(`/invoices/${id}/verify`, {
       txHash,
       ...payerInfo,

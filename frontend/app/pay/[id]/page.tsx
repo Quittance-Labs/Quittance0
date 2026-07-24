@@ -97,6 +97,7 @@ export default function PaymentPage() {
     try {
       toast.loading('Verifying transaction...', { id: 'verify-toast' });
       await invoiceApi.verify(id, verifyTxHash.trim(), {
+        payerPublicKey: userWallet || undefined,
         payerName: payerName.trim() || undefined,
         payerEmail: normalizedPayerEmail || undefined,
       });
@@ -444,6 +445,7 @@ export default function PaymentPage() {
                     assetCode={invoice.assetCode}
                     assetIssuer={invoice.assetIssuer}
                     invoiceId={invoice.id}
+                    payerPublicKey={userWallet || undefined}
                     payerName={payerName}
                     payerEmail={payerEmail}
                     onSuccess={handlePaymentSuccess}

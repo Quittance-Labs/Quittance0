@@ -295,6 +295,7 @@ export interface CreateInvoiceInput {
  */
 export interface VerifyInvoiceInput {
   txHash: string;
+  payerPublicKey?: string;
   payerName?: string;
   payerEmail?: string;
 }
