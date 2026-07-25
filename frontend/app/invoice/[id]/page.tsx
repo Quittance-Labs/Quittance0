@@ -9,7 +9,7 @@ import PaymentStatus from '@/components/PaymentStatus';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
-import { formatAmount, formatDate, getTimeRemaining, getShareUrl, interactiveStatus, paymentCompleted, type Invoice } from '@/lib/utils';
+import { formatAmount, formatDate, getTimeRemaining, getShareUrl, interactiveStatus, paymentCompleted, type Invoice, type PaymentSession } from '@/lib/utils';
 import { ArrowLeft, Share2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -19,7 +19,8 @@ export default function InvoiceDetailPage() {
   const id = params.id as string;
 
   const [invoice, setInvoice] = useState<Invoice | null>(null);
-  const [paymentInfo, setPaymentInfo] = useState<any>(null);
+  // Mirrors commit `3cc93b4` (pay page) — typed counterpart to api.getPaymentInfo.
+  const [paymentInfo, setPaymentInfo] = useState<PaymentSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [userWallet, setUserWallet] = useState<string | null>(null);
 
@@ -34,7 +35,8 @@ export default function InvoiceDetailPage() {
         invoiceApi.getPaymentInfo(id),
       ]);
 
-    setInvoice(invoiceResult.data as Invoice);
+    // Cast removal — both `.data` are typed by their API return signatures.
+    setInvoice(invoiceResult.data);
     setPaymentInfo(paymentResult.data);
     } catch (error) {
       toast.error('Failed to load invoice');
