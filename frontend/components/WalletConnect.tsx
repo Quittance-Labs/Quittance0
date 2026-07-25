@@ -12,6 +12,7 @@ import { paymentMonitor } from '@/lib/payment-monitor';
 import { Wallet, LogOut, Loader2, ExternalLink, Bell, BellOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatAddress } from '@/lib/utils';
+import { showFreighterInstallPrompt } from '@/components/FreighterInstallPrompt';
 
 interface WalletConnectProps {
   onConnect?: (publicKey: string) => void;
@@ -52,6 +53,12 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
   const handleConnect = async () => {
     setLoading(true);
     try {
+      const freighterInstalled = await checkWalletConnection();
+      if (!freighterInstalled) {
+        showFreighterInstallPrompt();
+        return;
+      }
+
       const allowed = await requestWalletAccess();
       if (allowed) {
         const key = await getUserPublicKey();
@@ -59,12 +66,14 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
           await loadBalance(key);
           toast.success('Wallet connected');
           onConnect?.(key);
+        } else {
+          toast.error('Could not read your Freighter account');
         }
       } else {
-        toast.error('Access denied');
+        toast.error('Freighter access was denied');
       }
-    } catch (error: any) {
-      toast.error('Failed to connect. Install Freighter wallet.');
+    } catch {
+      toast.error('Failed to connect to Freighter. Try again.');
     } finally {
       setLoading(false);
     }
@@ -177,4 +186,3 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
     </button>
   );
 }
-
