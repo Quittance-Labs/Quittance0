@@ -6,6 +6,7 @@ import InvoiceCard from '@/components/InvoiceCard';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import TransactionHistory from '@/components/TransactionHistory';
+import AssetLogo from '@/components/AssetLogo';
 import { useWalletStore } from '@/lib/store';
 import Link from 'next/link';
 import { Loader2, Plus, TrendingUp, DollarSign, FileText, Download } from 'lucide-react';
@@ -22,6 +23,9 @@ export default function DashboardPage() {
   const [filteredInvoices, setFilteredInvoices] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<'invoices' | 'transactions'>('invoices');
   const hasAnyInvoices = Number(stats?.total_invoices || 0) > 0;
+  const revenueByAsset = Object.entries(
+    (stats?.revenue_by_asset || {}) as Record<string, number | string>
+  ).sort(([assetA], [assetB]) => assetA.localeCompare(assetB));
 
   useEffect(() => {
     if (!connected || !publicKey) {
@@ -213,10 +217,20 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Revenue</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {parseFloat(stats.total_revenue || 0).toFixed(2)}
-                  </p>
-                  <p className="text-xs text-gray-500">{stats.asset_code || 'XLM'}</p>
+                  {revenueByAsset.length > 0 ? (
+                    <div className="space-y-1">
+                      {revenueByAsset.map(([assetCode, revenue]) => (
+                        <div key={assetCode} className="flex items-center gap-2">
+                          <p className="text-2xl font-bold text-gray-900">
+                            {Number(revenue).toFixed(2)}
+                          </p>
+                          <AssetLogo code={assetCode} size={20} />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-2xl font-bold text-gray-900">0.00</p>
+                  )}
                 </div>
               </div>
             </div>

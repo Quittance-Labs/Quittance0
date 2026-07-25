@@ -1,5 +1,7 @@
 // In-memory storage - Database yerine MVP için
 import { v4 as uuidv4 } from 'uuid';
+import { calculateInvoiceStats } from './invoice-stats';
+import type { InvoiceStats } from './invoice-stats';
 
 interface Invoice {
   id: string;
@@ -105,21 +107,8 @@ class MemoryStorage {
   }
 
   // Get stats
-  getStats(sellerPublicKey: string): any {
-    const invoices = Array.from(this.invoices.values()).filter(
-      inv => inv.sellerPublicKey === sellerPublicKey
-    );
-
-    return {
-      total_invoices: invoices.length,
-      paid_invoices: invoices.filter(inv => inv.status === 'PAID').length,
-      pending_invoices: invoices.filter(inv => inv.status === 'PENDING').length,
-      expired_invoices: invoices.filter(inv => inv.status === 'EXPIRED').length,
-      total_revenue: invoices
-        .filter(inv => inv.status === 'PAID')
-        .reduce((sum, inv) => sum + inv.amount, 0),
-      asset_code: 'XLM',
-    };
+  getStats(sellerPublicKey: string): InvoiceStats {
+    return calculateInvoiceStats(Array.from(this.invoices.values()), sellerPublicKey);
   }
 
   // Mark expired invoices

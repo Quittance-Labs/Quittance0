@@ -1,21 +1,9 @@
-import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import test from 'node:test';
-import ts from 'typescript';
-
-const sourceUrl = new URL('./payment-page-state.ts', import.meta.url);
-const source = await readFile(sourceUrl, 'utf8');
-const { outputText } = ts.transpileModule(source, {
-  compilerOptions: {
-    module: ts.ModuleKind.ES2022,
-    target: ts.ScriptTarget.ES2022,
-  },
-});
-const compiledModuleUrl = `data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`;
+const test = require('node:test');
+const assert = require('node:assert/strict');
 const {
   isExpiredInvoice,
   shouldShowPaymentControls,
-} = await import(compiledModuleUrl);
+} = require('../lib/payment-page-state');
 
 test('identifies an expired invoice', () => {
   assert.equal(isExpiredInvoice('EXPIRED'), true);

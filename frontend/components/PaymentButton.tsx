@@ -5,6 +5,7 @@ import { sendPayment, checkWalletConnection, requestWalletAccess } from '@/lib/s
 import { toast } from 'sonner';
 import { Wallet, Loader2 } from 'lucide-react';
 import { invoiceApi } from '@/lib/api';
+import { showFreighterInstallPrompt } from '@/components/FreighterInstallPrompt';
 
 interface PaymentButtonProps {
   destination: string;
@@ -42,13 +43,16 @@ export default function PaymentButton({
 
     setLoading(true);
     try {
-      const connected = await checkWalletConnection();
-      if (!connected) {
-        const allowed = await requestWalletAccess();
-        if (!allowed) {
-          toast.error('Access denied');
-          return;
-        }
+      const freighterInstalled = await checkWalletConnection();
+      if (!freighterInstalled) {
+        showFreighterInstallPrompt();
+        return;
+      }
+
+      const allowed = await requestWalletAccess();
+      if (!allowed) {
+        toast.error('Freighter access was denied');
+        return;
       }
 
       toast.loading('Confirm in wallet...', { id: PAY_TOAST_ID });
