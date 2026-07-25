@@ -22,6 +22,23 @@ export const NETWORK_PASSPHRASE =
 
 export const server = new StellarSdk.Horizon.Server(HORIZON_URL);
 
+// File-local Horizon SDK shape aliases — drop the previously hand-rolled
+// narrower types in favour of the SDK's own discriminated unions. Using
+// the SDK types keeps the typed surface in lock-step with whatever
+// Horizon serialises on the wire; any future Horizon drift surfaces
+// here at compile time. Tradeoff: these carry more fields than we read;
+// that's acceptable because (a) the SDK discriminants keep type narrowing
+// accurate, and (b) the public `onPayment` callback is a narrow
+// `PaymentOperationRecord` subset (post-`type === 'payment'` runtime
+// filter narrows the SDK's `OperationRecord` union).
+//
+// Access path: `StellarSdk.Horizon.<Namespace>.<Type>` because
+// `lib/horizon/index.d.ts` re-exports the `ServerApi` and `HorizonApi`
+// namespaces from `server_api.d.ts` / `horizon_api.d.ts` unchanged.
+type HorizonBalance = StellarSdk.Horizon.AccountResponse['balances'][number];
+type HorizonTransaction = StellarSdk.Horizon.ServerApi.TransactionRecord;
+type HorizonPaymentOperation = StellarSdk.Horizon.ServerApi.PaymentOperationRecord;
+
 const getTrustlineMessage = (assetCode: string): string =>
   `Your wallet does not have a ${assetCode} trustline on ${STELLAR_NETWORK.toLowerCase()}. Add the ${assetCode} trustline in Freighter, or ask the seller for an XLM invoice.`;
 
@@ -31,8 +48,14 @@ const hasAssetTrustline = (
   assetIssuer: string
 ): boolean =>
   account.balances.some(
-    (balance: any) =>
-      balance.asset_type !== 'native' &&
+    (balance) =>
+      // Native and liquidity-pool shares have no `asset_code`/`asset_issuer`;
+      // restrict to the typed `BalanceLineAsset<credit_alphanum4|12>` subset
+      // so the property accesses below are type-safe. The runtime literal
+      // check is the right discriminator (the SDK exposes the union under
+      // discriminator `balance.asset_type: AssetType`).
+      (balance.asset_type === 'credit_alphanum4' ||
+        balance.asset_type === 'credit_alphanum12') &&
       balance.asset_code === assetCode &&
       balance.asset_issuer === assetIssuer
   );
@@ -101,10 +124,15 @@ export const getAccountBalance = async (
 ): Promise<Array<{ assetCode: string; balance: string }>> => {
   try {
     const account = await loadAccount(publicKey);
-    return account.balances.map((balance: any) => ({
-      assetCode: balance.asset_type === 'native' ? 'XLM' : balance.asset_code,
-      balance: balance.balance,
-    }));
+    return account.balances
+      // Liquidity-pool shares balance lines have no `asset_code`; filter them
+      // out. Native + credit_alphanum(4|12) survive (`asset_type` literal
+      // narrows the union automatically — BalanceLineLiquidityPool removed).
+      .filter((balance) => balance.asset_type !== 'liquidity_pool_shares')
+      .map((balance) => ({
+        assetCode: balance.asset_type === 'native' ? 'XLM' : balance.asset_code,
+        balance: balance.balance,
+      }));
   } catch (error: any) {
     console.error('Error getting balance:', error);
     // If account not found, return empty balance
@@ -207,10 +235,11 @@ export const sendPayment = async (
 /**
  * Get transaction details
  */
-export const getTransaction = async (txHash: string): Promise<any> => {
+export const getTransaction = async (txHash: string): Promise<HorizonTransaction> => {
   try {
-    const transaction = await server.transactions().transaction(txHash).call();
-    return transaction;
+    // SDK's `.call()` already returns `ServerApi.TransactionRecord`; no
+    // cast needed. Our `HorizonTransaction` alias binds directly.
+    return await server.transactions().transaction(txHash).call();
   } catch (error) {
     console.error('Error fetching transaction:', error);
     throw error;
@@ -236,16 +265,27 @@ export const checkTransactionStatus = async (
  */
 export const streamPayments = (
   publicKey: string,
-  onPayment: (payment: any) => void
+  onPayment: (payment: HorizonPaymentOperation) => void
 ) => {
   const closeHandler = server
     .payments()
     .forAccount(publicKey)
     .cursor('now')
     .stream({
-      onmessage: (payment: any) => {
-        if (payment.type === 'payment') {
-          onPayment(payment);
+      // SDK typing caveat: `CallBuilder<T>.stream()` infers the onmessage
+      // value type from `.call()`'s return — `CollectionPage<operation-record
+      // union>` here — but at runtime the EventSource emits INDIVIDUAL
+      // operation records (one per event), not CollectionPage-wrapped. The
+      // SDK's stream typing is a known quirk; we cast from the wrongly-
+      // inferred CollectionPage value to a single `OperationRecord`
+      // (a union over `ServerApi.*OperationRecord` discriminated by `type`).
+      // The runtime narrows via `record.type === 'payment'` before invoking
+      // the typed `onPayment` callback (Payment-only).
+      onmessage: (rawValue) => {
+        const record =
+          rawValue as unknown as StellarSdk.Horizon.ServerApi.OperationRecord;
+        if (record.type === 'payment') {
+          onPayment(record as HorizonPaymentOperation);
         }
       },
       onerror: (error: any) => {

@@ -6,6 +6,11 @@ import {
   type InvoiceStats,
   type PaymentSession,
   type CreateInvoiceInput,
+  type StellarAccount,
+  type StellarPayments,
+  type StellarTransaction,
+  type StellarPaymentVerification,
+  type VerifyStellarPaymentInput,
 } from './utils';
 
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
@@ -101,36 +106,50 @@ export const invoiceApi: typeof realInvoiceApi = USE_MOCK_API
   : realInvoiceApi;
 
 // Stellar APIs
-// (out of cohesive-cleanup scope; intentionally any-typed — see PR #1 "Known followups")
-export const stellarApi = USE_MOCK_API ? mockStellarApi : {
-  getAccount: async (publicKey?: string) => {
-    const response = await api.get('/stellar/account', {
+// Typed to `Promise<ApiResponse<T>>` envelope — mirror of the `invoiceApi`
+// typed pattern from commit `8e1a1f7`. The api↔mock boundary cast below
+// (`mockStellarApi as typeof realStellarApi`) suppresses the mock's
+// structural narrowness on `getTransaction` (`transaction: { hash,
+// memo, successful }` vs. the typed shape with `[k: string]: unknown`);
+// runtime compatibility is direct because the mock fields are a subset
+// of what the backend service serializes. See `frontend/lib/utils.ts`
+// for the `StellarAccount | StellarPayments | StellarTransaction |
+// StellarPaymentVerification` envelope definitions.
+//
+// Note: zero `stellarApi.*` consumer sites exist in `frontend/` today
+// (verified via code-search). Re-typing the block here is purely
+// defensive — locks the typed contract end-to-end so any future
+// consumer reads/writes with `tsc` enforcement, parallel to the
+// `invoiceApi` typed pattern.
+const realStellarApi = {
+  getAccount: async (publicKey?: string): Promise<ApiResponse<StellarAccount>> => {
+    const response = await api.get<ApiResponse<StellarAccount>>('/stellar/account', {
       params: { publicKey },
     });
     return response.data;
   },
 
-  getPayments: async (publicKey?: string, limit?: number) => {
-    const response = await api.get('/stellar/payments', {
+  getPayments: async (publicKey?: string, limit?: number): Promise<ApiResponse<StellarPayments>> => {
+    const response = await api.get<ApiResponse<StellarPayments>>('/stellar/payments', {
       params: { publicKey, limit },
     });
     return response.data;
   },
 
-  getTransaction: async (hash: string) => {
-    const response = await api.get(`/stellar/transaction/${hash}`);
+  getTransaction: async (hash: string): Promise<ApiResponse<StellarTransaction>> => {
+    const response = await api.get<ApiResponse<StellarTransaction>>(`/stellar/transaction/${hash}`);
     return response.data;
   },
 
-  verifyPayment: async (txHash: string, memo: string, amount: string) => {
-    const response = await api.post('/stellar/verify-payment', {
-      txHash,
-      memo,
-      amount,
-    });
+  verifyPayment: async (input: VerifyStellarPaymentInput): Promise<ApiResponse<StellarPaymentVerification>> => {
+    const response = await api.post<ApiResponse<StellarPaymentVerification>>('/stellar/verify-payment', input);
     return response.data;
   },
 };
+
+export const stellarApi: typeof realStellarApi = USE_MOCK_API
+  ? (mockStellarApi as typeof realStellarApi)
+  : realStellarApi;
 
 // Health check
 export const healthCheck = USE_MOCK_API ? mockHealthCheck : async () => {

@@ -292,6 +292,129 @@ export interface VerifyInvoiceInput {
   payerEmail?: string;
 }
 
+// =========================================================================
+// Stellar network types — single source of truth for the typed Stellar
+// HTTP-surface (backend/src/controllers/stellar.controller.ts) + the
+// SDK-direct helpers (frontend/lib/stellar.ts). Mirrors the `ApiResponse<T>`
+// envelope and the `Invoice`-discriminated-union pattern: structural
+// shapes that match the backend's JSON serialization 1:1, no SDK import
+// dependency. Adding a new field on either side surfaces at every
+// frontend consumer via `tsc`.
+//
+// Keep field names 1:1 with `backend/src/services/stellar.service.ts:5-`
+// (PaymentRecord) and `backend/src/controllers/stellar.controller.ts`
+// (`data` shape per endpoint). Drift here = a backend rename without
+// a frontend followup, which the type signatures surface at compile.
+// =========================================================================
+
+/**
+ * Response payload of GET /api/stellar/payments. Mirrors the
+ * `PaymentRecord` interface exported by the backend
+ * (`backend/src/services/stellar.service.ts:5-15`) — the backend
+ * shape for the streaming `onPayment` callback AND the
+ * `getRecentPayments(publicKey, limit)` reducer; both routes
+ * produce the same JSON contract for the frontend.
+ */
+export interface StellarPaymentRecord {
+  id: string;
+  txHash: string;
+  from: string;
+  to: string;
+  amount: string;
+  assetCode: string;
+  assetIssuer?: string;
+  memo?: string;
+  memoType?: string;
+  ledger: number;
+  createdAt: string;
+}
+
+/**
+ * Response payload of GET /api/stellar/payments (the list endpoint).
+ * Convenience alias for `StellarPaymentRecord[]` to keep call sites
+ * readable (`Promise<ApiResponse<StellarPayments>>` reads cleaner
+ * than `Promise<ApiResponse<StellarPaymentRecord[]>>`).
+ */
+export type StellarPayments = StellarPaymentRecord[];
+
+/**
+ * Per-asset balance row inside `StellarAccount.balances`. Mirrors the
+ * manual mapping in `backend/src/services/stellar.service.ts:30-37`
+ * (controller's `data.balances` array).
+ */
+export interface StellarBalance {
+  assetCode: string;
+  balance: string;
+}
+
+/**
+ * Response payload of GET /api/stellar/account. Mirrors the controller
+ * shape (`data: { publicKey, balances, sequence, subentryCount }`).
+ * `sequence` is the Horizon BigInt stringified for JSON safety; treat
+ * as opaque.
+ */
+export interface StellarAccount {
+  publicKey: string;
+  balances: StellarBalance[];
+  sequence: string;
+  subentryCount: number;
+}
+
+/**
+ * Response payload of GET /api/stellar/transaction/:hash. Mirrors
+ * the backend service return shape
+ * (`backend/src/services/stellar.service.ts:78-86`:
+ * `{ transaction, operations: operations.records }`).
+ *
+ * `transaction` and `operation` shapes are typed with `[k: string]: unknown`
+ * index signatures to keep the typed surface stable across Horizon
+ * SDK versions — the SDK-direct consumer paths
+ * (`frontend/lib/payment-monitor.service.ts` if present, and any
+ * future memo/amount parser) already handle unknown fields defensively.
+ * Tightening further to the precise Horizon shape requires importing
+ * `@stellar/stellar-sdk` types and accepting the resulting union
+ * strictness; tracked separately if/when needed.
+ */
+export interface StellarTransaction {
+  transaction: {
+    hash: string;
+    memo?: string;
+    memo_type?: string;
+    successful: boolean;
+    [key: string]: unknown;
+  };
+  operations: Array<{
+    type: string;
+    [key: string]: unknown;
+  }>;
+}
+
+/**
+ * Response payload of POST /api/stellar/verify-payment. Mirrors the
+ * controller's `data: { isValid, txHash, memo, amount }` shape.
+ */
+export interface StellarPaymentVerification {
+  isValid: boolean;
+  txHash: string;
+  memo: string;
+  amount: string;
+}
+
+/**
+ * Body of POST /api/stellar/verify-payment. Mirrors the controller's
+ * destructuring on `txHash | memo | amount`
+ * (`backend/src/controllers/stellar.controller.ts:79`).
+ * Object-form parameter — collapses the prior positional-shape arg list
+ * into a single typed input; the api/mock boundary cast covers the
+ * mock's positional signature without consumer-side breakage (zero
+ * callers today; verified by code-search `stellarApi.*` site count).
+ */
+export interface VerifyStellarPaymentInput {
+  txHash: string;
+  memo: string;
+  amount: string;
+}
+
 /**
  * Returns true if interactive payment controls (QR, Pay button, copy link)
  * should be rendered for the given invoice status. Single source of truth

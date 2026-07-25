@@ -1,5 +1,14 @@
 // Mock API - Backend olmadan UI test için
 
+import {
+  type ApiResponse,
+  type StellarAccount,
+  type StellarPayments,
+  type StellarTransaction,
+  type StellarPaymentVerification,
+  type VerifyStellarPaymentInput,
+} from './utils';
+
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Mock invoice data
@@ -209,7 +218,7 @@ export const mockInvoiceApi = {
 };
 
 export const mockStellarApi = {
-  getAccount: async (publicKey?: string) => {
+  getAccount: async (publicKey?: string): Promise<ApiResponse<StellarAccount>> => {
     await delay(500);
     return {
       success: true,
@@ -225,7 +234,7 @@ export const mockStellarApi = {
     };
   },
 
-  getPayments: async (publicKey?: string, limit?: number) => {
+  getPayments: async (publicKey?: string, limit?: number): Promise<ApiResponse<StellarPayments>> => {
     await delay(500);
     return {
       success: true,
@@ -233,7 +242,7 @@ export const mockStellarApi = {
     };
   },
 
-  getTransaction: async (hash: string) => {
+  getTransaction: async (hash: string): Promise<ApiResponse<StellarTransaction>> => {
     await delay(500);
     return {
       success: true,
@@ -242,21 +251,26 @@ export const mockStellarApi = {
           hash,
           memo: 'INV-DEMO-001',
           successful: true,
+          // [k: string]: unknown is permissive about extra fields;
+          // Horizon's full TransactionResponse includes many more
+          // (created_at, source_account, fee_charged, operation_count,
+          // _links, etc.) the mock doesn't simulate. The api↔mock
+          // boundary cast in api.ts covers the structural narrowness.
         },
         operations: [],
       },
     };
   },
 
-  verifyPayment: async (txHash: string, memo: string, amount: string) => {
+  verifyPayment: async (input: VerifyStellarPaymentInput): Promise<ApiResponse<StellarPaymentVerification>> => {
     await delay(500);
     return {
       success: true,
       data: {
         isValid: true,
-        txHash,
-        memo,
-        amount,
+        txHash: input.txHash,
+        memo: input.memo,
+        amount: input.amount,
       },
     };
   },
