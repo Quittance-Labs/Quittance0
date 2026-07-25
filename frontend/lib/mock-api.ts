@@ -175,16 +175,19 @@ export const mockInvoiceApi = {
 
   getStats: async () => {
     await delay(500);
-    
+    const revenueByAsset = mockInvoices
+      .filter(invoice => invoice.status === 'PAID')
+      .reduce<Record<string, number>>((revenue, invoice) => {
+        revenue[invoice.assetCode] = (revenue[invoice.assetCode] || 0) + invoice.amount;
+        return revenue;
+      }, {});
+
     const stats = {
       total_invoices: mockInvoices.length,
       paid_invoices: mockInvoices.filter(inv => inv.status === 'PAID').length,
       pending_invoices: mockInvoices.filter(inv => inv.status === 'PENDING').length,
       expired_invoices: mockInvoices.filter(inv => inv.status === 'EXPIRED').length,
-      total_revenue: mockInvoices
-        .filter(inv => inv.status === 'PAID')
-        .reduce((sum, inv) => sum + inv.amount, 0),
-      asset_code: 'XLM',
+      revenue_by_asset: revenueByAsset,
     };
 
     return {
@@ -256,4 +259,3 @@ export const mockHealthCheck = async () => {
     service: 'Quittance API (Mock)',
   };
 };
-
