@@ -1,30 +1,24 @@
-import { Pool } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as dotenv from 'dotenv';
+import { pool } from '../config/database';
 
-dotenv.config({ path: path.join(__dirname, '../backend/.env') });
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-});
+// SQL lives at the repo root (db/), the runner lives with the backend code so
+// `npm run db:migrate` (tsx src/db/migrate.ts) resolves both the script and its
+// dependencies.
+const SQL_DIR = path.join(__dirname, '../../../db');
 
 async function migrate() {
   console.log('🚀 Starting database migration...\n');
 
   try {
-    // Read schema file
-    const schemaPath = path.join(__dirname, 'schema.sql');
+    const schemaPath = path.join(SQL_DIR, 'schema.sql');
     const schema = fs.readFileSync(schemaPath, 'utf-8');
 
-    // Execute schema
     await pool.query(schema);
 
     console.log('✅ Database migration completed successfully!\n');
     console.log('📋 Created tables:');
-    console.log('  - users');
-    console.log('  - invoices');
+    console.log('  - invoices (keyed by seller_public_key)');
     console.log('  - transactions');
     console.log('  - payment_events');
     console.log('\n📊 Created views:');
@@ -48,4 +42,3 @@ migrate()
     console.error('Migration error:', error);
     process.exit(1);
   });
-

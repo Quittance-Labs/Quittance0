@@ -40,11 +40,13 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     return response.data;
   },
 
-  getAll: async (params?: {
+  // Invoice history is scoped to the connected Freighter wallet, so the seller
+  // key is required for list and stats calls.
+  getAll: async (params: {
+    sellerPublicKey: string;
     status?: string;
     limit?: number;
     offset?: number;
-    sellerPublicKey?: string;
   }) => {
     const response = await api.get('/invoices', { params });
     return response.data;
@@ -68,9 +70,9 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     return response.data;
   },
 
-  getStats: async (sellerPublicKey?: string) => {
+  getStats: async (sellerPublicKey: string) => {
     const response = await api.get('/invoices/stats', {
-      params: sellerPublicKey ? { sellerPublicKey } : undefined,
+      params: { sellerPublicKey },
     });
     return response.data;
   },

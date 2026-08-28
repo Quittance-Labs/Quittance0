@@ -3,7 +3,6 @@ import invoiceService from '../services/invoice.service';
 import stellarService from '../services/stellar.service';
 import { createInvoiceSchema } from '../utils/validation';
 import { generatePaymentQR, generateStellarPaymentQR } from '../utils/qrcode';
-import { SELLER_PUBLIC_KEY } from '../config/stellar';
 
 class InvoiceController {
   async createInvoice(req: Request, res: Response) {
@@ -63,10 +62,17 @@ class InvoiceController {
 
   async getInvoices(req: Request, res: Response) {
     try {
-      const { status, limit = 50, offset = 0 } = req.query;
+      const { status, limit = 50, offset = 0, sellerPublicKey } = req.query;
+
+      if (!sellerPublicKey) {
+        return res.status(400).json({
+          success: false,
+          error: 'sellerPublicKey query parameter is required',
+        });
+      }
 
       const invoices = await invoiceService.getInvoicesBySeller(
-        SELLER_PUBLIC_KEY,
+        sellerPublicKey as string,
         status as string | undefined,
         parseInt(limit as string),
         parseInt(offset as string)
@@ -145,6 +151,13 @@ class InvoiceController {
         });
       }
 
+      if (paymentOp.to !== invoice.sellerPublicKey) {
+        return res.status(400).json({
+          success: false,
+          error: 'Payment destination mismatch',
+        });
+      }
+
       if (parseFloat(paymentOp.amount).toFixed(7) !== invoice.amount.toFixed(7)) {
         return res.status(400).json({
           success: false,
@@ -173,7 +186,16 @@ class InvoiceController {
 
   async getStats(req: Request, res: Response) {
     try {
-      const stats = await invoiceService.getInvoiceStats(SELLER_PUBLIC_KEY);
+      const { sellerPublicKey } = req.query;
+
+      if (!sellerPublicKey) {
+        return res.status(400).json({
+          success: false,
+          error: 'sellerPublicKey query parameter is required',
+        });
+      }
+
+      const stats = await invoiceService.getInvoiceStats(sellerPublicKey as string);
 
       res.json({
         success: true,

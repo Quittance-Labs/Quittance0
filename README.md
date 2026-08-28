@@ -20,7 +20,8 @@ Quittance helps freelancers create an invoice, accept payment via link or QR on 
 | Primary **Download Proof** CTA after paid | Done (PDF print flow in browser) |
 | Simulate-payment UI | Removed from demo UI (`ALLOW_SIMULATE=true` only on API) |
 | Public hosted demo + testnet evidence pack | Phase D (not yet) |
-| Postgres persistence / SMTP / Gmail API | After demo (Phase E) |
+| Postgres persistence (wallet-scoped invoices) | Optional — see [Postgres persistence](#postgres-persistence-optional) |
+| SMTP / Gmail API | After demo (Phase E) |
 
 Ship plan: [`PLAN.md`](./PLAN.md).
 
@@ -123,6 +124,65 @@ Open the app at `http://localhost:3000`.
 
 ---
 
+## Postgres persistence (optional)
+
+Use this path when invoices must survive a backend restart. Identity is still the
+connected Freighter wallet: every invoice is stored under its `seller_public_key`,
+and list/stats endpoints only return the requesting wallet's invoices.
+
+### 1) Point the backend at a database
+
+In `backend/.env` (template: `backend/env.example.txt`):
+
+```
+DATABASE_URL=postgresql://user:password@localhost:5432/quittance
+```
+
+`SELLER_PUBLIC_KEY` / `SELLER_SECRET_KEY` are **optional**. They are only used by
+the single-account Horizon payment monitor; without them the server starts in
+wallet-scoped mode and the monitor stays off.
+
+### 2) Migrate and seed
+
+```bash
+cd backend
+npm run db:migrate   # applies db/schema.sql (idempotent, safe to re-run)
+npm run db:seed      # optional: sample invoices for two demo wallets
+```
+
+- `db/schema.sql` — invoices, transactions, payment_events, `invoice_stats` view.
+  Re-running it also drops the legacy `users` table and `invoices.user_id` column
+  from older databases.
+- `db/seed.sql` — invoices for two demo seller wallets so wallet scoping is
+  visible locally. Swap a seed `seller_public_key` for your own Freighter address
+  to see the rows in your dashboard.
+- Runners: `backend/src/db/migrate.ts`, `backend/src/db/seed.ts`.
+
+### 3) Run the Postgres backend
+
+```bash
+cd backend
+npm run dev          # src/server.ts (Postgres) instead of dev:mvp (in-memory)
+```
+
+The dashboard sends the connected wallet on every call:
+`GET /api/invoices?sellerPublicKey=G...` and `GET /api/invoices/stats?sellerPublicKey=G...`
+both return `400` when the seller key is missing.
+
+### 4) Tests
+
+```bash
+cd backend
+npm test                                                              # unit + scoping tests
+DATABASE_URL=postgresql://user:password@localhost:5432/quittance_test npm test   # adds the Postgres integration test
+```
+
+The integration test (`backend/tests/invoice-postgres.integration.test.ts`) is
+skipped unless `DATABASE_URL` is set. Point it at a disposable database — it
+applies the schema and writes rows.
+
+---
+
 ## Deploy frontend (Vercel)
 
 1. Import the GitHub repo in [Vercel](https://vercel.com).  
@@ -202,7 +262,7 @@ Until then, run locally: `backend` → `npm run dev:mvp`, `frontend` → `npm ru
 ```
 backend/     Express API — use server-mvp.ts for demo
 frontend/    Next.js app
-db/          Postgres schema (post-demo)
+db/          Postgres schema + seed SQL (runners: backend/src/db/)
 PLAN.md      Product & delivery plan
 ROADMAP.md   Short commit checklist
 EVIDENCE.md  Public demo URL + testnet evidence (reviewer one-pager)

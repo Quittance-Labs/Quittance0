@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import routes from './routes';
 import { pool } from './config/database';
-import { validateStellarConfig } from './config/stellar';
+import { validateStellarConfig, SELLER_PUBLIC_KEY } from './config/stellar';
 import paymentMonitorService from './services/payment-monitor.service';
 
 // Load environment variables
@@ -59,8 +59,17 @@ async function initialize() {
     console.log('Starting server...');
     await pool.query('SELECT NOW()');
     console.log('Database connected');
-    validateStellarConfig();
-    paymentMonitorService.start();
+
+    // Sellers are identified by their connected Freighter wallet, so static
+    // seller keys are optional. They only enable the Horizon payment monitor
+    // for that single account.
+    if (SELLER_PUBLIC_KEY) {
+      validateStellarConfig();
+      paymentMonitorService.start();
+    } else {
+      console.log('Wallet-scoped mode: no SELLER_PUBLIC_KEY, payment monitor disabled');
+    }
+
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       console.log(`API: http://localhost:${PORT}/api`);

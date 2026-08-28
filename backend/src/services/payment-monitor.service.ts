@@ -198,6 +198,10 @@ class PaymentMonitorService {
    * Manual sync - fetch recent payments and process them
    */
   async manualSync(limit: number = 50) {
+    if (!SELLER_PUBLIC_KEY) {
+      throw new Error('Payment sync requires SELLER_PUBLIC_KEY to be configured');
+    }
+
     console.log('🔄 Starting manual payment sync...');
 
     try {
