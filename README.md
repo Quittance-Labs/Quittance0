@@ -213,3 +213,27 @@ EVIDENCE.md  Public demo URL + testnet evidence (reviewer one-pager)
 ## License
 
 MIT — see [`LICENSE`](./LICENSE).
+
+## Running CI locally
+
+To ensure your code passes the CI workflow locally before pushing:
+
+**Frontend:**
+```bash
+cd frontend
+npm ci
+npm run lint
+npx tsc --noEmit
+npm test
+```
+
+**Backend:**
+```bash
+cd backend
+npm ci
+npx tsc --noEmit
+# The integration tests require ALLOW_SIMULATE to be true, which is set in the test script.
+npm test
+```
+
+Required CI Environment Variables: None (tests run in MVP mode in-memory, relying on `ALLOW_SIMULATE=true` internally within package.json scripts).
