@@ -310,12 +310,15 @@ export function monitorInvoice(
       try {
         const verifyRes = await invoiceApi.verify(invoice.id, payment.hash);
         if (verifyRes.data) {
-          const paidInvoice: Invoice | undefined =
-            'id' in verifyRes.data ? (verifyRes.data as Invoice) : (verifyRes.data as any).invoice;
+          const rawData = verifyRes.data as unknown as Record<string, any>;
+          const paidInvoice: Invoice =
+            rawData && typeof rawData.id === 'string'
+              ? (rawData as unknown as Invoice)
+              : rawData?.invoice || invoice;
           onEvent({
             status: 'paid',
             message: 'Payment verified and marked PAID!',
-            invoice: paidInvoice || invoice,
+            invoice: paidInvoice,
             txHash: payment.hash,
           });
         }

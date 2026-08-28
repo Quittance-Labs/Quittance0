@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { mockInvoiceApi, mockStellarApi, mockHealthCheck } from './mock-api';
 import type {
   Invoice,
   CreateInvoiceRequest,
@@ -18,7 +17,6 @@ export type {
   PaymentInfo,
 };
 
-const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
 const api = axios.create({
@@ -36,7 +34,7 @@ api.interceptors.response.use(
   }
 );
 
-export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
+export const invoiceApi = {
   create: async (data: CreateInvoiceRequest): Promise<ApiResponse<{ invoice: Invoice; paymentUrl: string; qrCode?: string; stellarQrCode?: string }>> => {
     const response = await api.post('/invoices', data);
     return response.data;
@@ -88,7 +86,7 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
 };
 
 // Stellar APIs
-export const stellarApi = USE_MOCK_API ? mockStellarApi : {
+export const stellarApi = {
   getAccount: async (publicKey?: string): Promise<ApiResponse<any>> => {
     const response = await api.get('/stellar/account', {
       params: { publicKey },
@@ -119,7 +117,7 @@ export const stellarApi = USE_MOCK_API ? mockStellarApi : {
 };
 
 // Health check
-export const healthCheck = USE_MOCK_API ? mockHealthCheck : async (): Promise<ApiResponse<{ status: string; timestamp: string }>> => {
+export const healthCheck = async (): Promise<ApiResponse<{ status: string; timestamp: string }>> => {
   const response = await api.get('/health');
   return response.data;
 };
