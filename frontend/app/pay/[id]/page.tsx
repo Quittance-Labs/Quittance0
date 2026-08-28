@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { invoiceApi } from '@/lib/api';
@@ -14,39 +14,90 @@ import { formatAmount, formatDate, getTimeRemaining, copyToClipboard } from '@/l
 import { Copy, ExternalLink, Loader2, Check, FileText, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
-import { isExpiredInvoice, shouldShowPaymentControls } from '@/lib/payment-page-state';
+import {
+  PAY_STATES,
+  describeVerifyError,
+  initialPaymentState,
+  isExpiredInvoice,
+  normalizePayerDetails,
+  paymentReducer,
+  shouldPoll,
+  shouldShowPaymentControls,
+} from '@/lib/payment-page-state';
 
 export default function PaymentPage() {
   const params = useParams();
   const id = params.id as string;
 
-  const [invoice, setInvoice] = useState<any>(null);
+  const [payment, dispatch] = useReducer(paymentReducer, undefined, () =>
+    initialPaymentState(null)
+  );
   const [loading, setLoading] = useState(true);
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
-  const [polling, setPolling] = useState(true);
   const [userWallet, setUserWallet] = useState<string | null>(null);
-  // New state for manual verification
   const [verifyTxHash, setVerifyTxHash] = useState<string>('');
-  const [verifying, setVerifying] = useState<boolean>(false);
   const [payerName, setPayerName] = useState<string>('');
   const [payerEmail, setPayerEmail] = useState<string>('');
 
-  useEffect(() => {
-    loadInvoice();
+  const invoice = payment.invoice as any;
+  const verifying = payment.status === PAY_STATES.VERIFYING;
+
+  // Every response carries the request generation that asked for it. A response
+  // from a previous invoice id — or one that lands after the component is gone —
+  // is discarded instead of overwriting current state.
+  const requestGeneration = useRef(0);
+
+  const loadInvoice = useCallback(async () => {
+    const generation = requestGeneration.current;
+
+    try {
+      const [invoiceResult, paymentResult] = await Promise.all([
+        invoiceApi.getById(id),
+        invoiceApi.getPaymentInfo(id),
+      ]);
+
+      if (generation !== requestGeneration.current) return;
+
+      dispatch({ type: 'INVOICE_LOADED', invoice: invoiceResult.data });
+      setPaymentInfo(paymentResult.data);
+    } catch (error: any) {
+      if (generation !== requestGeneration.current) return;
+      toast.error('Failed to load invoice');
+    } finally {
+      if (generation === requestGeneration.current) {
+        setLoading(false);
+      }
+    }
   }, [id]);
 
-  // Auto-refresh for pending invoices
+  // A new invoice id invalidates everything in flight for the previous one.
   useEffect(() => {
-    if (!invoice || invoice.status !== 'PENDING' || !polling) {
-      return;
-    }
+    requestGeneration.current += 1;
+    setLoading(true);
+    setPaymentInfo(null);
+    setVerifyTxHash('');
+    dispatch({ type: 'INVOICE_LOADED', invoice: null });
+
+    void loadInvoice();
+
+    return () => {
+      requestGeneration.current += 1;
+    };
+  }, [id, loadInvoice]);
+
+  // Poll only while the answer is still unknown; `shouldPoll` owns that rule.
+  useEffect(() => {
+    if (!shouldPoll(payment)) return;
+
+    const generation = requestGeneration.current;
 
     const intervalId = setInterval(async () => {
       try {
         const result = await invoiceApi.getById(id);
+        if (generation !== requestGeneration.current) return;
+
         if (result.data.status !== 'PENDING') {
-          setInvoice(result.data);
-          setPolling(false);
+          dispatch({ type: 'POLL_RESULT', invoice: result.data });
           if (result.data.status === 'PAID') {
             toast.success('Payment confirmed!');
           }
@@ -54,61 +105,50 @@ export default function PaymentPage() {
       } catch (error) {
         console.error('Polling error:', error);
       }
-    }, 3000); // Check every 3 seconds
+    }, 3000);
 
     return () => clearInterval(intervalId);
-  }, [invoice, id, polling]);
-
-  const loadInvoice = async () => {
-    try {
-      const [invoiceResult, paymentResult] = await Promise.all([
-        invoiceApi.getById(id),
-        invoiceApi.getPaymentInfo(id),
-      ]);
-      setInvoice(invoiceResult.data);
-      setPaymentInfo(paymentResult.data);
-    } catch (error: any) {
-      toast.error('Failed to load invoice');
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [payment, id]);
 
   const handlePaymentSuccess = async (txHash: string) => {
     toast.success('Payment sent! Verifying...');
-    setPolling(true); // Restart polling
-    setTimeout(async () => {
-      await loadInvoice();
+    dispatch({ type: 'PAY_SENT', txHash });
+    setTimeout(() => {
+      void loadInvoice();
     }, 2000);
   };
 
-  // Manual verification handler for users who paid via QR or other method
+  // Manual verification for payers who paid by QR or from another wallet.
   const handleVerify = async () => {
     if (!verifyTxHash.trim()) {
       toast.error('Please enter a transaction hash');
       return;
     }
-    const normalizedPayerEmail = payerEmail.trim();
-    if (normalizedPayerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedPayerEmail)) {
-      toast.error('Enter a valid payer email');
+
+    const payer = normalizePayerDetails({ payerName, payerEmail });
+    if (!payer.ok) {
+      toast.error(payer.error);
       return;
     }
-    setVerifying(true);
+
+    dispatch({ type: 'VERIFY_STARTED' });
+    const generation = requestGeneration.current;
+
     try {
       toast.loading('Verifying transaction...', { id: 'verify-toast' });
-      await invoiceApi.verify(id, verifyTxHash.trim(), {
-        payerName: payerName.trim() || undefined,
-        payerEmail: normalizedPayerEmail || undefined,
-      });
+      const result = await invoiceApi.verify(id, verifyTxHash.trim(), payer.value);
+      if (generation !== requestGeneration.current) return;
+
       toast.success('Transaction verified!', { id: 'verify-toast' });
-      // Reload invoice to reflect PAID status
-      await loadInvoice();
+      dispatch({ type: 'VERIFY_SUCCEEDED', invoice: result?.data ?? null });
+      void loadInvoice();
     } catch (error: any) {
+      if (generation !== requestGeneration.current) return;
+
       console.error('Manual verification error:', error);
-      const msg = error?.response?.data?.error || error.message || 'Verification failed';
-      toast.error(msg, { id: 'verify-toast' });
-    } finally {
-      setVerifying(false);
+      const message = describeVerifyError(error);
+      toast.error(message, { id: 'verify-toast' });
+      dispatch({ type: 'VERIFY_FAILED', error: message });
     }
   };
 
@@ -488,7 +528,9 @@ export default function PaymentPage() {
                     invoiceId={invoice.id}
                     payerName={payerName}
                     payerEmail={payerEmail}
+                    onStart={() => dispatch({ type: 'PAY_STARTED' })}
                     onSuccess={handlePaymentSuccess}
+                    onError={(message) => dispatch({ type: 'PAY_FAILED', error: message })}
                   />
 
                   <div className="mt-6 pt-4 border-t text-center">
