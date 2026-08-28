@@ -6,9 +6,10 @@ import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { STELLAR_ASSETS, getAssetByCode } from '@/lib/assets';
 import AssetLogo from './AssetLogo';
+import type { Invoice } from '@/lib/api';
 
 interface InvoiceFormProps {
-  onSuccess?: (invoice: any) => void;
+  onSuccess?: (result: { invoice: Invoice; paymentUrl: string; qrCode?: string; stellarQrCode?: string }) => void;
   userWallet?: string;
 }
 
@@ -62,7 +63,9 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       });
 
       toast.success('Invoice created');
-      onSuccess?.(result.data);
+      if (result.data) {
+        onSuccess?.(result.data);
+      }
       setAmount('');
       setAssetCode('XLM');
       setDescription('');

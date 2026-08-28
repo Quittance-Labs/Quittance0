@@ -9,26 +9,7 @@ import { toast } from 'sonner';
 import AssetLogo from './AssetLogo';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 
-interface Invoice {
-  id: string;
-  amount: number;
-  assetCode: string;
-  description?: string;
-  customerName?: string;
-  customerEmail?: string;
-  status: string;
-  createdAt: string;
-  expiresAt: string;
-  memo: string;
-  sellerPublicKey?: string;
-  sellerName?: string;
-  sellerEmail?: string;
-  payerPublicKey?: string;
-  payerName?: string;
-  payerEmail?: string;
-  paymentTxHash?: string;
-  paidAt?: string;
-}
+import type { Invoice } from '@/lib/api';
 
 interface InvoiceCardProps {
   invoice: Invoice;

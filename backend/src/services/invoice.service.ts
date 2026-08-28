@@ -4,29 +4,8 @@ import { generateInvoiceMemo } from '../utils/memo';
 import { CreateInvoiceInput } from '../utils/validation';
 import { SELLER_PUBLIC_KEY } from '../config/stellar';
 
-export interface Invoice {
-  id: string;
-  userId?: string;
-  sellerPublicKey: string;
-  sellerName?: string;
-  sellerEmail?: string;
-  amount: number;
-  assetCode: string;
-  assetIssuer?: string;
-  memo: string;
-  description?: string;
-  customerName?: string;
-  customerEmail?: string;
-  status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
-  paymentTxHash?: string;
-  payerPublicKey?: string;
-  payerName?: string;
-  payerEmail?: string;
-  createdAt: Date;
-  paidAt?: Date;
-  expiresAt: Date;
-  metadata?: any;
-}
+import type { Invoice } from '../../../shared/src';
+export type { Invoice };
 
 class InvoiceService {
   /**

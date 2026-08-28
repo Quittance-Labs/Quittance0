@@ -12,14 +12,15 @@ import PaymentReceipt from '@/components/PaymentReceipt';
 import { formatAmount, formatDate, getTimeRemaining, getShareUrl } from '@/lib/utils';
 import { ArrowLeft, Share2, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
+import type { Invoice, PaymentInfo } from '@/lib/api';
 
 export default function InvoiceDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
 
-  const [invoice, setInvoice] = useState<any>(null);
-  const [paymentInfo, setPaymentInfo] = useState<any>(null);
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [paymentInfo, setPaymentInfo] = useState<PaymentInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [userWallet, setUserWallet] = useState<string | null>(null);
 
@@ -34,8 +35,8 @@ export default function InvoiceDetailPage() {
         invoiceApi.getPaymentInfo(id),
       ]);
 
-      setInvoice(invoiceResult.data);
-      setPaymentInfo(paymentResult.data);
+      setInvoice(invoiceResult.data || null);
+      setPaymentInfo(paymentResult.data || null);
     } catch (error) {
       toast.error('Failed to load invoice');
       console.error(error);
@@ -45,6 +46,7 @@ export default function InvoiceDetailPage() {
   };
 
   const handleShare = async () => {
+    if (!invoice) return;
     const url = getShareUrl(invoice.id);
 
     if (navigator.share) {

@@ -2,8 +2,10 @@
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+import type { Invoice, InvoiceStatus } from '../../shared/src';
+
 // Mock invoice data
-const mockInvoices = [
+const mockInvoices: Invoice[] = [
   {
     id: '1',
     amount: 100.50,

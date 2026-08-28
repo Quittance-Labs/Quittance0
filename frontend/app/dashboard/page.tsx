@@ -12,15 +12,16 @@ import Link from 'next/link';
 import { Loader2, Plus, TrendingUp, DollarSign, FileText, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadInvoiceCSV } from '@/lib/export';
+import type { Invoice, InvoiceStats } from '@/lib/api';
 
 export default function DashboardPage() {
   const { publicKey, connected } = useWalletStore();
-  const [invoices, setInvoices] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [stats, setStats] = useState<InvoiceStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [filteredInvoices, setFilteredInvoices] = useState<any[]>([]);
+  const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
   const [viewMode, setViewMode] = useState<'invoices' | 'transactions'>('invoices');
   const hasAnyInvoices = Number(stats?.total_invoices || 0) > 0;
   const revenueByAsset = Object.entries(
@@ -70,8 +71,9 @@ export default function DashboardPage() {
         }),
         invoiceApi.getStats(publicKey),
       ]);
-      setInvoices(invoicesResult.data);
-      setStats(statsResult.data[0] || {});
+      setInvoices(invoicesResult.data || []);
+      const statsData = Array.isArray(statsResult.data) ? statsResult.data[0] : statsResult.data;
+      setStats(statsData || null);
     } catch (error) {
       toast.error('Failed to load data');
     } finally {

@@ -197,9 +197,22 @@ Until then, run locally: `backend` → `npm run dev:mvp`, `frontend` → `npm ru
 
 ---
 
+## Shared API Contracts
+
+The project provides canonical TypeScript types and Zod validation schemas in `shared/` (`@quittance/contracts`) to eliminate contract drift across frontend and backend services:
+
+- **Canonical Types (`shared/src/types.ts`)**: `Invoice`, `InvoiceStatus`, `VerifyResult`, `ApiResponse<T>`, `CreateInvoiceRequest`, `VerifyPaymentRequest`, `InvoiceStats`, `PaymentInfo`
+- **Shared Schemas (`shared/src/schemas.ts`)**: `stellarPublicKeySchema`, `invoiceStatusSchema`, `createInvoiceSchema`, `paymentSchema`, `invoiceSchema`, `verifyResultSchema`, `apiResponseSchema`
+- **Import Paths**:
+  - Backend: `import { createInvoiceSchema, ... } from '../../shared/src';` or `backend/src/utils/validation.ts`
+  - Frontend: `import type { Invoice, ... } from '@/lib/api';` or `../../shared/src`
+
+---
+
 ## Project layout
 
 ```
+shared/      Canonical API contracts and Zod validation schemas (@quittance/contracts)
 backend/     Express API — use server-mvp.ts for demo
 frontend/    Next.js app
 db/          Postgres schema (post-demo)

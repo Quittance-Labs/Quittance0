@@ -3,27 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { calculateInvoiceStats } from './invoice-stats';
 import type { InvoiceStats } from './invoice-stats';
 
-interface Invoice {
-  id: string;
-  sellerPublicKey: string;
-  sellerName?: string;
-  sellerEmail?: string;
-  amount: number;
-  assetCode: string;
-  assetIssuer?: string;
-  memo: string;
-  description?: string;
-  customerName?: string;
-  customerEmail?: string;
-  status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
-  paymentTxHash?: string;
-  payerPublicKey?: string;
-  payerName?: string;
-  payerEmail?: string;
-  createdAt: Date;
-  paidAt?: Date;
-  expiresAt: Date;
-}
+import type { Invoice } from '../../../shared/src';
 
 class MemoryStorage {
   private invoices: Map<string, Invoice> = new Map();
@@ -103,7 +83,7 @@ class MemoryStorage {
       invoices = invoices.filter(inv => inv.status === filter.status);
     }
 
-    return invoices.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return invoices.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
   // Get stats

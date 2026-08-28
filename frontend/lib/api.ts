@@ -1,5 +1,22 @@
 import axios from 'axios';
 import { mockInvoiceApi, mockStellarApi, mockHealthCheck } from './mock-api';
+import type {
+  Invoice,
+  CreateInvoiceRequest,
+  VerifyResult,
+  ApiResponse,
+  InvoiceStats,
+  PaymentInfo,
+} from '../../shared/src';
+
+export type {
+  Invoice,
+  CreateInvoiceRequest,
+  VerifyResult,
+  ApiResponse,
+  InvoiceStats,
+  PaymentInfo,
+};
 
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
@@ -18,24 +35,14 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
 export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
-  create: async (data: {
-    amount: number;
-    assetCode?: string;
-    assetIssuer?: string;
-    description?: string;
-    customerName?: string;
-    customerEmail?: string;
-    expiresInDays?: number;
-    sellerPublicKey?: string;
-    sellerName?: string;
-    sellerEmail?: string;
-  }) => {
+  create: async (data: CreateInvoiceRequest): Promise<ApiResponse<{ invoice: Invoice; paymentUrl: string; qrCode?: string; stellarQrCode?: string }>> => {
     const response = await api.post('/invoices', data);
     return response.data;
   },
 
-  getById: async (id: string) => {
+  getById: async (id: string): Promise<ApiResponse<Invoice>> => {
     const response = await api.get(`/invoices/${id}`);
     return response.data;
   },
@@ -45,22 +52,26 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     limit?: number;
     offset?: number;
     sellerPublicKey?: string;
-  }) => {
+  }): Promise<ApiResponse<Invoice[]>> => {
     const response = await api.get('/invoices', { params });
     return response.data;
   },
 
-  getPaymentInfo: async (id: string) => {
+  getPaymentInfo: async (id: string): Promise<ApiResponse<PaymentInfo>> => {
     const response = await api.get(`/invoices/${id}/payment-info`);
     return response.data;
   },
 
-  cancel: async (id: string) => {
+  cancel: async (id: string): Promise<ApiResponse<Invoice>> => {
     const response = await api.post(`/invoices/${id}/cancel`);
     return response.data;
   },
 
-  verify: async (id: string, txHash: string, payerInfo?: { payerName?: string; payerEmail?: string }) => {
+  verify: async (
+    id: string,
+    txHash: string,
+    payerInfo?: { payerName?: string; payerEmail?: string }
+  ): Promise<ApiResponse<VerifyResult>> => {
     const response = await api.post(`/invoices/${id}/verify`, { 
       txHash,
       ...payerInfo 
@@ -68,7 +79,7 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     return response.data;
   },
 
-  getStats: async (sellerPublicKey?: string) => {
+  getStats: async (sellerPublicKey?: string): Promise<ApiResponse<InvoiceStats[] | InvoiceStats>> => {
     const response = await api.get('/invoices/stats', {
       params: sellerPublicKey ? { sellerPublicKey } : undefined,
     });
@@ -78,26 +89,26 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
 
 // Stellar APIs
 export const stellarApi = USE_MOCK_API ? mockStellarApi : {
-  getAccount: async (publicKey?: string) => {
+  getAccount: async (publicKey?: string): Promise<ApiResponse<any>> => {
     const response = await api.get('/stellar/account', {
       params: { publicKey },
     });
     return response.data;
   },
 
-  getPayments: async (publicKey?: string, limit?: number) => {
+  getPayments: async (publicKey?: string, limit?: number): Promise<ApiResponse<any>> => {
     const response = await api.get('/stellar/payments', {
       params: { publicKey, limit },
     });
     return response.data;
   },
 
-  getTransaction: async (hash: string) => {
+  getTransaction: async (hash: string): Promise<ApiResponse<any>> => {
     const response = await api.get(`/stellar/transaction/${hash}`);
     return response.data;
   },
 
-  verifyPayment: async (txHash: string, memo: string, amount: string) => {
+  verifyPayment: async (txHash: string, memo: string, amount: string): Promise<ApiResponse<any>> => {
     const response = await api.post('/stellar/verify-payment', {
       txHash,
       memo,
@@ -108,10 +119,9 @@ export const stellarApi = USE_MOCK_API ? mockStellarApi : {
 };
 
 // Health check
-export const healthCheck = USE_MOCK_API ? mockHealthCheck : async () => {
+export const healthCheck = USE_MOCK_API ? mockHealthCheck : async (): Promise<ApiResponse<{ status: string; timestamp: string }>> => {
   const response = await api.get('/health');
   return response.data;
 };
 
 export default api;
-

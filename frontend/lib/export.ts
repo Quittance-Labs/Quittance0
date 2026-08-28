@@ -13,27 +13,8 @@ export function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => HTML_ESCAPE_CHARACTERS[character]);
 }
 
-interface Invoice {
-  id: string;
-  amount: number;
-  assetCode: string;
-  assetIssuer?: string;
-  description?: string;
-  customerName?: string;
-  customerEmail?: string;
-  sellerName?: string;
-  sellerEmail?: string;
-  payerName?: string;
-  payerEmail?: string;
-  status: string;
-  createdAt: string;
-  expiresAt: string;
-  paidAt?: string;
-  memo: string;
-  sellerPublicKey: string;
-  payerPublicKey?: string;
-  paymentTxHash?: string;
-}
+import type { Invoice } from '../../shared/src';
+export type { Invoice };
 
 /**
  * Convert transactions to CSV format
@@ -398,27 +379,6 @@ export function downloadJSON(transactions: Transaction[], filename?: string) {
   URL.revokeObjectURL(url);
 }
 
-interface Invoice {
-  id: string;
-  amount: number;
-  assetCode: string;
-  assetIssuer?: string;
-  description?: string;
-  customerName?: string;
-  customerEmail?: string;
-  sellerName?: string;
-  sellerEmail?: string;
-  payerName?: string;
-  payerEmail?: string;
-  status: string;
-  createdAt: string;
-  expiresAt: string;
-  paidAt?: string;
-  memo: string;
-  sellerPublicKey: string;
-  payerPublicKey?: string;
-  paymentTxHash?: string;
-}
 
 export function generateInvoiceCSV(invoices: Invoice[]): string {
   const headers = [

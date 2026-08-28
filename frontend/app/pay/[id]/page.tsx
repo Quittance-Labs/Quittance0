@@ -15,14 +15,15 @@ import { Copy, ExternalLink, Loader2, Check, FileText, Mail } from 'lucide-react
 import { toast } from 'sonner';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { isExpiredInvoice, shouldShowPaymentControls } from '@/lib/payment-page-state';
+import type { Invoice, PaymentInfo } from '@/lib/api';
 
 export default function PaymentPage() {
   const params = useParams();
   const id = params.id as string;
 
-  const [invoice, setInvoice] = useState<any>(null);
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
-  const [paymentInfo, setPaymentInfo] = useState<any>(null);
+  const [paymentInfo, setPaymentInfo] = useState<PaymentInfo | null>(null);
   const [polling, setPolling] = useState(true);
   const [userWallet, setUserWallet] = useState<string | null>(null);
   // New state for manual verification
@@ -44,7 +45,7 @@ export default function PaymentPage() {
     const intervalId = setInterval(async () => {
       try {
         const result = await invoiceApi.getById(id);
-        if (result.data.status !== 'PENDING') {
+        if (result.data && result.data.status !== 'PENDING') {
           setInvoice(result.data);
           setPolling(false);
           if (result.data.status === 'PAID') {
@@ -65,8 +66,8 @@ export default function PaymentPage() {
         invoiceApi.getById(id),
         invoiceApi.getPaymentInfo(id),
       ]);
-      setInvoice(invoiceResult.data);
-      setPaymentInfo(paymentResult.data);
+      setInvoice(invoiceResult.data || null);
+      setPaymentInfo(paymentResult.data || null);
     } catch (error: any) {
       toast.error('Failed to load invoice');
     } finally {
@@ -308,7 +309,7 @@ export default function PaymentPage() {
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <p className="text-sm text-green-800 font-semibold mb-1">Payment Completed</p>
                   <p className="text-green-700 font-semibold">
-                    {formatDate(invoice.paidAt)}
+                    {invoice.paidAt ? formatDate(invoice.paidAt) : formatDate(invoice.createdAt)}
                   </p>
                 </div>
               )}
@@ -421,7 +422,7 @@ export default function PaymentPage() {
                 <div className="card">
                   <h3 className="text-lg font-semibold text-center mb-4">Scan QR Code</h3>
                   <QRCodeDisplay
-                    value={paymentInfo?.stellarQrCode || paymentInfo?.paymentUrl}
+                    value={paymentInfo?.stellarQrCode || paymentInfo?.paymentUrl || ''}
                     title=""
                     size={220}
                   />
