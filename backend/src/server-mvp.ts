@@ -442,17 +442,31 @@ app.use((req: Request, res: Response) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log('\n🚀 Quittance Backend (MVP Mode)');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log(`✅ Server running on port ${PORT}`);
-    console.log(`📍 API: http://localhost:${PORT}/api`);
-    console.log(`🏥 Health: http://localhost:${PORT}/api/health`);
+/**
+ * Starts the HTTP listener.
+ *
+ * Exported so integration tests can bind an ephemeral port instead of the
+ * configured one, and so importing this module never starts a server.
+ */
+export function startServer(port: number | string = PORT) {
+  return app.listen(port, () => {
+    console.log('\n🚀 Quittance Backend (MVP Mode)');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`✅ Server running on port ${port}`);
+    console.log(`📍 API: http://localhost:${port}/api`);
+    console.log(`🏥 Health: http://localhost:${port}/api/health`);
     console.log(`💾 Storage: In-Memory (No Database)`);
     console.log(`💰 Dynamic Seller: Each user uses their own wallet!`);
     console.log(`🌐 Frontend: ${FRONTEND_URL}`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-});
+  });
+}
+
+// Only listen when this file is the process entry point. Importing it — which
+// the integration tests do — must not bind a port.
+const entryPoint = process.argv[1] ?? '';
+if (/server-mvp(\.[cm]?[jt]s)?$/.test(entryPoint)) {
+  startServer();
+}
 
 export default app;
