@@ -3,7 +3,7 @@
 import { formatAmount, formatDate } from '@/lib/utils';
 import { Check, Download, ExternalLink, FileText, Mail } from 'lucide-react';
 import AssetLogo from './AssetLogo';
-import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
+import { getStellarExplorerUrl, openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { toast } from 'sonner';
 import type { Invoice } from '@/lib/api';
 
@@ -12,10 +12,7 @@ interface PaymentReceiptProps {
 }
 
 export default function PaymentReceipt({ invoice }: PaymentReceiptProps) {
-  const horizonUrl =
-    process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET'
-      ? 'https://stellar.expert/explorer/testnet'
-      : 'https://stellar.expert/explorer/public';
+  const explorerUrl = getStellarExplorerUrl();
 
   const handleDownloadPDF = () => {
     openInvoicePDF(invoice as any);
@@ -48,13 +45,20 @@ Amount Paid: ${formatAmount(invoice.amount, 7)} ${invoice.assetCode}
 ${invoice.description ? `Description: ${invoice.description}` : ''}
 ${invoice.customerName ? `Customer: ${invoice.customerName}` : ''}
 ${invoice.customerEmail ? `Email: ${invoice.customerEmail}` : ''}
+${invoice.sellerName ? `Seller: ${invoice.sellerName}` : ''}
+${invoice.sellerEmail ? `Seller Email: ${invoice.sellerEmail}` : ''}
+${invoice.payerName ? `Payer: ${invoice.payerName}` : ''}
+${invoice.payerEmail ? `Payer Email: ${invoice.payerEmail}` : ''}
 
 ───────────────────────────────────────
 TRANSACTION DETAILS
 ───────────────────────────────────────
 
 Transaction Hash:
-${invoice.paymentTxHash}
+${invoice.paymentTxHash || 'N/A'}
+
+Stellar Explorer:
+${invoice.paymentTxHash ? getStellarExplorerUrl(`tx/${invoice.paymentTxHash}`) : 'N/A'}
 
 From (Payer):
 ${invoice.payerPublicKey || 'N/A'}
@@ -217,7 +221,7 @@ Stellar Blockchain Payment System
         </button>
 
         <a
-          href={`${horizonUrl}/tx/${invoice.paymentTxHash}`}
+          href={getStellarExplorerUrl(`tx/${invoice.paymentTxHash}`)}
           target="_blank"
           rel="noopener noreferrer"
           className="btn btn-outline w-full flex items-center justify-center gap-2"

@@ -1,24 +1,11 @@
 import assert from 'node:assert/strict';
-import { registerHooks } from 'node:module';
 import test from 'node:test';
-
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === 'date-fns') {
-      return {
-        shortCircuit: true,
-        url: 'data:text/javascript,export function format() { return "formatted date"; }',
-      };
-    }
-
-    return nextResolve(specifier, context);
-  },
-});
 
 const {
   escapeHtml,
   generateInvoicePDF,
   generatePDFContent,
+  getStellarExplorerUrl,
 } = await import('../frontend/lib/export.ts');
 
 test('escapeHtml encodes characters that can create HTML markup or attributes', () => {
@@ -28,7 +15,7 @@ test('escapeHtml encodes characters that can create HTML markup or attributes', 
   );
 });
 
-test('generateInvoicePDF renders user-supplied proof fields as literal text', () => {
+test('generateInvoicePDF renders user-supplied proof fields as literal text with explorer links and English copy', () => {
   const invoice = {
     id: 'invoice-<id>',
     amount: 25,
@@ -74,6 +61,17 @@ test('generateInvoicePDF renders user-supplied proof fields as literal text', ()
   assert.ok(html.includes('&lt;script&gt;globalThis.compromised = true&lt;/script&gt;'));
   assert.ok(html.includes('&lt;b&gt;bold&lt;/b&gt;'));
   assert.ok(!html.includes('<script>'));
+
+  // Explorer link verification
+  assert.ok(html.includes('https://stellar.expert/explorer/testnet/tx/hash&lt;transaction-hash&gt;'));
+  assert.ok(html.includes('View on Stellar Expert &rarr;'));
+
+  // English instructions and absence of non-English strings
+  assert.ok(html.includes('To save as PDF:'));
+  assert.ok(html.includes('Save as PDF'));
+  assert.ok(!html.includes('kaydet'));
+  assert.ok(!html.includes('Yazdır'));
+  assert.ok(!html.includes('Hedef'));
 });
 
 test('generatePDFContent escapes transaction report fields before document.write', () => {
@@ -102,4 +100,11 @@ test('generatePDFContent escapes transaction report fields before document.write
   assert.ok(html.includes(escapeHtml(renderedHash)));
   assert.ok(!html.includes(renderedHash));
   assert.ok(!html.includes('<script>'));
+
+  // English instructions and absence of non-English strings
+  assert.ok(html.includes('To save as PDF:'));
+  assert.ok(html.includes('Save as PDF'));
+  assert.ok(!html.includes('kaydet'));
+  assert.ok(!html.includes('Yazdır'));
+  assert.ok(!html.includes('Hedef'));
 });

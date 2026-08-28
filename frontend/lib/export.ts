@@ -1,5 +1,18 @@
 import { format } from 'date-fns';
-import type { Transaction } from '@/components/TransactionHistory';
+
+export interface Transaction {
+  id: string;
+  hash: string;
+  type: 'sent' | 'received';
+  from: string;
+  to: string;
+  amount: string;
+  assetCode: string;
+  assetIssuer?: string;
+  memo?: string;
+  createdAt: string;
+  ledger: number;
+}
 
 const HTML_ESCAPE_CHARACTERS: Record<string, string> = {
   '&': '&amp;',
@@ -74,13 +87,18 @@ export function downloadCSV(transactions: Transaction[], filename?: string) {
   URL.revokeObjectURL(url);
 }
 
+export function getStellarExplorerUrl(path: string = ''): string {
+  const isTestnet = process.env.NEXT_PUBLIC_STELLAR_NETWORK !== 'PUBLIC';
+  const baseUrl = isTestnet
+    ? 'https://stellar.expert/explorer/testnet'
+    : 'https://stellar.expert/explorer/public';
+  return path ? `${baseUrl}/${path.replace(/^\//, '')}` : baseUrl;
+}
+
 /**
- * Generate PDF content (HTML that can be printed/saved as PDF)
+ * Generate HTML content for PDF export
  */
-export function generatePDFContent(
-  transactions: Transaction[],
-  publicKey: string
-): string {
+export function generatePDFContent(transactions: Transaction[], publicKey: string): string {
   const totalReceived = transactions
     .filter((tx) => tx.type === 'received')
     .reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
@@ -89,60 +107,53 @@ export function generatePDFContent(
     .filter((tx) => tx.type === 'sent')
     .reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
 
-  const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET' ? 'Testnet' : 'Mainnet';
+  const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'PUBLIC' ? 'Public / Mainnet' : 'Testnet';
 
   return `
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>Quittance Transaction History</title>
+  <meta charset="utf-8">
+  <title>Transaction History - Quittance</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
     body {
-      font-family: 'Arial', sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       padding: 40px;
       color: #1f2937;
       background: white;
     }
     .header {
-      text-align: center;
-      margin-bottom: 40px;
+      border-bottom: 2px solid #4f46e5;
       padding-bottom: 20px;
-      border-bottom: 3px solid #4f46e5;
+      margin-bottom: 30px;
     }
     .logo {
-      font-size: 32px;
+      font-size: 24px;
       font-weight: bold;
       color: #4f46e5;
-      margin-bottom: 10px;
     }
     .subtitle {
       color: #6b7280;
       font-size: 14px;
+      margin-top: 5px;
     }
     .info-section {
       margin-bottom: 30px;
-      padding: 20px;
       background: #f9fafb;
+      padding: 15px;
       border-radius: 8px;
     }
     .info-row {
       display: flex;
       justify-content: space-between;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
+      font-size: 14px;
     }
     .info-label {
-      font-weight: 600;
       color: #6b7280;
     }
     .info-value {
-      font-family: monospace;
-      color: #1f2937;
+      font-weight: 600;
     }
     .summary {
       display: grid;
@@ -228,12 +239,8 @@ export function generatePDFContent(
       word-break: break-all;
     }
     @media print {
-      body {
-        padding: 20px;
-      }
-      .no-print {
-        display: none;
-      }
+      body { padding: 20px; }
+      .no-print { display: none; }
     }
   </style>
 </head>
@@ -322,14 +329,14 @@ export function generatePDFContent(
   </div>
 
   <div style="position: fixed; top: 10px; right: 10px; background: #06b6d4; color: white; padding: 15px; border-radius: 8px; z-index: 1000; max-width: 300px; font-family: Arial, sans-serif;">
-    <h3 style="margin: 0 0 10px 0; font-size: 14px;">PDF olarak kaydetmek için:</h3>
+    <h3 style="margin: 0 0 10px 0; font-size: 14px;">To save as PDF:</h3>
     <ol style="margin: 0; padding-left: 20px; font-size: 12px;">
-      <li>Ctrl+P (Windows) veya Cmd+P (Mac)</li>
-      <li>"Hedef" → "PDF olarak kaydet"</li>
-      <li>"Yazdır" butonuna bas</li>
+      <li>Ctrl+P (Windows) or Cmd+P (Mac)</li>
+      <li>Destination &rarr; "Save as PDF"</li>
+      <li>Click "Save" or "Print"</li>
     </ol>
     <button onclick="window.print()" style="background: white; color: #06b6d4; border: none; padding: 8px 16px; border-radius: 4px; margin-top: 10px; cursor: pointer; font-weight: bold; font-size: 12px;">
-      PDF Olarak Kaydet
+      Save as PDF
     </button>
   </div>
 
@@ -445,8 +452,11 @@ export function downloadInvoiceCSV(invoices: Invoice[], filename?: string) {
 }
 
 export function generateInvoicePDF(invoice: Invoice): string {
-  const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET' ? 'Testnet' : 'Mainnet';
+  const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'PUBLIC' ? 'Public / Mainnet' : 'Testnet';
   const isPaid = invoice.status === 'PAID';
+  const txExplorerUrl = invoice.paymentTxHash ? getStellarExplorerUrl(`tx/${invoice.paymentTxHash}`) : '';
+  const sellerExplorerUrl = invoice.sellerPublicKey ? getStellarExplorerUrl(`account/${invoice.sellerPublicKey}`) : '';
+  const payerExplorerUrl = invoice.payerPublicKey ? getStellarExplorerUrl(`account/${invoice.payerPublicKey}`) : '';
 
   return `
 <!DOCTYPE html>
@@ -457,7 +467,7 @@ export function generateInvoicePDF(invoice: Invoice): string {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { 
-      font-family: Arial, sans-serif; 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
       padding: 20px; 
       color: #333; 
       background: white; 
@@ -594,6 +604,10 @@ export function generateInvoicePDF(invoice: Invoice): string {
       color: #92400e; 
       line-height: 1.4; 
     }
+    @media print {
+      body { padding: 20px; }
+      .no-print { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -624,7 +638,7 @@ export function generateInvoicePDF(invoice: Invoice): string {
         <div class="info-label">Expires</div>
         <div class="info-value">${format(new Date(invoice.expiresAt), 'MMM dd, yyyy')}</div>
       </div>
-      ${isPaid ? `<div class="info-row"><div class="info-label">Payment Date</div><div class="info-value">${format(new Date(invoice.paidAt!), 'MMM dd, yyyy HH:mm')}</div></div>` : ''}
+      ${isPaid ? `<div class="info-row"><div class="info-label">Payment Date</div><div class="info-value">${format(new Date(invoice.paidAt || invoice.createdAt), 'MMM dd, yyyy HH:mm')}</div></div>` : ''}
     </div>
   </div>
 
@@ -653,10 +667,40 @@ export function generateInvoicePDF(invoice: Invoice): string {
   <table class="details-table">
     <tr><td>Invoice ID</td><td style="font-family: monospace; font-size: 12px;">${escapeHtml(invoice.id)}</td></tr>
     <tr><td>Memo</td><td style="font-family: monospace;">${escapeHtml(invoice.memo)}</td></tr>
-    <tr><td>Seller Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${escapeHtml(invoice.sellerPublicKey)}</td></tr>
+    <tr>
+      <td>Seller Address</td>
+      <td style="font-family: monospace; font-size: 11px; word-break: break-all;">
+        <a href="${escapeHtml(sellerExplorerUrl)}" target="_blank" rel="noopener noreferrer" style="color: #0284c7; text-decoration: underline;">
+          ${escapeHtml(invoice.sellerPublicKey)}
+        </a>
+      </td>
+    </tr>
     ${isPaid && invoice.paymentTxHash ? `
-    <tr><td>Transaction Hash</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${escapeHtml(invoice.paymentTxHash)}</td></tr>
-    <tr><td>Payer Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${escapeHtml(invoice.payerPublicKey || 'N/A')}</td></tr>
+    <tr>
+      <td>Transaction Hash</td>
+      <td style="font-family: monospace; font-size: 11px; word-break: break-all;">
+        <a href="${escapeHtml(txExplorerUrl)}" target="_blank" rel="noopener noreferrer" style="color: #0284c7; text-decoration: underline;">
+          ${escapeHtml(invoice.paymentTxHash)}
+        </a>
+      </td>
+    </tr>
+    <tr>
+      <td>Explorer Link</td>
+      <td>
+        <a href="${escapeHtml(txExplorerUrl)}" target="_blank" rel="noopener noreferrer" style="color: #0284c7; text-decoration: underline; font-weight: 500;">
+          View on Stellar Expert &rarr;
+        </a>
+      </td>
+    </tr>
+    <tr>
+      <td>Payer Address</td>
+      <td style="font-family: monospace; font-size: 11px; word-break: break-all;">
+        ${invoice.payerPublicKey ? `
+        <a href="${escapeHtml(payerExplorerUrl)}" target="_blank" rel="noopener noreferrer" style="color: #0284c7; text-decoration: underline;">
+          ${escapeHtml(invoice.payerPublicKey)}
+        </a>` : 'N/A'}
+      </td>
+    </tr>
     ${invoice.payerName ? `<tr><td>Payer Name</td><td>${escapeHtml(invoice.payerName)}</td></tr>` : ''}
     ${invoice.payerEmail ? `<tr><td>Payer Email</td><td>${escapeHtml(invoice.payerEmail)}</td></tr>` : ''}` : ''}
     <tr><td>Network</td><td>${network}</td></tr>
@@ -671,14 +715,14 @@ export function generateInvoicePDF(invoice: Invoice): string {
   </div>
 
   <div style="position: fixed; top: 10px; right: 10px; background: #06b6d4; color: white; padding: 15px; border-radius: 8px; z-index: 1000; max-width: 300px; font-family: Arial, sans-serif;">
-    <h3 style="margin: 0 0 10px 0; font-size: 14px;">PDF olarak kaydetmek için:</h3>
+    <h3 style="margin: 0 0 10px 0; font-size: 14px;">To save as PDF:</h3>
     <ol style="margin: 0; padding-left: 20px; font-size: 12px;">
-      <li>Ctrl+P (Windows) veya Cmd+P (Mac)</li>
-      <li>"Hedef" → "PDF olarak kaydet"</li>
-      <li>"Yazdır" butonuna bas</li>
+      <li>Ctrl+P (Windows) or Cmd+P (Mac)</li>
+      <li>Destination &rarr; "Save as PDF"</li>
+      <li>Click "Save" or "Print"</li>
     </ol>
     <button onclick="window.print()" style="background: white; color: #06b6d4; border: none; padding: 8px 16px; border-radius: 4px; margin-top: 10px; cursor: pointer; font-weight: bold; font-size: 12px;">
-      PDF Olarak Kaydet
+      Save as PDF
     </button>
   </div>
 
@@ -722,8 +766,9 @@ export function shareInvoiceByEmail(invoice: Invoice) {
   
   if (isPaid && invoice.paymentTxHash) {
     body += `\nPayment Information:\n`;
-    body += `Payment Date: ${format(new Date(invoice.paidAt!), 'PPpp')}\n`;
+    body += `Payment Date: ${format(new Date(invoice.paidAt || invoice.createdAt), 'PPpp')}\n`;
     body += `Transaction Hash: ${invoice.paymentTxHash}\n`;
+    body += `Stellar Explorer: ${getStellarExplorerUrl(`tx/${invoice.paymentTxHash}`)}\n`;
     if (invoice.payerPublicKey) body += `Payer Address: ${invoice.payerPublicKey}\n`;
     body += `Verified on Stellar Blockchain\n`;
   } else {

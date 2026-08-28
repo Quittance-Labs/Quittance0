@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import {
+
+const {
   createInvoiceSchema,
   paymentSchema,
   stellarPublicKeySchema,
   invoiceSchema,
   verifyResultSchema,
   createApiResponseSchema,
-} from '../shared/src/schemas.js';
+} = await import('../shared/src/schemas.ts');
 
 const validPublicKey = 'GD3DY5W4K4C37Y32F3DZY6QJ23F4Z77L3HRLW2XN2J6L6K6Z5Y2P2K4A';
 const validPayerKey = 'GB6Y4H5Z2A3B4C5D6E7F8G9H0J1K2L3M4N5P6Q7R8S9T0U1V2W3X4Y5Z';
