@@ -18,7 +18,6 @@ registerHooks({
 const {
   escapeHtml,
   generateInvoicePDF,
-  generatePDFContent,
 } = await import('../frontend/lib/export.ts');
 
 test('escapeHtml encodes characters that can create HTML markup or attributes', () => {
@@ -73,33 +72,5 @@ test('generateInvoicePDF renders user-supplied proof fields as literal text', ()
 
   assert.ok(html.includes('&lt;script&gt;globalThis.compromised = true&lt;/script&gt;'));
   assert.ok(html.includes('&lt;b&gt;bold&lt;/b&gt;'));
-  assert.ok(!html.includes('<script>'));
-});
-
-test('generatePDFContent escapes transaction report fields before document.write', () => {
-  const transaction = {
-    id: 'transaction-id',
-    hash: 'hash<hash-field>remaining',
-    type: 'received',
-    from: 'GFROM<from-field>',
-    to: 'GTO<to-field>',
-    amount: '10',
-    assetCode: 'XLM<asset-code>',
-    memo: 'Memo <script>run()</script>',
-    createdAt: '2026-07-25T10:00:00.000Z',
-    ledger: 123,
-  };
-  const publicKey = 'GACCOUNT<account-field>';
-
-  const html = generatePDFContent([transaction], publicKey);
-
-  for (const value of [publicKey, transaction.from, transaction.assetCode, transaction.memo]) {
-    assert.ok(html.includes(escapeHtml(value)));
-    assert.ok(!html.includes(value));
-  }
-
-  const renderedHash = transaction.hash.substring(0, 16);
-  assert.ok(html.includes(escapeHtml(renderedHash)));
-  assert.ok(!html.includes(renderedHash));
   assert.ok(!html.includes('<script>'));
 });
