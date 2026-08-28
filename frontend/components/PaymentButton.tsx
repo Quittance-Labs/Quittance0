@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Wallet, Loader2 } from 'lucide-react';
 import { invoiceApi } from '@/lib/api';
 import { showFreighterInstallPrompt } from '@/components/FreighterInstallPrompt';
+import { checkPayerInfo, resolveVerificationError } from '@/lib/verification';
 
 interface PaymentButtonProps {
   destination: string;
@@ -35,9 +36,11 @@ export default function PaymentButton({
   const [loading, setLoading] = useState(false);
 
   const handlePayment = async () => {
-    const normalizedPayerEmail = payerEmail?.trim();
-    if (normalizedPayerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedPayerEmail)) {
-      toast.error('Enter a valid payer email');
+    // Same payer rules as the server, so the wallet is never opened for input
+    // the verify endpoint would reject afterwards.
+    const payerCheck = checkPayerInfo({ payerName, payerEmail });
+    if (!payerCheck.ok) {
+      toast.error(payerCheck.error);
       return;
     }
 
@@ -61,19 +64,20 @@ export default function PaymentButton({
       if (invoiceId) {
         toast.loading('Verifying payment...', { id: PAY_TOAST_ID });
         try {
-          await invoiceApi.verify(invoiceId, txHash, {
-            payerName: payerName?.trim() || undefined,
-            payerEmail: normalizedPayerEmail || undefined,
-          });
+          await invoiceApi.verify(invoiceId, txHash, payerCheck.value);
           toast.success('Payment verified', {
             id: PAY_TOAST_ID,
             description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
           });
         } catch (error) {
           console.error('Verification failed:', error);
+          // Surface the shared rejection message rather than a generic warning.
           toast.warning('Payment sent but verification failed', {
             id: PAY_TOAST_ID,
-            description: 'Refresh the page or wait for status to update',
+            description: resolveVerificationError(
+              error,
+              'Refresh the page or wait for status to update'
+            ),
           });
         }
       } else {

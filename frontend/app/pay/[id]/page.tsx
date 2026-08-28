@@ -15,6 +15,7 @@ import { Copy, ExternalLink, Loader2, Check, FileText, Mail } from 'lucide-react
 import { toast } from 'sonner';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { isExpiredInvoice, shouldShowPaymentControls } from '@/lib/payment-page-state';
+import { checkPayerInfo, checkTxHash, resolveVerificationError } from '@/lib/verification';
 
 export default function PaymentPage() {
   const params = useParams();
@@ -84,29 +85,28 @@ export default function PaymentPage() {
 
   // Manual verification handler for users who paid via QR or other method
   const handleVerify = async () => {
-    if (!verifyTxHash.trim()) {
-      toast.error('Please enter a transaction hash');
+    // Shared contract (issue #224): reject the same input the server would,
+    // with the same message, before spending a request.
+    const hashCheck = checkTxHash(verifyTxHash);
+    if (!hashCheck.ok) {
+      toast.error(hashCheck.error);
       return;
     }
-    const normalizedPayerEmail = payerEmail.trim();
-    if (normalizedPayerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedPayerEmail)) {
-      toast.error('Enter a valid payer email');
+    const payerCheck = checkPayerInfo({ payerName, payerEmail });
+    if (!payerCheck.ok) {
+      toast.error(payerCheck.error);
       return;
     }
     setVerifying(true);
     try {
       toast.loading('Verifying transaction...', { id: 'verify-toast' });
-      await invoiceApi.verify(id, verifyTxHash.trim(), {
-        payerName: payerName.trim() || undefined,
-        payerEmail: normalizedPayerEmail || undefined,
-      });
+      await invoiceApi.verify(id, hashCheck.value, payerCheck.value);
       toast.success('Transaction verified!', { id: 'verify-toast' });
       // Reload invoice to reflect PAID status
       await loadInvoice();
     } catch (error: any) {
       console.error('Manual verification error:', error);
-      const msg = error?.response?.data?.error || error.message || 'Verification failed';
-      toast.error(msg, { id: 'verify-toast' });
+      toast.error(resolveVerificationError(error), { id: 'verify-toast' });
     } finally {
       setVerifying(false);
     }
