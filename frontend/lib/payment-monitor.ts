@@ -188,6 +188,155 @@ class PaymentMonitor {
 
 // Export singleton instance
 export const paymentMonitor = new PaymentMonitor();
+export default paymentMonitor;
+
+export type InvoiceMonitorStatus = 'idle' | 'listening' | 'matched' | 'paid' | 'expired' | 'error';
+
+export interface InvoiceMonitorEvent {
+  status: InvoiceMonitorStatus;
+  message?: string;
+  invoice?: Invoice;
+  txHash?: string;
+}
+
+import { invoiceApi, Invoice } from './api';
+
+/**
+ * Monitor an individual invoice for auto-completion.
+ * Uses SSE stream from backend if available, and falls back to live Horizon stream + auto verify.
+ */
+export function monitorInvoice(
+  invoice: Invoice,
+  onEvent: (event: InvoiceMonitorEvent) => void
+): () => void {
+  let isCleanedUp = false;
+  let eventSource: EventSource | null = null;
+
+  if (invoice.status === 'PAID') {
+    onEvent({ status: 'paid', invoice });
+    return () => {};
+  }
+
+  if (invoice.status !== 'PENDING') {
+    onEvent({ status: invoice.status.toLowerCase() as InvoiceMonitorStatus, invoice });
+    return () => {};
+  }
+
+  onEvent({ status: 'listening', message: 'Listening for transfer on Stellar network...' });
+
+  // 1. Try SSE Stream from backend API
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+  const sseUrl = `${apiUrl}/invoices/${invoice.id}/stream`;
+
+  if (typeof window !== 'undefined' && typeof window.EventSource !== 'undefined') {
+    try {
+      eventSource = new EventSource(sseUrl);
+
+      eventSource.onmessage = (e) => {
+        if (isCleanedUp) return;
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === 'matched') {
+            onEvent({
+              status: 'matched',
+              message: 'Payment detected! Verifying on-chain...',
+              invoice: data.invoice,
+              txHash: data.payment?.txHash,
+            });
+          } else if (data.type === 'paid') {
+            onEvent({
+              status: 'paid',
+              message: 'Payment confirmed on Stellar!',
+              invoice: data.invoice,
+              txHash: data.payment?.txHash || data.invoice?.paymentTxHash,
+            });
+          } else if (data.type === 'expired') {
+            onEvent({
+              status: 'expired',
+              message: 'Invoice has expired',
+              invoice: data.invoice,
+            });
+          }
+        } catch (err) {
+          console.error('SSE parse error:', err);
+        }
+      };
+
+      eventSource.onerror = () => {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+      };
+    } catch (err) {
+      console.warn('SSE initialization failed:', err);
+    }
+  }
+
+  // 2. Client-side Horizon stream fallback
+  try {
+    const onHorizonPayment = async (payment: PaymentNotification) => {
+      if (isCleanedUp) return;
+
+      // Check memo match
+      if (!payment.memo || payment.memo !== invoice.memo) {
+        return;
+      }
+
+      // Check destination
+      if (payment.to !== invoice.sellerPublicKey) {
+        return;
+      }
+
+      // Check amount
+      const expectedAmount = Number(invoice.amount).toFixed(7);
+      const receivedAmount = parseFloat(payment.amount).toFixed(7);
+      if (expectedAmount !== receivedAmount) {
+        return;
+      }
+
+      // Check asset
+      if (payment.assetCode !== invoice.assetCode) {
+        return;
+      }
+
+      onEvent({
+        status: 'matched',
+        message: 'Matching payment detected on Stellar! Verifying...',
+        txHash: payment.hash,
+      });
+
+      // Auto-verify with backend to transition invoice to PAID
+      try {
+        const verifyRes = await invoiceApi.verify(invoice.id, payment.hash);
+        if (verifyRes.data) {
+          const paidInvoice: Invoice | undefined =
+            'id' in verifyRes.data ? (verifyRes.data as Invoice) : (verifyRes.data as any).invoice;
+          onEvent({
+            status: 'paid',
+            message: 'Payment verified and marked PAID!',
+            invoice: paidInvoice || invoice,
+            txHash: payment.hash,
+          });
+        }
+      } catch (err: any) {
+        console.error('Auto verify error:', err);
+      }
+    };
+
+    paymentMonitor.startMonitoring(invoice.sellerPublicKey, onHorizonPayment);
+  } catch (err) {
+    console.error('Failed to attach Horizon monitor listener:', err);
+  }
+
+  return () => {
+    isCleanedUp = true;
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+  };
+}
 
 // Cleanup on page unload
 if (typeof window !== 'undefined') {

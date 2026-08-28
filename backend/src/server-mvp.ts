@@ -5,6 +5,7 @@ import { createInvoiceSchema } from './utils/validation';
 import invoiceService from './services/invoice-memory.service';
 import { generatePaymentQR, generateStellarPaymentQR } from './utils/qrcode';
 import stellarService from './services/stellar.service';
+import paymentMonitorService from './services/payment-monitor.service';
 
 // Load environment variables
 dotenv.config();
@@ -214,6 +215,110 @@ app.get('/api/invoices/:id/payment-info', async (req: Request, res: Response) =>
       success: false,
       error: error.message || 'Failed to get payment info',
     });
+  }
+});
+
+// Register / Start monitoring for an invoice
+app.post('/api/invoices/:id/monitor', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const invoice = await invoiceService.getInvoiceById(id);
+
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        error: 'Invoice not found',
+      });
+    }
+
+    if (invoice.status === 'PAID') {
+      return res.json({
+        success: true,
+        status: 'paid',
+        message: 'Invoice is already paid',
+        data: invoice,
+      });
+    }
+
+    if (invoice.status !== 'PENDING') {
+      return res.status(400).json({
+        success: false,
+        status: invoice.status.toLowerCase(),
+        error: `Invoice is ${invoice.status}`,
+      });
+    }
+
+    // Start live Stellar stream for the seller wallet
+    paymentMonitorService.startMonitoringSeller(invoice.sellerPublicKey);
+
+    res.json({
+      success: true,
+      status: 'listening',
+      message: 'Payment monitor active on Stellar Horizon',
+      data: {
+        invoiceId: invoice.id,
+        sellerPublicKey: invoice.sellerPublicKey,
+        memo: invoice.memo,
+        amount: invoice.amount,
+        assetCode: invoice.assetCode,
+      },
+    });
+  } catch (error: any) {
+    console.error('Start monitor error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to start payment monitor',
+    });
+  }
+});
+
+// Stream real-time status updates for an invoice (SSE)
+app.get('/api/invoices/:id/stream', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const invoice = await invoiceService.getInvoiceById(id);
+
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        error: 'Invoice not found',
+      });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    if (typeof (res as any).flushHeaders === 'function') {
+      (res as any).flushHeaders();
+    }
+
+    // Send initial status
+    res.write(`data: ${JSON.stringify({ type: invoice.status === 'PAID' ? 'paid' : 'listening', invoice })}\n\n`);
+
+    if (invoice.status === 'PENDING') {
+      paymentMonitorService.startMonitoringSeller(invoice.sellerPublicKey);
+
+      const unsubscribe = paymentMonitorService.subscribeInvoice(id, (event) => {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+        if (event.type === 'paid' || event.type === 'expired') {
+          res.end();
+        }
+      });
+
+      req.on('close', () => {
+        unsubscribe();
+      });
+    } else {
+      res.end();
+    }
+  } catch (error: any) {
+    console.error('Stream error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to open event stream',
+      });
+    }
   }
 });
 

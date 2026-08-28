@@ -15,6 +15,7 @@ import { Copy, ExternalLink, Loader2, Check, FileText, Mail } from 'lucide-react
 import { toast } from 'sonner';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { isExpiredInvoice, shouldShowPaymentControls } from '@/lib/payment-page-state';
+import { monitorInvoice, InvoiceMonitorStatus } from '@/lib/payment-monitor';
 import type { Invoice, PaymentInfo } from '@/lib/api';
 
 export default function PaymentPage() {
@@ -26,6 +27,8 @@ export default function PaymentPage() {
   const [paymentInfo, setPaymentInfo] = useState<PaymentInfo | null>(null);
   const [polling, setPolling] = useState(true);
   const [userWallet, setUserWallet] = useState<string | null>(null);
+  const [monitorStatus, setMonitorStatus] = useState<InvoiceMonitorStatus>('idle');
+  const [monitorMessage, setMonitorMessage] = useState<string>('');
   // New state for manual verification
   const [verifyTxHash, setVerifyTxHash] = useState<string>('');
   const [verifying, setVerifying] = useState<boolean>(false);
@@ -36,7 +39,36 @@ export default function PaymentPage() {
     loadInvoice();
   }, [id]);
 
-  // Auto-refresh for pending invoices
+  // Connect real-time invoice monitor (SSE + Horizon stream)
+  useEffect(() => {
+    if (!invoice || invoice.status !== 'PENDING' || isExpiredInvoice(invoice.status)) {
+      return;
+    }
+
+    const cleanup = monitorInvoice(invoice, (event) => {
+      setMonitorStatus(event.status);
+      if (event.message) {
+        setMonitorMessage(event.message);
+      }
+      if (event.invoice && event.invoice.status !== 'PENDING') {
+        setInvoice(event.invoice);
+        setPolling(false);
+        if (event.invoice.status === 'PAID') {
+          toast.success('Payment confirmed on Stellar!');
+        }
+      } else if (event.status === 'paid') {
+        loadInvoice();
+        setPolling(false);
+        toast.success('Payment confirmed on Stellar!');
+      }
+    });
+
+    return () => {
+      cleanup();
+    };
+  }, [invoice?.id, invoice?.status]);
+
+  // Auto-refresh fallback for pending invoices
   useEffect(() => {
     if (!invoice || invoice.status !== 'PENDING' || !polling) {
       return;
@@ -294,6 +326,17 @@ export default function PaymentPage() {
                     </>
                   )}
                 </div>
+
+                {invoice.status === 'PENDING' && !isExpired && (
+                  <div className="mt-3 p-3 bg-cyan-50 border border-cyan-200 rounded-lg text-xs flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${monitorStatus === 'matched' ? 'bg-amber-500 animate-ping' : 'bg-green-500 animate-pulse'}`}></div>
+                    <span className="text-cyan-800 font-medium">
+                      {monitorStatus === 'matched'
+                        ? 'Payment detected on Stellar! Finalizing quittance...'
+                        : 'Live Horizon Stream: Listening for transfer to seller wallet...'}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {invoice.status === 'PENDING' && (

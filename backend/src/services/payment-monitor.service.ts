@@ -1,127 +1,249 @@
 import stellarService, { PaymentRecord } from './stellar.service';
-import invoiceService from './invoice.service';
-import { SELLER_PUBLIC_KEY } from '../config/stellar';
-import { pool } from '../config/database';
+import invoiceMemoryService from './invoice-memory.service';
 
-class PaymentMonitorService {
-  private closeHandler: (() => void) | null = null;
-  private isRunning: boolean = false;
+export type PaymentMonitorListener = (event: {
+  type: 'listening' | 'matched' | 'paid' | 'expired' | 'error';
+  invoiceId?: string;
+  invoice?: any;
+  payment?: PaymentRecord;
+  error?: string;
+}) => void;
 
-  /**
-   * Start monitoring payments for the seller account
-   */
-  start() {
-    if (this.isRunning) {
-      console.log('⚠️ Payment monitor is already running');
-      return;
+export class PaymentMonitorService {
+  private activeStreams: Map<string, () => void> = new Map();
+  private invoiceListeners: Map<string, Set<PaymentMonitorListener>> = new Map();
+  private expirationInterval: NodeJS.Timeout | null = null;
+  private invoiceService: any = invoiceMemoryService;
+
+  constructor(customInvoiceService?: any) {
+    if (customInvoiceService) {
+      this.invoiceService = customInvoiceService;
     }
+  }
 
-    console.log('🚀 Starting payment monitor...');
-    this.isRunning = true;
-
-    // Start streaming payments
-    this.closeHandler = stellarService.streamPayments(
-      SELLER_PUBLIC_KEY,
-      this.handlePayment.bind(this),
-      this.handleError.bind(this)
-    );
-
-    // Start periodic check for expired invoices
-    this.startExpirationCheck();
-
-    console.log('✅ Payment monitor started successfully');
+  setInvoiceService(service: any) {
+    this.invoiceService = service;
   }
 
   /**
-   * Stop monitoring
+   * Start payment monitor (defaults to env seller if configured)
    */
-  stop() {
-    if (!this.isRunning) {
-      console.log('⚠️ Payment monitor is not running');
-      return;
+  start(sellerPublicKey?: string) {
+    const key = sellerPublicKey || process.env.SELLER_PUBLIC_KEY;
+    if (key) {
+      this.startMonitoringSeller(key);
     }
-
-    console.log('🛑 Stopping payment monitor...');
-    
-    if (this.closeHandler) {
-      this.closeHandler();
-      this.closeHandler = null;
-    }
-
-    this.isRunning = false;
-    console.log('✅ Payment monitor stopped');
   }
 
   /**
-   * Handle incoming payment
+   * Stop payment monitor
    */
-  private async handlePayment(payment: PaymentRecord) {
+  stop(sellerPublicKey?: string) {
+    if (sellerPublicKey) {
+      this.stopMonitoringSeller(sellerPublicKey);
+    } else {
+      this.stopAll();
+    }
+  }
+
+  /**
+   * Manual sync - fetch recent payments for seller
+   */
+  async manualSync(limit: number = 50, sellerPublicKey?: string) {
+    const key = sellerPublicKey || process.env.SELLER_PUBLIC_KEY;
+    if (!key) {
+      console.log('⚠️ No seller public key provided for manual sync');
+      return;
+    }
+    const payments = await stellarService.getRecentPayments(key, limit);
+    for (const payment of payments) {
+      await this.handlePayment(payment);
+    }
+  }
+
+  /**
+   * Start monitoring payments for a specific seller account
+   */
+  startMonitoringSeller(sellerPublicKey: string) {
+    if (!sellerPublicKey || typeof sellerPublicKey !== 'string') {
+      return;
+    }
+
+    if (this.activeStreams.has(sellerPublicKey)) {
+      return;
+    }
+
+    console.log(`🚀 Starting payment monitor for seller: ${sellerPublicKey}`);
+
     try {
-      console.log('🔍 Processing payment:', payment.txHash);
+      const closeHandler = stellarService.streamPayments(
+        sellerPublicKey,
+        (payment) => this.handlePayment(payment, sellerPublicKey),
+        (error) => this.handleError(error, sellerPublicKey)
+      );
 
-      // Check if payment has a memo
+      this.activeStreams.set(sellerPublicKey, closeHandler);
+    } catch (error) {
+      console.error(`❌ Failed to start stream for seller ${sellerPublicKey}:`, error);
+    }
+
+    this.ensureExpirationCheck();
+  }
+
+  /**
+   * Stop monitoring a seller account
+   */
+  stopMonitoringSeller(sellerPublicKey: string) {
+    const closeHandler = this.activeStreams.get(sellerPublicKey);
+    if (closeHandler) {
+      try {
+        closeHandler();
+      } catch (err) {
+        console.error('Error closing stream:', err);
+      }
+      this.activeStreams.delete(sellerPublicKey);
+      console.log(`🛑 Stopped payment monitor for seller: ${sellerPublicKey}`);
+    }
+  }
+
+  /**
+   * Stop all active monitoring streams
+   */
+  stopAll() {
+    this.activeStreams.forEach((closeHandler, seller) => {
+      try {
+        closeHandler();
+      } catch (err) {
+        console.error('Error closing stream:', err);
+      }
+      console.log(`🛑 Stopped stream for: ${seller}`);
+    });
+    this.activeStreams.clear();
+    this.invoiceListeners.clear();
+    if (this.expirationInterval) {
+      clearInterval(this.expirationInterval);
+      this.expirationInterval = null;
+    }
+  }
+
+  /**
+   * Subscribe to live events for a specific invoice
+   */
+  subscribeInvoice(invoiceId: string, listener: PaymentMonitorListener): () => void {
+    if (!this.invoiceListeners.has(invoiceId)) {
+      this.invoiceListeners.set(invoiceId, new Set());
+    }
+    this.invoiceListeners.get(invoiceId)!.add(listener);
+
+    return () => {
+      const listeners = this.invoiceListeners.get(invoiceId);
+      if (listeners) {
+        listeners.delete(listener);
+        if (listeners.size === 0) {
+          this.invoiceListeners.delete(invoiceId);
+        }
+      }
+    };
+  }
+
+  /**
+   * Notify invoice listeners
+   */
+  private notifyInvoice(invoiceId: string, event: {
+    type: 'listening' | 'matched' | 'paid' | 'expired' | 'error';
+    invoiceId?: string;
+    invoice?: any;
+    payment?: PaymentRecord;
+    error?: string;
+  }) {
+    const listeners = this.invoiceListeners.get(invoiceId);
+    if (listeners) {
+      listeners.forEach((listener) => {
+        try {
+          listener(event);
+        } catch (err) {
+          console.error('Listener error:', err);
+        }
+      });
+    }
+  }
+
+  /**
+   * Handle incoming payment record
+   */
+  async handlePayment(payment: PaymentRecord, monitoredSeller?: string): Promise<{ success: boolean; reason?: string; invoice?: any }> {
+    try {
+      console.log('🔍 Processing payment:', payment.txHash, 'memo:', payment.memo);
+
       if (!payment.memo) {
         console.log('⚠️ Payment without memo, skipping:', payment.txHash);
-        return;
+        return { success: false, reason: 'Payment without memo' };
       }
 
       // Find invoice by memo
-      const invoice = await invoiceService.getInvoiceByMemo(payment.memo);
+      const invoice = await this.invoiceService.getInvoiceByMemo(payment.memo);
 
       if (!invoice) {
         console.log('⚠️ No invoice found for memo:', payment.memo);
-        return;
+        return { success: false, reason: 'Invoice not found for memo' };
       }
 
-      // Check if invoice is already paid
+      // Check idempotency: If already paid with the SAME txHash
       if (invoice.status === 'PAID') {
-        console.log('⚠️ Invoice already paid:', invoice.id);
-        return;
+        if (invoice.paymentTxHash === payment.txHash) {
+          console.log('ℹ️ Invoice already paid with this txHash (idempotent):', invoice.id);
+          return { success: true, invoice, reason: 'Already paid (idempotent)' };
+        }
+        console.log('⚠️ Invoice already paid with different txHash:', invoice.id);
+        return { success: false, invoice, reason: 'Invoice already paid' };
       }
 
       // Check if invoice is expired
-      if (invoice.status === 'EXPIRED') {
+      const isExpired =
+        invoice.status === 'EXPIRED' ||
+        new Date(invoice.expiresAt).getTime() <= Date.now();
+
+      if (isExpired) {
         console.log('⚠️ Invoice is expired:', invoice.id);
-        return;
+        this.notifyInvoice(invoice.id, { type: 'expired', invoiceId: invoice.id, invoice });
+        return { success: false, invoice, reason: 'Invoice is expired' };
       }
 
-      // Verify payment amount
-      const expectedAmount = invoice.amount.toFixed(7);
+      // Verify destination matches seller
+      if (payment.to !== invoice.sellerPublicKey) {
+        console.log('⚠️ Destination mismatch:', { expected: invoice.sellerPublicKey, actual: payment.to });
+        return { success: false, reason: 'Destination mismatch' };
+      }
+
+      // Verify amount (compare with 7 decimal precision)
+      const expectedAmount = Number(invoice.amount).toFixed(7);
       const receivedAmount = parseFloat(payment.amount).toFixed(7);
 
       if (expectedAmount !== receivedAmount) {
-        console.log('⚠️ Amount mismatch:', {
-          expected: expectedAmount,
-          received: receivedAmount,
-          invoiceId: invoice.id,
-        });
-
-        // Log the partial payment attempt
-        await invoiceService.logPaymentEvent(invoice.id, 'PARTIAL_PAYMENT', {
-          txHash: payment.txHash,
-          expectedAmount,
-          receivedAmount,
-          payerPublicKey: payment.from,
-        });
-
-        return;
+        console.log('⚠️ Amount mismatch:', { expected: expectedAmount, received: receivedAmount, invoiceId: invoice.id });
+        return { success: false, reason: 'Amount mismatch' };
       }
 
       // Verify asset
       if (payment.assetCode !== invoice.assetCode) {
-        console.log('⚠️ Asset mismatch:', {
-          expected: invoice.assetCode,
-          received: payment.assetCode,
-          invoiceId: invoice.id,
-        });
-        return;
+        console.log('⚠️ Asset mismatch:', { expected: invoice.assetCode, received: payment.assetCode, invoiceId: invoice.id });
+        return { success: false, reason: 'Asset mismatch' };
       }
 
-      // Save transaction to database
-      await this.saveTransaction(payment, invoice.id);
+      // Notify that payment matched before marking
+      this.notifyInvoice(invoice.id, {
+        type: 'matched',
+        invoiceId: invoice.id,
+        invoice,
+        payment,
+      });
 
       // Mark invoice as paid
-      await invoiceService.markAsPaid(invoice.id, payment.txHash, payment.from);
+      const updatedInvoice = await this.invoiceService.markAsPaid(
+        invoice.id,
+        payment.txHash,
+        payment.from
+      );
 
       console.log('✅ Payment processed successfully:', {
         invoiceId: invoice.id,
@@ -129,91 +251,37 @@ class PaymentMonitorService {
         amount: payment.amount,
       });
 
-      // TODO: Send notification to customer/seller
-      // await this.sendPaymentNotification(invoice, payment);
+      this.notifyInvoice(invoice.id, {
+        type: 'paid',
+        invoiceId: invoice.id,
+        invoice: updatedInvoice,
+        payment,
+      });
 
+      return { success: true, invoice: updatedInvoice };
     } catch (error: any) {
       console.error('❌ Error processing payment:', error);
+      return { success: false, reason: error.message };
     }
   }
 
-  /**
-   * Save transaction to database
-   */
-  private async saveTransaction(payment: PaymentRecord, invoiceId: string) {
-    const query = `
-      INSERT INTO transactions (
-        invoice_id, from_address, to_address, amount, asset_code, asset_issuer,
-        tx_hash, memo, ledger, processed_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-      ON CONFLICT (tx_hash) DO NOTHING
-    `;
-
-    const values = [
-      invoiceId,
-      payment.from,
-      payment.to,
-      payment.amount,
-      payment.assetCode,
-      payment.assetIssuer || null,
-      payment.txHash,
-      payment.memo || null,
-      payment.ledger,
-    ];
-
-    await pool.query(query, values);
-    console.log('💾 Transaction saved to database');
+  private handleError(error: Error, sellerPublicKey: string) {
+    console.error(`❌ Payment stream error for ${sellerPublicKey}:`, error);
   }
 
-  /**
-   * Handle stream errors
-   */
-  private handleError(error: Error) {
-    console.error('❌ Payment stream error:', error);
-    
-    // Attempt to restart after delay
-    setTimeout(() => {
-      if (this.isRunning) {
-        console.log('🔄 Attempting to restart payment stream...');
-        this.stop();
-        this.start();
-      }
-    }, 5000);
-  }
-
-  /**
-   * Start periodic check for expired invoices
-   */
-  private startExpirationCheck() {
-    setInterval(async () => {
-      try {
-        await invoiceService.markExpiredInvoices();
-      } catch (error) {
-        console.error('Error checking expired invoices:', error);
-      }
-    }, 60000); // Check every minute
-  }
-
-  /**
-   * Manual sync - fetch recent payments and process them
-   */
-  async manualSync(limit: number = 50) {
-    console.log('🔄 Starting manual payment sync...');
-
-    try {
-      const payments = await stellarService.getRecentPayments(SELLER_PUBLIC_KEY, limit);
-      
-      for (const payment of payments) {
-        await this.handlePayment(payment);
-      }
-
-      console.log(`✅ Manual sync completed, processed ${payments.length} payments`);
-    } catch (error) {
-      console.error('❌ Manual sync error:', error);
-      throw error;
+  private ensureExpirationCheck() {
+    if (!this.expirationInterval) {
+      this.expirationInterval = setInterval(async () => {
+        try {
+          if (this.invoiceService.markExpiredInvoices) {
+            await this.invoiceService.markExpiredInvoices();
+          }
+        } catch (error) {
+          console.error('Error checking expired invoices:', error);
+        }
+      }, 60000);
     }
   }
 }
 
 export default new PaymentMonitorService();
-
