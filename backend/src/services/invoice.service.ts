@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { pool } from '../config/database';
 import { generateInvoiceMemo } from '../utils/memo';
 import { CreateInvoiceInput } from '../utils/validation';
+import type { InvoiceStats } from '../storage/invoice-stats';
 
 /** Minimal database surface used by this service (pg Pool or a test double). */
 export interface Queryable {
@@ -88,7 +89,7 @@ export class InvoiceService {
   async getInvoiceById(id: string): Promise<Invoice | null> {
     const query = 'SELECT * FROM invoices WHERE id = $1';
     const result = await this.db.query(query, [id]);
-    
+
     if (result.rows.length === 0) {
       return null;
     }
@@ -102,7 +103,7 @@ export class InvoiceService {
   async getInvoiceByMemo(memo: string): Promise<Invoice | null> {
     const query = 'SELECT * FROM invoices WHERE memo = $1';
     const result = await this.db.query(query, [memo]);
-    
+
     if (result.rows.length === 0) {
       return null;
     }
@@ -113,7 +114,12 @@ export class InvoiceService {
   /**
    * Update invoice status to PAID
    */
-  async markAsPaid(invoiceId: string, txHash: string, payerPublicKey: string, payerInfo?: { payerName?: string; payerEmail?: string }): Promise<Invoice> {
+  async markAsPaid(
+    invoiceId: string,
+    txHash: string,
+    payerPublicKey: string,
+    payerInfo?: { payerName?: string; payerEmail?: string }
+  ): Promise<Invoice> {
     const query = `
       UPDATE invoices 
       SET status = 'PAID', payment_tx_hash = $2, payer_public_key = $3, paid_at = NOW(),
@@ -124,20 +130,19 @@ export class InvoiceService {
 
     try {
       const result = await this.db.query(query, [
-        invoiceId, 
-        txHash, 
+        invoiceId,
+        txHash,
         payerPublicKey,
         payerInfo?.payerName || null,
-        payerInfo?.payerEmail || null
+        payerInfo?.payerEmail || null,
       ]);
-      
+
       if (result.rows.length === 0) {
         throw new Error('Invoice not found');
       }
 
       console.log('✅ Invoice marked as paid:', invoiceId);
-      
-      // Log payment event
+
       await this.logPaymentEvent(invoiceId, 'PAYMENT_CONFIRMED', {
         txHash,
         payerPublicKey,
@@ -175,7 +180,7 @@ export class InvoiceService {
     params.push(limit, offset);
 
     const result = await this.db.query(query, params);
-    return result.rows.map(row => this.mapRowToInvoice(row));
+    return result.rows.map((row) => this.mapRowToInvoice(row));
   }
 
   /**
@@ -190,7 +195,7 @@ export class InvoiceService {
     `;
 
     const result = await this.db.query(query, [invoiceId]);
-    
+
     if (result.rows.length === 0) {
       throw new Error('Invoice not found or already processed');
     }
@@ -229,7 +234,7 @@ export class InvoiceService {
   /**
    * Get invoice statistics
    */
-  async getInvoiceStats(sellerPublicKey: string): Promise<any> {
+  async getInvoiceStats(sellerPublicKey: string): Promise<InvoiceStats[]> {
     if (!sellerPublicKey) {
       throw new Error('Seller public key is required');
     }
@@ -257,7 +262,27 @@ export class InvoiceService {
     `;
 
     const result = await this.db.query(query, [sellerPublicKey]);
-    return result.rows;
+    return result.rows.map((row) => this.mapRowToStats(row));
+  }
+
+  /**
+   * Map an aggregate row to stats. Postgres returns COUNT/SUM as strings, so the
+   * numbers are normalised to match the in-memory backend.
+   */
+  private mapRowToStats(row: any): InvoiceStats {
+    const revenueByAsset: Record<string, number> = {};
+
+    Object.entries(row.revenue_by_asset || {}).forEach(([assetCode, revenue]) => {
+      revenueByAsset[assetCode] = Number(revenue);
+    });
+
+    return {
+      total_invoices: Number(row.total_invoices),
+      paid_invoices: Number(row.paid_invoices),
+      pending_invoices: Number(row.pending_invoices),
+      expired_invoices: Number(row.expired_invoices),
+      revenue_by_asset: revenueByAsset,
+    };
   }
 
   /**

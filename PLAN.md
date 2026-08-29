@@ -12,7 +12,7 @@ This document is not a menu of options. Positioning, scope, and ship order are f
 
 Keep the repo lean:
 
-- `README.md` — overview and how to run  
+- `README.md` — overview, how to run, and the **payment verification contract** (four checks, fixed order, shared rejection codes)
 - `PLAN.md` / `ROADMAP.md` — ship plan  
 - `EVIDENCE.md` — demo URL and testnet proof for reviewers  
 - Env examples — configuration  
