@@ -61,9 +61,11 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
   },
 
   verify: async (id: string, txHash: string, payerInfo?: { payerName?: string; payerEmail?: string }) => {
-    const response = await api.post(`/invoices/${id}/verify`, { 
+    const response = await api.post(`/invoices/${id}/verify`, {
       txHash,
-      ...payerInfo 
+      // Lets the server reject a payment made on a different Stellar network.
+      network: process.env.NEXT_PUBLIC_STELLAR_NETWORK,
+      ...payerInfo
     });
     return response.data;
   },

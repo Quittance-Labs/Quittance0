@@ -84,6 +84,7 @@ export default function PaymentButton({
           // The payment is on the ledger even though verification did not
           // complete, so this is a warning and the flow still reports success.
           console.error('Verification failed:', error);
+          // Surface the shared rejection message rather than a generic warning.
           toast.warning('Payment sent but verification failed', {
             id: PAY_TOAST_ID,
             description: describeVerifyError(error, 'Refresh the page or wait for status to update'),

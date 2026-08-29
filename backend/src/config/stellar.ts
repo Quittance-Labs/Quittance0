@@ -16,8 +16,20 @@ export const NETWORK_PASSPHRASE =
     ? StellarSdk.Networks.TESTNET 
     : StellarSdk.Networks.PUBLIC;
 
+/**
+ * The SDK refuses a plaintext Horizon URL unless `allowHttp` is set.
+ *
+ * Plaintext is allowed only for a loopback address, which is what the
+ * integration tests point at. A real Horizon is never reachable that way, so
+ * this cannot silently downgrade a production deployment to HTTP.
+ */
+export const ALLOW_INSECURE_HORIZON =
+  /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(STELLAR_HORIZON_URL);
+
 // Stellar server instance
-export const server = new StellarSdk.Horizon.Server(STELLAR_HORIZON_URL);
+export const server = new StellarSdk.Horizon.Server(STELLAR_HORIZON_URL, {
+  allowHttp: ALLOW_INSECURE_HORIZON,
+});
 
 // Seller account configuration
 export const SELLER_PUBLIC_KEY = process.env.SELLER_PUBLIC_KEY || '';

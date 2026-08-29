@@ -24,6 +24,7 @@ import {
   shouldPoll,
   shouldShowPaymentControls,
 } from '@/lib/payment-page-state';
+import { checkTxHash } from '@/lib/verification';
 
 export default function PaymentPage() {
   const params = useParams();
@@ -120,11 +121,13 @@ export default function PaymentPage() {
 
   // Manual verification for payers who paid by QR or from another wallet.
   const handleVerify = async () => {
-    if (!verifyTxHash.trim()) {
-      toast.error('Please enter a transaction hash');
+    // Shared contract (issue #224): reject the same input the server would,
+    // with the same message, before spending a request.
+    const hashCheck = checkTxHash(verifyTxHash);
+    if (!hashCheck.ok) {
+      toast.error(hashCheck.error);
       return;
     }
-
     const payer = normalizePayerDetails({ payerName, payerEmail });
     if (!payer.ok) {
       toast.error(payer.error);
@@ -136,7 +139,7 @@ export default function PaymentPage() {
 
     try {
       toast.loading('Verifying transaction...', { id: 'verify-toast' });
-      const result = await invoiceApi.verify(id, verifyTxHash.trim(), payer.value);
+      const result = await invoiceApi.verify(id, hashCheck.value, payer.value);
       if (generation !== requestGeneration.current) return;
 
       toast.success('Transaction verified!', { id: 'verify-toast' });
