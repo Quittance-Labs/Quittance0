@@ -3,6 +3,7 @@ import { pool } from '../config/database';
 import { generateInvoiceMemo } from '../utils/memo';
 import { CreateInvoiceInput } from '../utils/validation';
 import { SELLER_PUBLIC_KEY } from '../config/stellar';
+import type { InvoiceStats } from '../storage/invoice-stats';
 
 export interface Invoice {
   id: string;
@@ -28,7 +29,19 @@ export interface Invoice {
   metadata?: any;
 }
 
-class InvoiceService {
+/** Minimal `pg` query surface, so the service can be exercised without a live database. */
+export type QueryExecutor = (
+  text: string,
+  params?: any[]
+) => Promise<{ rows: any[]; rowCount: number | null }>;
+
+export class InvoiceService {
+  private readonly query: QueryExecutor;
+
+  constructor(query: QueryExecutor = (text, params) => pool.query(text, params)) {
+    this.query = query;
+  }
+
   /**
    * Create a new invoice
    */
@@ -47,10 +60,18 @@ class InvoiceService {
       RETURNING *
     `;
 
+    // Wallet-scoped: the connected seller wallet owns the invoice. The env key is
+    // only a fallback for callers that predate wallet identity.
+    const sellerPublicKey = input.sellerPublicKey || SELLER_PUBLIC_KEY;
+
+    if (!sellerPublicKey) {
+      throw new Error('Seller public key is required');
+    }
+
     const values = [
       id,
       userId || null,
-      SELLER_PUBLIC_KEY,
+      sellerPublicKey,
       input.sellerName || null,
       input.sellerEmail || null,
       input.amount,
@@ -65,7 +86,7 @@ class InvoiceService {
     ];
 
     try {
-      const result = await pool.query(query, values);
+      const result = await this.query(query, values);
       console.log('✅ Invoice created:', result.rows[0].id);
       return this.mapRowToInvoice(result.rows[0]);
     } catch (error: any) {
@@ -79,7 +100,7 @@ class InvoiceService {
    */
   async getInvoiceById(id: string): Promise<Invoice | null> {
     const query = 'SELECT * FROM invoices WHERE id = $1';
-    const result = await pool.query(query, [id]);
+    const result = await this.query(query, [id]);
     
     if (result.rows.length === 0) {
       return null;
@@ -93,7 +114,7 @@ class InvoiceService {
    */
   async getInvoiceByMemo(memo: string): Promise<Invoice | null> {
     const query = 'SELECT * FROM invoices WHERE memo = $1';
-    const result = await pool.query(query, [memo]);
+    const result = await this.query(query, [memo]);
     
     if (result.rows.length === 0) {
       return null;
@@ -115,7 +136,7 @@ class InvoiceService {
     `;
 
     try {
-      const result = await pool.query(query, [
+      const result = await this.query(query, [
         invoiceId, 
         txHash, 
         payerPublicKey,
@@ -162,7 +183,7 @@ class InvoiceService {
     query += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
     params.push(limit, offset);
 
-    const result = await pool.query(query, params);
+    const result = await this.query(query, params);
     return result.rows.map(row => this.mapRowToInvoice(row));
   }
 
@@ -177,7 +198,7 @@ class InvoiceService {
       RETURNING *
     `;
 
-    const result = await pool.query(query, [invoiceId]);
+    const result = await this.query(query, [invoiceId]);
     
     if (result.rows.length === 0) {
       throw new Error('Invoice not found or already processed');
@@ -197,7 +218,7 @@ class InvoiceService {
       RETURNING id
     `;
 
-    const result = await pool.query(query);
+    const result = await this.query(query);
     console.log(`⏰ Marked ${result.rowCount} invoices as expired`);
     return result.rowCount || 0;
   }
@@ -211,13 +232,13 @@ class InvoiceService {
       VALUES ($1, $2, $3)
     `;
 
-    await pool.query(query, [invoiceId, eventType, JSON.stringify(eventData)]);
+    await this.query(query, [invoiceId, eventType, JSON.stringify(eventData)]);
   }
 
   /**
    * Get invoice statistics
    */
-  async getInvoiceStats(sellerPublicKey: string): Promise<any> {
+  async getInvoiceStats(sellerPublicKey: string): Promise<InvoiceStats[]> {
     const query = `
       SELECT 
         COUNT(*) as total_invoices,
@@ -240,8 +261,28 @@ class InvoiceService {
       WHERE seller_public_key = $1
     `;
 
-    const result = await pool.query(query, [sellerPublicKey]);
-    return result.rows;
+    const result = await this.query(query, [sellerPublicKey]);
+    return result.rows.map(row => this.mapRowToStats(row));
+  }
+
+  /**
+   * Map an aggregate row to stats. Postgres returns COUNT/SUM as strings, so the
+   * numbers are normalised to match the in-memory backend.
+   */
+  private mapRowToStats(row: any): InvoiceStats {
+    const revenueByAsset: Record<string, number> = {};
+
+    Object.entries(row.revenue_by_asset || {}).forEach(([assetCode, revenue]) => {
+      revenueByAsset[assetCode] = Number(revenue);
+    });
+
+    return {
+      total_invoices: Number(row.total_invoices),
+      paid_invoices: Number(row.paid_invoices),
+      pending_invoices: Number(row.pending_invoices),
+      expired_invoices: Number(row.expired_invoices),
+      revenue_by_asset: revenueByAsset,
+    };
   }
 
   /**

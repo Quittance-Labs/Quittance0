@@ -53,7 +53,7 @@ handlers reject the same cases with the same wording:
 | Path | Entry point |
 |------|-------------|
 | MVP (in-memory) | `POST /api/invoices/:id/verify` — `backend/src/server-mvp.ts` |
-| Postgres | `POST /api/invoices/:id/verify` — `backend/src/controllers/invoice.controller.ts` |
+| Postgres | `POST /api/invoices/:id/verify` — `backend/src/routes/invoice.handlers.ts` |
 | Standalone check | `POST /api/stellar/verify-payment` — `backend/src/services/stellar.service.ts` |
 | Pay flow (client) | `frontend/lib/verification.js` — mirrors codes and messages |
 
@@ -100,7 +100,25 @@ Run the checks: `cd backend && npm test` — `cd frontend && npm test`.
 | Frontend | Next.js 14, TypeScript, Tailwind, Freighter |
 | Backend (local / demo) | Express, TypeScript, **in-memory MVP** (`server-mvp.ts`) |
 | Chain | Stellar testnet / public via Horizon |
-| Later | PostgreSQL full server (not required for v0.1) |
+| Later | PostgreSQL full server (`server.ts`, not required for v0.1) |
+
+---
+
+## Backend architecture
+
+Both entrypoints share one invoice route layer. Only the storage adapter differs:
+
+```
+server-mvp.ts ─┐                                    ┌─ memory-invoice-storage.ts  (in-memory)
+               ├─ routes/invoice.routes.ts ─ routes/invoice.handlers.ts ─ InvoiceStorage
+server.ts ─────┘                                    └─ postgres-invoice-storage.ts (PostgreSQL)
+```
+
+- `src/routes/invoice.handlers.ts` — the only implementation of create / get / list / verify / cancel / stats / payment-info / simulate.
+- `src/storage/invoice-storage.ts` — the `InvoiceStorage` interface both backends implement. Seller keys are always wallet-scoped: they come from the invoice payload or the `sellerPublicKey` query parameter, never from a static env key.
+- `src/types/api.ts` — the shared `ApiResponse` envelope (`{ success, data, message?, pagination? }` or `{ success: false, error }`) used by every route on both servers.
+
+A bug fix in a handler applies to both servers at once.
 
 ---
 
@@ -175,6 +193,36 @@ Open the app at `http://localhost:3000`.
 - Backend MVP template: `backend/env.mvp.example` → copy to `backend/.env`
 - Frontend MVP template: `frontend/env.mvp.local` → copy to `frontend/.env.local`
 - Full frontend template: `frontend/env.example.txt`
+
+---
+
+## Postgres dev path (optional)
+
+Same API, same handlers, persistent storage. Not needed for the v0.1 demo.
+
+```bash
+cd backend
+npm i
+cp env.example.txt .env      # set DATABASE_URL, SELLER_PUBLIC_KEY, SELLER_SECRET_KEY
+psql "$DATABASE_URL" -f ../db/schema.sql
+npm run dev:pg               # alias of `npm run dev` → src/server.ts
+```
+
+- Requires a reachable PostgreSQL instance; the server exits on startup if it cannot connect.
+- `npm run start:pg` (alias of `npm run start`) runs the compiled build from `npm run build`.
+- Endpoints, response shapes, and wallet scoping match the MVP server — only persistence differs.
+
+---
+
+## Backend tests
+
+```bash
+cd backend
+npm test              # shared handler + storage tests (both backends), node:test
+npm run test:isolated # standalone regression tests in tests/isolated
+```
+
+`npm test` exercises the shared invoice handlers against both the in-memory and PostgreSQL storage adapters, so create/verify regressions surface without a live database.
 
 ---
 
@@ -310,7 +358,9 @@ Until then, run locally: `backend` → `npm run dev:mvp`, `frontend` → `npm ru
 
 ```
 backend/     Express API — use server-mvp.ts for demo
-             src/services/payment-verification.ts — canonical verify rules
+  src/routes/    shared invoice route layer (both servers)
+  src/storage/   InvoiceStorage: in-memory + PostgreSQL adapters
+  src/services/payment-verification.ts — canonical verify rules
 frontend/    Next.js app
              lib/verification.js — client mirror of the verify contract
 db/          Postgres schema (post-demo)

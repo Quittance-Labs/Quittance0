@@ -1,27 +1,23 @@
 import { Router } from 'express';
-import invoiceController from '../controllers/invoice.controller';
 import stellarController from '../controllers/stellar.controller';
 import paymentMonitorService from '../services/payment-monitor.service';
+import postgresInvoiceStorage from '../storage/postgres-invoice-storage';
+import { createInvoiceRouter } from './invoice.routes';
 
 const router = Router();
 
 // Health check
 router.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
-    service: 'Quittance API'
+    service: 'Quittance API',
+    storage: postgresInvoiceStorage.mode
   });
 });
 
-// Invoice routes
-router.post('/invoices', invoiceController.createInvoice.bind(invoiceController));
-router.get('/invoices', invoiceController.getInvoices.bind(invoiceController));
-router.get('/invoices/stats', invoiceController.getStats.bind(invoiceController));
-router.get('/invoices/:id', invoiceController.getInvoice.bind(invoiceController));
-router.get('/invoices/:id/payment-info', invoiceController.getPaymentInfo.bind(invoiceController));
-router.post('/invoices/:id/cancel', invoiceController.cancelInvoice.bind(invoiceController));
-router.post('/invoices/:id/verify', invoiceController.verifyPayment.bind(invoiceController));
+// Invoice routes — same handlers the MVP server uses, backed by PostgreSQL
+router.use(createInvoiceRouter({ storage: postgresInvoiceStorage }));
 
 // Stellar routes
 router.get('/stellar/account', stellarController.getAccountInfo.bind(stellarController));
