@@ -67,20 +67,19 @@ function createFakePostgres() {
     if (sql.startsWith('INSERT INTO invoices')) {
       const row = {
         id: params[0],
-        user_id: params[1],
-        seller_public_key: params[2],
-        seller_name: params[3],
-        seller_email: params[4],
+        seller_public_key: params[1],
+        seller_name: params[2],
+        seller_email: params[3],
         // Postgres returns DECIMAL columns as strings.
-        amount: String(params[5]),
-        asset_code: params[6],
-        asset_issuer: params[7],
-        memo: params[8],
-        description: params[9],
-        customer_name: params[10],
-        customer_email: params[11],
-        status: params[12],
-        expires_at: params[13],
+        amount: String(params[4]),
+        asset_code: params[5],
+        asset_issuer: params[6],
+        memo: params[7],
+        description: params[8],
+        customer_name: params[9],
+        customer_email: params[10],
+        status: params[11],
+        expires_at: params[12],
         payment_tx_hash: null,
         payer_public_key: null,
         payer_name: null,
@@ -470,7 +469,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
 runSharedBackendSuite('in-memory', () => new MemoryInvoiceStorage());
 runSharedBackendSuite(
   'postgres',
-  () => new PostgresInvoiceStorage(new InvoiceService(createFakePostgres().query))
+  () => new PostgresInvoiceStorage(new InvoiceService(createFakePostgres()))
 );
 
 describe('storage adapters', () => {
