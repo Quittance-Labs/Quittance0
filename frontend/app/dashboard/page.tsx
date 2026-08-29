@@ -5,86 +5,81 @@ import { invoiceApi } from '@/lib/api';
 import InvoiceCard from '@/components/InvoiceCard';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
-import TransactionHistory from '@/components/TransactionHistory';
 import AssetLogo from '@/components/AssetLogo';
 import { useWalletStore } from '@/lib/store';
 import Link from 'next/link';
 import { Loader2, Plus, TrendingUp, DollarSign, FileText, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadInvoiceCSV } from '@/lib/export';
+import {
+  dashboardDataFor,
+  exportableInvoices,
+  hasAnyInvoices as hasAnyInvoicesIn,
+  revenueEntries,
+  searchInvoices,
+} from '@/lib/dashboard-history';
 
 export default function DashboardPage() {
   const { publicKey, connected } = useWalletStore();
-  const [invoices, setInvoices] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  // Loaded data is tagged with the wallet it belongs to, so a response for a
+  // previous seller can never be rendered under the current one.
+  const [loaded, setLoaded] = useState<{ owner: string | null; invoices: any[]; stats: any }>({
+    owner: null,
+    invoices: [],
+    stats: null,
+  });
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [filteredInvoices, setFilteredInvoices] = useState<any[]>([]);
-  const [viewMode, setViewMode] = useState<'invoices' | 'transactions'>('invoices');
-  const hasAnyInvoices = Number(stats?.total_invoices || 0) > 0;
-  const revenueByAsset = Object.entries(
-    (stats?.revenue_by_asset || {}) as Record<string, number | string>
-  ).sort(([assetA], [assetB]) => assetA.localeCompare(assetB));
+
+  const { invoices, stats } = dashboardDataFor(loaded, connected ? publicKey : null);
+  const filteredInvoices = searchInvoices(invoices, searchQuery);
+  const hasAnyInvoices = hasAnyInvoicesIn(stats);
+  const revenueByAsset = revenueEntries(stats);
 
   useEffect(() => {
     if (!connected || !publicKey) {
-      setInvoices([]);
-      setStats(null);
+      setLoaded({ owner: null, invoices: [], stats: null });
       setLoading(false);
       return;
     }
-    loadData();
+
+    let active = true;
+    setLoading(true);
+
+    (async () => {
+      try {
+        const [invoicesResult, statsResult] = await Promise.all([
+          invoiceApi.getAll({
+            status: filter === 'all' ? undefined : filter.toUpperCase(),
+            limit: 50,
+            sellerPublicKey: publicKey,
+          }),
+          invoiceApi.getStats(publicKey),
+        ]);
+
+        if (!active) return;
+        setLoaded({
+          owner: publicKey,
+          invoices: invoicesResult.data,
+          stats: statsResult.data[0] || {},
+        });
+      } catch (error) {
+        if (!active) return;
+        toast.error('Failed to load data');
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+
+    // Switching wallets or unmounting invalidates the request in flight.
+    return () => {
+      active = false;
+    };
   }, [filter, connected, publicKey]);
 
-  // Filter and search invoices
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setFilteredInvoices(invoices);
-      return;
-    }
-
-    const query = searchQuery.toLowerCase();
-    const filtered = invoices.filter((invoice) => {
-      return (
-        invoice.id.toLowerCase().includes(query) ||
-        invoice.memo.toLowerCase().includes(query) ||
-        invoice.description?.toLowerCase().includes(query) ||
-        invoice.customerName?.toLowerCase().includes(query) ||
-        invoice.customerEmail?.toLowerCase().includes(query) ||
-        invoice.amount.toString().includes(query)
-      );
-    });
-    setFilteredInvoices(filtered);
-  }, [searchQuery, invoices]);
-
-  const loadData = async () => {
-    if (!publicKey) return;
-    try {
-      setLoading(true);
-      const [invoicesResult, statsResult] = await Promise.all([
-        invoiceApi.getAll({
-          status: filter === 'all' ? undefined : filter.toUpperCase(),
-          limit: 50,
-          sellerPublicKey: publicKey,
-        }),
-        invoiceApi.getStats(publicKey),
-      ]);
-      setInvoices(invoicesResult.data);
-      setStats(statsResult.data[0] || {});
-    } catch (error) {
-      toast.error('Failed to load data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleExportCSV = () => {
-    if (filteredInvoices.length === 0) {
-      toast.error('No invoices to export');
-      return;
-    }
-    const paidInvoices = filteredInvoices.filter(inv => inv.status === 'PAID');
+    const paidInvoices = exportableInvoices(filteredInvoices);
     if (paidInvoices.length === 0) {
       toast.error('No paid invoices to export');
       return;
@@ -125,7 +120,8 @@ export default function DashboardPage() {
             <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Connect your wallet</h2>
             <p className="text-gray-600 mb-6">
-              Dashboard shows only invoices for your connected Freighter wallet.
+              The dashboard shows the Quittance invoices issued by your connected
+              Freighter wallet. It never reads the rest of your wallet activity.
             </p>
             <div className="flex justify-center">
               <WalletConnect />
@@ -133,39 +129,12 @@ export default function DashboardPage() {
           </div>
         ) : (
           <>
-        {connected && publicKey && (
-          <div className="bg-white rounded-lg border border-gray-200 mb-6 p-2 flex gap-2">
-            <button
-              onClick={() => setViewMode('invoices')}
-              className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-colors ${
-                viewMode === 'invoices'
-                  ? 'bg-cyan-500 text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              Invoices
-            </button>
-            <button
-              onClick={() => setViewMode('transactions')}
-              className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-colors ${
-                viewMode === 'transactions'
-                  ? 'bg-cyan-500 text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              Transactions
-            </button>
-          </div>
-        )}
-
-        {connected && publicKey && viewMode === 'transactions' && (
-          <div className="space-y-6">
-            <TransactionHistory publicKey={publicKey} limit={50} />
-          </div>
-        )}
-
-        {viewMode === 'invoices' && (
-          <>
+        {/*
+          History is scoped to this seller's Quittance invoices. The dashboard
+          deliberately does not read the wallet's Horizon payment feed: that
+          would surface transfers unrelated to Quittance (issue #232).
+        */}
+        <>
             {stats && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div className="card">
@@ -293,7 +262,7 @@ export default function DashboardPage() {
                     ? 'Try a different search term or clear your search.'
                     : hasAnyInvoices
                       ? 'Choose another status to see your other invoices.'
-                      : 'Create your first invoice and start accepting Stellar payments.'}
+                      : 'Create your first invoice and start accepting Stellar payments. Only Quittance invoices appear here.'}
                 </p>
                 {searchQuery ? (
                   <button
@@ -327,13 +296,12 @@ export default function DashboardPage() {
                 )}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredInvoices.map((invoice) => (
-                    <InvoiceCard key={invoice.id} invoice={invoice} />
+                    <InvoiceCard key={invoice.id} invoice={invoice as any} />
                   ))}
                 </div>
               </>
             )}
           </>
-        )}
           </>
         )}
       </div>

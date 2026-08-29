@@ -38,6 +38,61 @@ Identity is the **wallet**. Email is an **optional delivery channel**, not a log
 
 ---
 
+## Payment verification contract
+
+An invoice becomes `PAID` only when **all four checks pass** against Horizon:
+**memo**, **destination**, **amount**, and **asset** (code *and* issuer for
+non-native assets). A fifth guard rejects a transaction observed on a different
+Stellar network.
+
+One module owns these rules: [`backend/src/services/payment-verification.ts`](./backend/src/services/payment-verification.ts).
+It is pure — the caller fetches the transaction and operations from Horizon and
+passes them in. Every verify path routes through it, so the MVP and Postgres
+handlers reject the same cases with the same wording:
+
+| Path | Entry point |
+|------|-------------|
+| MVP (in-memory) | `POST /api/invoices/:id/verify` — `backend/src/server-mvp.ts` |
+| Postgres | `POST /api/invoices/:id/verify` — `backend/src/routes/invoice.handlers.ts` |
+| Standalone check | `POST /api/stellar/verify-payment` — `backend/src/services/stellar.service.ts` |
+| Pay flow (client) | `frontend/lib/verification.js` — mirrors codes and messages |
+
+Checks run in a **fixed order**, so every caller reports the same first failure:
+
+```
+tx hash → network → payment operation → memo → destination → amount → asset
+```
+
+Rejections return a stable `code` alongside the human-readable `error`:
+
+| Code | Message | HTTP |
+|------|---------|------|
+| `MISSING_TX_HASH` | Transaction hash is required | 400 |
+| `INVALID_TX_HASH` | Transaction hash must be 64 hexadecimal characters | 400 |
+| `INVALID_PAYER_NAME` | Payer name must be text | 400 |
+| `INVALID_PAYER_EMAIL` | Payer email is invalid | 400 |
+| `PAYER_INFO_TOO_LONG` | Payer information is too long | 400 |
+| `INVOICE_ALREADY_PAID` | Invoice has already been paid | 400 |
+| `INVOICE_NOT_PENDING` | Invoice is not pending | 400 |
+| `TRANSACTION_NOT_FOUND` | Transaction not found on Stellar | 404 |
+| `NO_PAYMENT_OPERATION` | No payment operation found in transaction | 400 |
+| `MEMO_MISMATCH` | Memo mismatch | 400 |
+| `DESTINATION_MISMATCH` | Payment destination mismatch | 400 |
+| `AMOUNT_MISMATCH` | Amount mismatch | 400 |
+| `ASSET_MISMATCH` | Asset mismatch | 400 |
+| `NETWORK_MISMATCH` | Transaction is on a different Stellar network | 400 |
+
+The client mirror lets the pay page reject malformed input before a round trip
+and show the exact message the server would return. A test asserts the two
+tables stay identical — if you add a code, add it in **both** files.
+
+Amounts compare at Stellar's 7-decimal (stroop) precision, so `100` and
+`100.0000000` match while a partial payment does not.
+
+Run the checks: `cd backend && npm test` — `cd frontend && npm test`.
+
+---
+
 ## Stack
 
 | Layer | Tech |
@@ -231,6 +286,60 @@ Env template: `backend/env.mvp.example`.
 
 ---
 
+## Tests & CI
+
+Every pull request and every push to `main` runs the same three jobs defined in
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml). All of them are
+reproducible locally with the commands below — CI runs nothing you cannot run
+yourself.
+
+```bash
+# Backend: typecheck + unit and integration tests
+cd backend && npm ci && npm run typecheck && npm test
+
+# Frontend: lint + typecheck + unit tests
+cd frontend && npm ci && npm run lint && npm run typecheck && npm test
+
+# Shared export helpers (repository root)
+node --test "tests/**/*.test.mjs"
+```
+
+### The invoice payment loop is covered end to end
+
+`backend/tests/invoice-payment-loop.test.ts` exercises the whole core loop —
+**create invoice → pay → verify → status `PAID`** — against the real Express
+app, the real validation and the real in-memory store.
+
+Horizon is the only thing replaced. The test starts a small stub on a loopback
+port and points `STELLAR_HORIZON_URL` at it, so no network call leaves the
+machine and the suite is deterministic. Alongside the happy path it pins the
+rejections that protect a seller: a memo belonging to another invoice, a wrong
+destination, a wrong amount, a wrong asset, and a second verification of an
+invoice that is already paid.
+
+If `verify` ever stops setting `PAID`, or starts accepting a payment it should
+refuse, this test fails.
+
+### Environment variables in CI
+
+No secrets are required. The workflow sets only:
+
+| Variable | Job | Why |
+|---|---|---|
+| `STELLAR_NETWORK=TESTNET` | backend | Never resolve mainnet configuration |
+| `STELLAR_HORIZON_URL=http://127.0.0.1:1` | backend | Fail closed; the integration test overrides it with its own stub |
+| `NEXT_PUBLIC_API_URL` | frontend | Build-time default for the client |
+| `NEXT_PUBLIC_STELLAR_NETWORK=TESTNET` | frontend | Keep the client on testnet |
+
+A plaintext Horizon URL is accepted **only** for a loopback address
+(`backend/src/config/stellar.ts`), so a real deployment can never be downgraded
+to HTTP by configuration.
+
+For a manual testnet pass with a real Freighter payment, see
+[`EVIDENCE.md`](./EVIDENCE.md).
+
+---
+
 ## Demo & evidence
 
 Reviewer pack: **[`EVIDENCE.md`](./EVIDENCE.md)** (URLs, testnet tx hashes, recording, tech note).
@@ -251,7 +360,9 @@ Until then, run locally: `backend` → `npm run dev:mvp`, `frontend` → `npm ru
 backend/     Express API — use server-mvp.ts for demo
   src/routes/    shared invoice route layer (both servers)
   src/storage/   InvoiceStorage: in-memory + PostgreSQL adapters
+  src/services/payment-verification.ts — canonical verify rules
 frontend/    Next.js app
+             lib/verification.js — client mirror of the verify contract
 db/          Postgres schema (post-demo)
 PLAN.md      Product & delivery plan
 ROADMAP.md   Short commit checklist

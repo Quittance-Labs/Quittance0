@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import type { VerificationCode } from '../services/payment-verification';
 
 // Shared response envelope used by both the MVP and the Postgres server.
 export interface ApiPagination {
@@ -17,6 +18,7 @@ export interface ApiSuccess<T> {
 export interface ApiFailure {
   success: false;
   error: string;
+  code?: VerificationCode;
 }
 
 export type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
@@ -52,6 +54,15 @@ export function sendSuccess<T>(
 
 export function sendFailure(res: Response, status: number, error: string): void {
   res.status(status).json(apiFailure(error));
+}
+
+export function sendVerificationFailure(
+  res: Response,
+  status: number,
+  code: VerificationCode,
+  error: string
+): void {
+  res.status(status).json({ success: false, code, error });
 }
 
 export default {

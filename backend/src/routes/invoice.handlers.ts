@@ -2,8 +2,16 @@ import { Request, Response } from 'express';
 import stellarService from '../services/stellar.service';
 import { createInvoiceSchema } from '../utils/validation';
 import { generatePaymentQR, generateStellarPaymentQR } from '../utils/qrcode';
-import { sendFailure, sendSuccess } from '../types/api';
+import { sendFailure, sendSuccess, sendVerificationFailure } from '../types/api';
 import type { InvoiceStorage, StoredInvoice } from '../storage/invoice-storage';
+import { STELLAR_NETWORK } from '../config/stellar';
+import {
+  VERIFICATION_MESSAGES,
+  checkInvoiceIsPayable,
+  checkPayerInfo,
+  checkTxHash,
+  verifyHorizonPayment,
+} from '../services/payment-verification';
 
 /** Only the part of the Stellar service the verify handler needs. */
 export interface TransactionLookup {
@@ -29,8 +37,6 @@ export interface InvoiceHandlers {
   getStats(req: Request, res: Response): Promise<void>;
   simulatePayment(req: Request, res: Response): Promise<void>;
 }
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * Log the stack/message rather than the error object: some validation errors
@@ -169,27 +175,16 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
     async verifyPayment(req: Request, res: Response) {
       try {
         const { id } = req.params;
-        const { txHash, payerName, payerEmail } = req.body || {};
+        const { network } = req.body || {};
 
-        if (!txHash) {
-          return sendFailure(res, 400, 'Transaction hash is required');
+        const hashCheck = checkTxHash(req.body?.txHash);
+        if (!hashCheck.ok) {
+          return sendVerificationFailure(res, 400, hashCheck.code, hashCheck.error);
         }
 
-        if (payerName !== undefined && typeof payerName !== 'string') {
-          return sendFailure(res, 400, 'Payer name must be text');
-        }
-        if (payerEmail !== undefined && typeof payerEmail !== 'string') {
-          return sendFailure(res, 400, 'Payer email must be text');
-        }
-
-        const normalizedPayerName = payerName?.trim() || undefined;
-        const normalizedPayerEmail = payerEmail?.trim() || undefined;
-
-        if (normalizedPayerEmail && !EMAIL_PATTERN.test(normalizedPayerEmail)) {
-          return sendFailure(res, 400, 'Payer email is invalid');
-        }
-        if ((normalizedPayerName?.length || 0) > 255 || (normalizedPayerEmail?.length || 0) > 255) {
-          return sendFailure(res, 400, 'Payer information is too long');
+        const payerCheck = checkPayerInfo(req.body);
+        if (!payerCheck.ok) {
+          return sendVerificationFailure(res, 400, payerCheck.code, payerCheck.error);
         }
 
         const invoice = await storage.getInvoiceById(id);
@@ -198,43 +193,49 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           return sendFailure(res, 404, 'Invoice not found');
         }
 
-        if (invoice.status === 'PAID') {
-          return sendFailure(res, 400, 'Invoice has already been paid');
+        const statusCheck = checkInvoiceIsPayable(invoice.status);
+        if (!statusCheck.ok) {
+          return sendVerificationFailure(res, 400, statusCheck.code, statusCheck.error);
         }
 
-        if (invoice.status !== 'PENDING') {
-          return sendFailure(res, 400, 'Invoice is not pending');
+        let txDetails;
+        try {
+          txDetails = await stellar.getTransaction(hashCheck.value);
+        } catch (error: any) {
+          logError('Verify payment lookup error:', error);
+          return sendVerificationFailure(
+            res,
+            404,
+            'TRANSACTION_NOT_FOUND',
+            VERIFICATION_MESSAGES.TRANSACTION_NOT_FOUND
+          );
         }
 
-        const txDetails = await stellar.getTransaction(txHash);
-        const transaction = txDetails.transaction;
-        const paymentOp = txDetails.operations.find((op: any) => op.type === 'payment');
-
-        if (!paymentOp) {
-          return sendFailure(res, 400, 'No payment operation found in transaction');
-        }
-
-        if (transaction.memo !== invoice.memo) {
-          return sendFailure(res, 400, 'Memo mismatch');
-        }
-
-        if (paymentOp.to !== invoice.sellerPublicKey) {
-          return sendFailure(res, 400, 'Payment destination mismatch');
-        }
-
-        if (parseFloat(paymentOp.amount).toFixed(7) !== Number(invoice.amount).toFixed(7)) {
-          return sendFailure(res, 400, 'Amount mismatch');
-        }
-
-        const opAsset = paymentOp.asset_type === 'native' ? 'XLM' : paymentOp.asset_code;
-        if (opAsset !== invoice.assetCode) {
-          return sendFailure(res, 400, 'Asset mismatch');
-        }
-
-        const updatedInvoice = await storage.markAsPaid(id, txHash, paymentOp.from, {
-          payerName: normalizedPayerName,
-          payerEmail: normalizedPayerEmail,
+        const verification = verifyHorizonPayment({
+          txHash: hashCheck.value,
+          expected: {
+            memo: invoice.memo,
+            amount: invoice.amount,
+            destination: invoice.sellerPublicKey,
+            assetCode: invoice.assetCode,
+            assetIssuer: invoice.assetIssuer,
+            network: STELLAR_NETWORK,
+          },
+          transaction: txDetails.transaction,
+          operations: txDetails.operations,
+          network,
         });
+
+        if (!verification.ok) {
+          return sendVerificationFailure(res, 400, verification.code, verification.error);
+        }
+
+        const updatedInvoice = await storage.markAsPaid(
+          id,
+          verification.value.txHash,
+          verification.value.from,
+          payerCheck.value
+        );
 
         sendSuccess(res, 200, updatedInvoice, { message: 'Payment verified on Stellar' });
       } catch (error: any) {

@@ -7,19 +7,25 @@
     "dev": "tsx watch src/server.ts",
     "dev:pg": "tsx watch src/server.ts",
     "dev:mvp": "tsx watch src/server-mvp.ts",
-    "test": "node --import tsx --test tests/*.test.ts",
+    "test": "node --import tsx --test \"tests/**/*.test.ts\" \"tests/**/*.test.js\"",
     "test:isolated": "node --test tests/isolated/*.test.js",
     "build": "tsc",
     "start": "node dist/server.js",
     "start:pg": "node dist/server.js",
     "start:mvp": "tsx src/server-mvp.ts",
     "db:migrate": "tsx src/db/migrate.ts",
-    "db:seed": "tsx src/db/seed.ts"
+    "db:seed": "tsx src/db/seed.ts",
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
     "node": ">=18"
   },
-  "keywords": ["stellar", "crypto", "invoice", "blockchain"],
+  "keywords": [
+    "stellar",
+    "crypto",
+    "invoice",
+    "blockchain"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
