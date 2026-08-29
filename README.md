@@ -238,6 +238,60 @@ Env template: `backend/env.mvp.example`.
 
 ---
 
+## Tests & CI
+
+Every pull request and every push to `main` runs the same three jobs defined in
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml). All of them are
+reproducible locally with the commands below — CI runs nothing you cannot run
+yourself.
+
+```bash
+# Backend: typecheck + unit and integration tests
+cd backend && npm ci && npm run typecheck && npm test
+
+# Frontend: lint + typecheck + unit tests
+cd frontend && npm ci && npm run lint && npm run typecheck && npm test
+
+# Shared export helpers (repository root)
+node --test "tests/**/*.test.mjs"
+```
+
+### The invoice payment loop is covered end to end
+
+`backend/tests/invoice-payment-loop.test.ts` exercises the whole core loop —
+**create invoice → pay → verify → status `PAID`** — against the real Express
+app, the real validation and the real in-memory store.
+
+Horizon is the only thing replaced. The test starts a small stub on a loopback
+port and points `STELLAR_HORIZON_URL` at it, so no network call leaves the
+machine and the suite is deterministic. Alongside the happy path it pins the
+rejections that protect a seller: a memo belonging to another invoice, a wrong
+destination, a wrong amount, a wrong asset, and a second verification of an
+invoice that is already paid.
+
+If `verify` ever stops setting `PAID`, or starts accepting a payment it should
+refuse, this test fails.
+
+### Environment variables in CI
+
+No secrets are required. The workflow sets only:
+
+| Variable | Job | Why |
+|---|---|---|
+| `STELLAR_NETWORK=TESTNET` | backend | Never resolve mainnet configuration |
+| `STELLAR_HORIZON_URL=http://127.0.0.1:1` | backend | Fail closed; the integration test overrides it with its own stub |
+| `NEXT_PUBLIC_API_URL` | frontend | Build-time default for the client |
+| `NEXT_PUBLIC_STELLAR_NETWORK=TESTNET` | frontend | Keep the client on testnet |
+
+A plaintext Horizon URL is accepted **only** for a loopback address
+(`backend/src/config/stellar.ts`), so a real deployment can never be downgraded
+to HTTP by configuration.
+
+For a manual testnet pass with a real Freighter payment, see
+[`EVIDENCE.md`](./EVIDENCE.md).
+
+---
+
 ## Demo & evidence
 
 Reviewer pack: **[`EVIDENCE.md`](./EVIDENCE.md)** (URLs, testnet tx hashes, recording, tech note).
