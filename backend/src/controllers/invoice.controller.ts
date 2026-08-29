@@ -3,7 +3,14 @@ import invoiceService from '../services/invoice.service';
 import stellarService from '../services/stellar.service';
 import { createInvoiceSchema } from '../utils/validation';
 import { generatePaymentQR, generateStellarPaymentQR } from '../utils/qrcode';
-import { SELLER_PUBLIC_KEY } from '../config/stellar';
+import { SELLER_PUBLIC_KEY, STELLAR_NETWORK } from '../config/stellar';
+import {
+  VERIFICATION_MESSAGES,
+  checkInvoiceIsPayable,
+  checkPayerInfo,
+  checkTxHash,
+  verifyHorizonPayment,
+} from '../services/payment-verification';
 
 class InvoiceController {
   async createInvoice(req: Request, res: Response) {
@@ -106,16 +113,21 @@ class InvoiceController {
     }
   }
 
+  // Verifies through the shared verification module so this path applies the same
+  // memo/destination/amount/asset checks as the MVP server (issue #224).
   async verifyPayment(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const { txHash, payerName, payerEmail } = req.body;
+      const { network } = req.body;
 
-      if (!txHash) {
-        return res.status(400).json({
-          success: false,
-          error: 'Transaction hash is required',
-        });
+      const hashCheck = checkTxHash(req.body?.txHash);
+      if (!hashCheck.ok) {
+        return res.status(400).json({ success: false, code: hashCheck.code, error: hashCheck.error });
+      }
+
+      const payerCheck = checkPayerInfo(req.body);
+      if (!payerCheck.ok) {
+        return res.status(400).json({ success: false, code: payerCheck.code, error: payerCheck.error });
       }
 
       const invoice = await invoiceService.getInvoiceById(id);
@@ -127,36 +139,51 @@ class InvoiceController {
         });
       }
 
-      const txDetails = await stellarService.getTransaction(txHash);
-      const transaction = txDetails.transaction;
-      const paymentOp = txDetails.operations.find((op: any) => op.type === 'payment');
+      const statusCheck = checkInvoiceIsPayable(invoice.status);
+      if (!statusCheck.ok) {
+        return res.status(400).json({ success: false, code: statusCheck.code, error: statusCheck.error });
+      }
 
-      if (!paymentOp) {
-        return res.status(400).json({
+      let txDetails;
+      try {
+        txDetails = await stellarService.getTransaction(hashCheck.value);
+      } catch (error: any) {
+        console.error('Verify payment lookup error:', error);
+        return res.status(404).json({
           success: false,
-          error: 'No payment operation found',
+          code: 'TRANSACTION_NOT_FOUND',
+          error: VERIFICATION_MESSAGES.TRANSACTION_NOT_FOUND,
         });
       }
 
-      if (transaction.memo !== invoice.memo) {
-        return res.status(400).json({
-          success: false,
-          error: 'Memo mismatch',
-        });
-      }
+      const verification = verifyHorizonPayment({
+        txHash: hashCheck.value,
+        expected: {
+          memo: invoice.memo,
+          amount: invoice.amount,
+          destination: invoice.sellerPublicKey,
+          assetCode: invoice.assetCode,
+          assetIssuer: invoice.assetIssuer,
+          network: STELLAR_NETWORK,
+        },
+        transaction: txDetails.transaction,
+        operations: txDetails.operations,
+        network,
+      });
 
-      if (parseFloat(paymentOp.amount).toFixed(7) !== invoice.amount.toFixed(7)) {
+      if (!verification.ok) {
         return res.status(400).json({
           success: false,
-          error: 'Amount mismatch',
+          code: verification.code,
+          error: verification.error,
         });
       }
 
       const updatedInvoice = await invoiceService.markAsPaid(
         invoice.id,
-        txHash,
-        paymentOp.from,
-        { payerName, payerEmail }
+        verification.value.txHash,
+        verification.value.from,
+        payerCheck.value
       );
 
       res.json({

@@ -5,6 +5,14 @@ import { createInvoiceSchema } from './utils/validation';
 import invoiceService from './services/invoice-memory.service';
 import { generatePaymentQR, generateStellarPaymentQR } from './utils/qrcode';
 import stellarService from './services/stellar.service';
+import {
+  VERIFICATION_MESSAGES,
+  checkInvoiceIsPayable,
+  checkPayerInfo,
+  checkTxHash,
+  verifyHorizonPayment,
+} from './services/payment-verification';
+import { STELLAR_NETWORK } from './config/stellar';
 
 // Load environment variables
 dotenv.config();
@@ -236,36 +244,20 @@ app.post('/api/invoices/:id/cancel', async (req: Request, res: Response) => {
   }
 });
 
-// Verify payment against Horizon (memo + amount + destination)
+// Verify payment against Horizon via the shared verification module (issue #224).
 app.post('/api/invoices/:id/verify', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { txHash, payerName, payerEmail } = req.body;
+    const { network } = req.body;
 
-    if (!txHash) {
-      return res.status(400).json({
-        success: false,
-        error: 'Transaction hash is required',
-      });
+    const hashCheck = checkTxHash(req.body?.txHash);
+    if (!hashCheck.ok) {
+      return res.status(400).json({ success: false, code: hashCheck.code, error: hashCheck.error });
     }
 
-    if (payerName !== undefined && typeof payerName !== 'string') {
-      return res.status(400).json({ success: false, error: 'Payer name must be text' });
-    }
-    if (payerEmail !== undefined && typeof payerEmail !== 'string') {
-      return res.status(400).json({ success: false, error: 'Payer email must be text' });
-    }
-
-    const normalizedPayerName = payerName?.trim() || undefined;
-    const normalizedPayerEmail = payerEmail?.trim() || undefined;
-    if (
-      normalizedPayerEmail &&
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedPayerEmail)
-    ) {
-      return res.status(400).json({ success: false, error: 'Payer email is invalid' });
-    }
-    if ((normalizedPayerName?.length || 0) > 255 || (normalizedPayerEmail?.length || 0) > 255) {
-      return res.status(400).json({ success: false, error: 'Payer information is too long' });
+    const payerCheck = checkPayerInfo(req.body);
+    if (!payerCheck.ok) {
+      return res.status(400).json({ success: false, code: payerCheck.code, error: payerCheck.error });
     }
 
     const invoice = await invoiceService.getInvoiceById(id);
@@ -277,69 +269,51 @@ app.post('/api/invoices/:id/verify', async (req: Request, res: Response) => {
       });
     }
 
-    if (invoice.status === 'PAID') {
-      return res.status(400).json({
+    const statusCheck = checkInvoiceIsPayable(invoice.status);
+    if (!statusCheck.ok) {
+      return res.status(400).json({ success: false, code: statusCheck.code, error: statusCheck.error });
+    }
+
+    let txDetails;
+    try {
+      txDetails = await stellarService.getTransaction(hashCheck.value);
+    } catch (error: any) {
+      console.error('Verify payment lookup error:', error);
+      return res.status(404).json({
         success: false,
-        error: 'Invoice has already been paid',
+        code: 'TRANSACTION_NOT_FOUND',
+        error: VERIFICATION_MESSAGES.TRANSACTION_NOT_FOUND,
       });
     }
 
-    if (invoice.status !== 'PENDING') {
+    const verification = verifyHorizonPayment({
+      txHash: hashCheck.value,
+      expected: {
+        memo: invoice.memo,
+        amount: invoice.amount,
+        destination: invoice.sellerPublicKey,
+        assetCode: invoice.assetCode,
+        assetIssuer: invoice.assetIssuer,
+        network: STELLAR_NETWORK,
+      },
+      transaction: txDetails.transaction,
+      operations: txDetails.operations,
+      network,
+    });
+
+    if (!verification.ok) {
       return res.status(400).json({
         success: false,
-        error: 'Invoice is not pending',
-      });
-    }
-
-    const txDetails = await stellarService.getTransaction(txHash);
-    const transaction = txDetails.transaction;
-    const paymentOp = txDetails.operations.find((op: any) => op.type === 'payment');
-
-    if (!paymentOp) {
-      return res.status(400).json({
-        success: false,
-        error: 'No payment operation found in transaction',
-      });
-    }
-
-    if (transaction.memo !== invoice.memo) {
-      return res.status(400).json({
-        success: false,
-        error: 'Memo mismatch',
-      });
-    }
-
-    if (paymentOp.to !== invoice.sellerPublicKey) {
-      return res.status(400).json({
-        success: false,
-        error: 'Payment destination mismatch',
-      });
-    }
-
-    if (parseFloat(paymentOp.amount).toFixed(7) !== Number(invoice.amount).toFixed(7)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Amount mismatch',
-      });
-    }
-
-    const opAsset =
-      paymentOp.asset_type === 'native' ? 'XLM' : paymentOp.asset_code;
-    if (opAsset !== invoice.assetCode) {
-      return res.status(400).json({
-        success: false,
-        error: 'Asset mismatch',
+        code: verification.code,
+        error: verification.error,
       });
     }
 
     const updatedInvoice = await invoiceService.markAsPaid(
       id,
-      txHash,
-      paymentOp.from,
-      {
-        payerName: normalizedPayerName,
-        payerEmail: normalizedPayerEmail,
-      }
+      verification.value.txHash,
+      verification.value.from,
+      payerCheck.value
     );
 
     res.json({

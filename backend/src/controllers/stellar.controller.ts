@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import stellarService from '../services/stellar.service';
-import { SELLER_PUBLIC_KEY } from '../config/stellar';
+import { SELLER_PUBLIC_KEY, STELLAR_NETWORK } from '../config/stellar';
 
 class StellarController {
   /**
@@ -79,12 +79,15 @@ class StellarController {
   }
 
   /**
-   * Verify payment
+   * Verify payment against the shared verification contract (issue #224).
    * POST /api/stellar/verify-payment
+   *
+   * `destination` and `assetCode` default to the configured seller and XLM so
+   * this endpoint runs the same four checks as the invoice verify handlers.
    */
   async verifyPayment(req: Request, res: Response) {
     try {
-      const { txHash, memo, amount } = req.body;
+      const { txHash, memo, amount, destination, assetCode, assetIssuer, network } = req.body;
 
       if (!txHash || !memo || !amount) {
         return res.status(400).json({
@@ -93,12 +96,23 @@ class StellarController {
         });
       }
 
-      const isValid = await stellarService.verifyPayment(txHash, memo, amount);
+      const expected = {
+        memo,
+        amount,
+        destination: destination || SELLER_PUBLIC_KEY,
+        assetCode: assetCode || 'XLM',
+        assetIssuer,
+        network: STELLAR_NETWORK,
+      };
+
+      const verification = await stellarService.verifyPayment(txHash, expected, network);
 
       res.json({
         success: true,
         data: {
-          isValid,
+          isValid: verification.ok,
+          code: verification.ok ? undefined : verification.code,
+          error: verification.ok ? undefined : verification.error,
           txHash,
           memo,
           amount,
