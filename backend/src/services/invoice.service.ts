@@ -2,12 +2,15 @@ import { v4 as uuidv4 } from 'uuid';
 import { pool } from '../config/database';
 import { generateInvoiceMemo } from '../utils/memo';
 import { CreateInvoiceInput } from '../utils/validation';
-import { SELLER_PUBLIC_KEY } from '../config/stellar';
 import type { InvoiceStats } from '../storage/invoice-stats';
+
+/** Minimal database surface used by this service (pg Pool or a test double). */
+export interface Queryable {
+  query(text: string, params?: any[]): Promise<{ rows: any[]; rowCount?: number | null }>;
+}
 
 export interface Invoice {
   id: string;
-  userId?: string;
   sellerPublicKey: string;
   sellerName?: string;
   sellerEmail?: string;
@@ -29,23 +32,17 @@ export interface Invoice {
   metadata?: any;
 }
 
-/** Minimal `pg` query surface, so the service can be exercised without a live database. */
-export type QueryExecutor = (
-  text: string,
-  params?: any[]
-) => Promise<{ rows: any[]; rowCount: number | null }>;
-
 export class InvoiceService {
-  private readonly query: QueryExecutor;
-
-  constructor(query: QueryExecutor = (text, params) => pool.query(text, params)) {
-    this.query = query;
-  }
+  constructor(private readonly db: Queryable = pool) {}
 
   /**
-   * Create a new invoice
+   * Create a new invoice for the seller wallet supplied by the request
    */
-  async createInvoice(input: CreateInvoiceInput, userId?: string): Promise<Invoice> {
+  async createInvoice(input: CreateInvoiceInput): Promise<Invoice> {
+    if (!input.sellerPublicKey) {
+      throw new Error('Seller public key is required');
+    }
+
     const id = uuidv4();
     const memo = generateInvoiceMemo();
     const expiresAt = new Date();
@@ -53,25 +50,16 @@ export class InvoiceService {
 
     const query = `
       INSERT INTO invoices (
-        id, user_id, seller_public_key, seller_name, seller_email, amount,
+        id, seller_public_key, seller_name, seller_email, amount,
         asset_code, asset_issuer, memo, description, customer_name,
         customer_email, status, expires_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *
     `;
 
-    // Wallet-scoped: the connected seller wallet owns the invoice. The env key is
-    // only a fallback for callers that predate wallet identity.
-    const sellerPublicKey = input.sellerPublicKey || SELLER_PUBLIC_KEY;
-
-    if (!sellerPublicKey) {
-      throw new Error('Seller public key is required');
-    }
-
     const values = [
       id,
-      userId || null,
-      sellerPublicKey,
+      input.sellerPublicKey,
       input.sellerName || null,
       input.sellerEmail || null,
       input.amount,
@@ -86,7 +74,7 @@ export class InvoiceService {
     ];
 
     try {
-      const result = await this.query(query, values);
+      const result = await this.db.query(query, values);
       console.log('✅ Invoice created:', result.rows[0].id);
       return this.mapRowToInvoice(result.rows[0]);
     } catch (error: any) {
@@ -100,8 +88,8 @@ export class InvoiceService {
    */
   async getInvoiceById(id: string): Promise<Invoice | null> {
     const query = 'SELECT * FROM invoices WHERE id = $1';
-    const result = await this.query(query, [id]);
-    
+    const result = await this.db.query(query, [id]);
+
     if (result.rows.length === 0) {
       return null;
     }
@@ -114,8 +102,8 @@ export class InvoiceService {
    */
   async getInvoiceByMemo(memo: string): Promise<Invoice | null> {
     const query = 'SELECT * FROM invoices WHERE memo = $1';
-    const result = await this.query(query, [memo]);
-    
+    const result = await this.db.query(query, [memo]);
+
     if (result.rows.length === 0) {
       return null;
     }
@@ -126,7 +114,12 @@ export class InvoiceService {
   /**
    * Update invoice status to PAID
    */
-  async markAsPaid(invoiceId: string, txHash: string, payerPublicKey: string, payerInfo?: { payerName?: string; payerEmail?: string }): Promise<Invoice> {
+  async markAsPaid(
+    invoiceId: string,
+    txHash: string,
+    payerPublicKey: string,
+    payerInfo?: { payerName?: string; payerEmail?: string }
+  ): Promise<Invoice> {
     const query = `
       UPDATE invoices 
       SET status = 'PAID', payment_tx_hash = $2, payer_public_key = $3, paid_at = NOW(),
@@ -136,21 +129,20 @@ export class InvoiceService {
     `;
 
     try {
-      const result = await this.query(query, [
-        invoiceId, 
-        txHash, 
+      const result = await this.db.query(query, [
+        invoiceId,
+        txHash,
         payerPublicKey,
         payerInfo?.payerName || null,
-        payerInfo?.payerEmail || null
+        payerInfo?.payerEmail || null,
       ]);
-      
+
       if (result.rows.length === 0) {
         throw new Error('Invoice not found');
       }
 
       console.log('✅ Invoice marked as paid:', invoiceId);
-      
-      // Log payment event
+
       await this.logPaymentEvent(invoiceId, 'PAYMENT_CONFIRMED', {
         txHash,
         payerPublicKey,
@@ -172,6 +164,10 @@ export class InvoiceService {
     limit: number = 50,
     offset: number = 0
   ): Promise<Invoice[]> {
+    if (!sellerPublicKey) {
+      throw new Error('Seller public key is required');
+    }
+
     let query = 'SELECT * FROM invoices WHERE seller_public_key = $1';
     const params: any[] = [sellerPublicKey];
 
@@ -183,8 +179,8 @@ export class InvoiceService {
     query += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
     params.push(limit, offset);
 
-    const result = await this.query(query, params);
-    return result.rows.map(row => this.mapRowToInvoice(row));
+    const result = await this.db.query(query, params);
+    return result.rows.map((row) => this.mapRowToInvoice(row));
   }
 
   /**
@@ -198,8 +194,8 @@ export class InvoiceService {
       RETURNING *
     `;
 
-    const result = await this.query(query, [invoiceId]);
-    
+    const result = await this.db.query(query, [invoiceId]);
+
     if (result.rows.length === 0) {
       throw new Error('Invoice not found or already processed');
     }
@@ -218,7 +214,7 @@ export class InvoiceService {
       RETURNING id
     `;
 
-    const result = await this.query(query);
+    const result = await this.db.query(query);
     console.log(`⏰ Marked ${result.rowCount} invoices as expired`);
     return result.rowCount || 0;
   }
@@ -232,13 +228,17 @@ export class InvoiceService {
       VALUES ($1, $2, $3)
     `;
 
-    await this.query(query, [invoiceId, eventType, JSON.stringify(eventData)]);
+    await this.db.query(query, [invoiceId, eventType, JSON.stringify(eventData)]);
   }
 
   /**
    * Get invoice statistics
    */
   async getInvoiceStats(sellerPublicKey: string): Promise<InvoiceStats[]> {
+    if (!sellerPublicKey) {
+      throw new Error('Seller public key is required');
+    }
+
     const query = `
       SELECT 
         COUNT(*) as total_invoices,
@@ -261,8 +261,8 @@ export class InvoiceService {
       WHERE seller_public_key = $1
     `;
 
-    const result = await this.query(query, [sellerPublicKey]);
-    return result.rows.map(row => this.mapRowToStats(row));
+    const result = await this.db.query(query, [sellerPublicKey]);
+    return result.rows.map((row) => this.mapRowToStats(row));
   }
 
   /**
@@ -291,7 +291,6 @@ export class InvoiceService {
   private mapRowToInvoice(row: any): Invoice {
     return {
       id: row.id,
-      userId: row.user_id,
       sellerPublicKey: row.seller_public_key,
       sellerName: row.seller_name,
       sellerEmail: row.seller_email,
