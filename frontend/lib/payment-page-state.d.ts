@@ -53,6 +53,14 @@ export function shouldShowPaymentControls(
   now?: string | number | Date
 ): boolean;
 
+export function getPayPageView(invoice?: PayInvoice | null): {
+  expired: boolean;
+  paid: boolean;
+  showPaymentControls: boolean;
+  showProof: boolean;
+  showMonitor: boolean;
+};
+
 export function stateForStatus(statusOrInvoice: string | PayInvoice, now?: string | number | Date): PayStatus | null;
 export function initialPaymentState(invoice?: PayInvoice | null): PaymentState;
 export function paymentReducer(state: PaymentState, event: PaymentEvent): PaymentState;

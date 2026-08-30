@@ -53,6 +53,18 @@ const shouldShowPaymentControls = (statusOrInvoice, paymentTxHash, now) => {
   return invoice.status === 'PENDING' && !(paymentTxHash ?? invoice.paymentTxHash);
 };
 
+/** Stable presentation flags shared by the route and component-level tests. */
+function getPayPageView(invoice) {
+  const status = invoice?.status;
+  return {
+    expired: isExpiredInvoice(status),
+    paid: status === 'PAID',
+    showPaymentControls: shouldShowPaymentControls(status, invoice?.paymentTxHash),
+    showProof: status === 'PAID' && Boolean(invoice?.paymentTxHash),
+    showMonitor: status === 'PENDING' && !invoice?.paymentTxHash,
+  };
+}
+
 /** Maps an invoice status onto the state it forces, or null if it forces none. */
 function stateForStatus(statusOrInvoice, now) {
   const status = effectiveInvoiceStatus(asInvoice(statusOrInvoice), now);
@@ -203,6 +215,7 @@ module.exports = {
   TERMINAL_STATES,
   isExpiredInvoice,
   shouldShowPaymentControls,
+  getPayPageView,
   stateForStatus,
   initialPaymentState,
   paymentReducer,

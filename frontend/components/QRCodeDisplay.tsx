@@ -35,6 +35,14 @@ export default function QRCodeDisplay({
   // Check if value is a base64 image (from backend)
   const isBase64Image = value.startsWith('data:image');
 
+  if (!value) {
+    return (
+      <div role="status" className="pay-qr-placeholder">
+        Payment QR code is preparing...
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center gap-4">
       {title && (
@@ -69,6 +77,8 @@ export default function QRCodeDisplay({
               {value}
             </code>
             <button
+              type="button"
+              aria-label="Copy payment request"
               onClick={handleCopy}
               className="btn btn-secondary p-2 shrink-0 hover:scale-105 transition-transform"
               title="Copy to clipboard"
@@ -85,4 +95,3 @@ export default function QRCodeDisplay({
     </div>
   );
 }
-

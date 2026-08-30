@@ -6,6 +6,7 @@ const {
   checkTxHash,
   checkPayerInfo,
   resolveVerificationError,
+  normalizeTransactionHash,
 } = require('../lib/verification');
 
 const TX_HASH = 'a1b2c3d4'.repeat(8); // 64 hex characters
@@ -15,6 +16,12 @@ test('accepts a well-formed transaction hash and trims it', () => {
 
   assert.equal(result.ok, true);
   assert.equal(result.value, TX_HASH);
+});
+
+test('transaction hash normalization is safe for unknown input', () => {
+  assert.equal(normalizeTransactionHash(`  ${TX_HASH}  `), TX_HASH);
+  assert.equal(normalizeTransactionHash(null), '');
+  assert.equal(normalizeTransactionHash({}), '');
 });
 
 test('rejects a missing transaction hash with the shared message', () => {

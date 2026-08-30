@@ -19,6 +19,17 @@ export interface PaymentNotification {
 
 type PaymentCallback = (payment: PaymentNotification) => void;
 
+export const paymentMonitorLabels = Object.freeze({
+  listening: {
+    title: 'Listening for payment',
+    description: 'The invoice status updates automatically after confirmation.',
+  },
+  paused: {
+    title: 'Payment monitoring stopped',
+    description: 'Manual verification remains available.',
+  },
+});
+
 class PaymentMonitor {
   private activeStreams: Map<string, () => void> = new Map();
   private callbacks: Map<string, PaymentCallback[]> = new Map();
@@ -195,4 +206,3 @@ if (typeof window !== 'undefined') {
     paymentMonitor.stopAll();
   });
 }
-

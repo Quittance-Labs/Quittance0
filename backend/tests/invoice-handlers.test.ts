@@ -267,6 +267,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       );
       assert.match(res.body.data.qrCode, /^data:image\/png;base64,/);
       assert.match(res.body.data.stellarQrCode, /^data:image\/png;base64,/);
+      assert.equal(res.body.data.statusPollingIntervalMs, 3000);
       assert.equal(res.body.data.paymentAvailable, true);
     });
 

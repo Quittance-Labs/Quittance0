@@ -126,8 +126,11 @@ export default function PaymentButton({
 
   return (
     <button
+      type="button"
       onClick={handlePayment}
-      disabled={loading || invoiceStatus !== 'PENDING'}
+      disabled={loading || !destination || !amount || invoiceStatus !== 'PENDING'}
+      aria-busy={loading}
+      data-payment-state={loading ? 'processing' : 'ready'}
       className="btn btn-primary w-full flex items-center justify-center gap-2 text-lg py-4"
     >
       {loading ? (

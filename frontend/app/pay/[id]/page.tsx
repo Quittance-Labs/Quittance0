@@ -1,608 +1,209 @@
 'use client';
 
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
-import Link from 'next/link';
-import { apiErrorMessage, invoiceApi, isApiUnavailableError } from '@/lib/api';
-import PaymentButton from '@/components/PaymentButton';
-import QRCodeDisplay from '@/components/QRCodeDisplay';
-import WalletConnect from '@/components/WalletConnect';
-import UserProfile from '@/components/UserProfile';
-import PaymentReceipt from '@/components/PaymentReceipt';
-import AssetLogo from '@/components/AssetLogo';
-import { formatAmount, formatDate, getTimeRemaining, copyToClipboard } from '@/lib/utils';
-import { Copy, ExternalLink, Loader2, Check, FileText, Mail } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
-import {
-  PAY_STATES,
-  describeVerifyError,
-  initialPaymentState,
-  isExpiredInvoice,
-  normalizePayerDetails,
-  paymentReducer,
-  shouldPoll,
-  shouldShowPaymentControls,
-} from '@/lib/payment-page-state';
-import { checkTxHash } from '@/lib/verification';
+import PayPageHeader from '@/components/PayPageHeader';
+import PayAmountBlock from '@/components/PayAmountBlock';
+import PayMemoBlock from '@/components/PayMemoBlock';
+import PayVerifyPanel from '@/components/PayVerifyPanel';
+import PayProofPanel from '@/components/PayProofPanel';
+import PayMonitorPanel from '@/components/PayMonitorPanel';
+import QRCodeDisplay from '@/components/QRCodeDisplay';
+import PaymentButton from '@/components/PaymentButton';
+import WalletConnect from '@/components/WalletConnect';
 import ApiErrorState from '@/components/ApiErrorState';
+import { copyToClipboard } from '@/lib/utils';
+import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
+import { getPayPageView } from '@/lib/payment-page-state';
+import { PAYMENT_STATUS_POLL_INTERVAL_MS } from '@/lib/api';
+import { usePaymentPage } from '@/lib/use-payment-page';
 
 export default function PaymentPage() {
-  const params = useParams();
-  const id = params.id as string;
+  const id = useParams().id as string;
+  const page = usePaymentPage(id);
 
-  const [payment, dispatch] = useReducer(paymentReducer, undefined, () =>
-    initialPaymentState(null)
-  );
-  const [loading, setLoading] = useState(true);
-  const [paymentInfo, setPaymentInfo] = useState<any>(null);
-  const [userWallet, setUserWallet] = useState<string | null>(null);
-  const [verifyTxHash, setVerifyTxHash] = useState<string>('');
-  const [payerName, setPayerName] = useState<string>('');
-  const [payerEmail, setPayerEmail] = useState<string>('');
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  const invoice = payment.invoice as any;
-  const verifying = payment.status === PAY_STATES.VERIFYING;
-
-  // Every response carries the request generation that asked for it. A response
-  // from a previous invoice id — or one that lands after the component is gone —
-  // is discarded instead of overwriting current state.
-  const requestGeneration = useRef(0);
-
-  const loadInvoice = useCallback(async () => {
-    const generation = requestGeneration.current;
-    setLoadError(null);
-
-    try {
-      const [invoiceResult, paymentResult] = await Promise.allSettled([
-        invoiceApi.getById(id),
-        invoiceApi.getPaymentInfo(id),
-      ]);
-
-      if (generation !== requestGeneration.current) return;
-      if (invoiceResult.status === 'rejected') throw invoiceResult.reason;
-
-      dispatch({ type: 'INVOICE_LOADED', invoice: invoiceResult.value.data });
-      if (paymentResult.status === 'fulfilled') {
-        setPaymentInfo(paymentResult.value.data);
-      } else {
-        setLoadError(apiErrorMessage(paymentResult.reason));
-      }
-    } catch (error: any) {
-      if (generation !== requestGeneration.current) return;
-      const message = apiErrorMessage(error, 'Failed to load invoice');
-      setLoadError(message);
-      toast.error(message);
-    } finally {
-      if (generation === requestGeneration.current) {
-        setLoading(false);
-      }
-    }
-  }, [id]);
-
-  // A new invoice id invalidates everything in flight for the previous one.
-  useEffect(() => {
-    requestGeneration.current += 1;
-    setLoading(true);
-    setPaymentInfo(null);
-    setVerifyTxHash('');
-    dispatch({ type: 'INVOICE_LOADED', invoice: null });
-
-    void loadInvoice();
-
-    return () => {
-      requestGeneration.current += 1;
-    };
-  }, [id, loadInvoice]);
-
-  // Poll only while the answer is still unknown; `shouldPoll` owns that rule.
-  useEffect(() => {
-    if (!shouldPoll(payment)) return;
-
-    const generation = requestGeneration.current;
-
-    const intervalId = setInterval(async () => {
-      try {
-        const result = await invoiceApi.getById(id);
-        if (generation !== requestGeneration.current) return;
-
-        if (result.data.status !== 'PENDING') {
-          dispatch({ type: 'POLL_RESULT', invoice: result.data });
-          if (result.data.status === 'PAID') {
-            toast.success('Payment confirmed!');
-          }
-        }
-      } catch (error) {
-        console.error('Polling error:', error);
-        if (isApiUnavailableError(error)) setLoadError(apiErrorMessage(error));
-      }
-    }, 3000);
-
-    return () => clearInterval(intervalId);
-  }, [payment, id]);
-
-  const handlePaymentSuccess = async (txHash: string) => {
-    toast.success('Payment sent! Verifying...');
-    dispatch({ type: 'PAY_SENT', txHash });
-    setTimeout(() => {
-      void loadInvoice();
-    }, 2000);
-  };
-
-  // Manual verification for payers who paid by QR or from another wallet.
-  const handleVerify = async () => {
-    // Shared contract (issue #224): reject the same input the server would,
-    // with the same message, before spending a request.
-    const hashCheck = checkTxHash(verifyTxHash);
-    if (!hashCheck.ok) {
-      toast.error(hashCheck.error);
-      return;
-    }
-    const payer = normalizePayerDetails({ payerName, payerEmail });
-    if (!payer.ok) {
-      toast.error(payer.error);
-      return;
-    }
-
-    dispatch({ type: 'VERIFY_STARTED' });
-    const generation = requestGeneration.current;
-
-    try {
-      toast.loading('Verifying transaction...', { id: 'verify-toast' });
-      const result = await invoiceApi.verify(id, hashCheck.value, payer.value);
-      if (generation !== requestGeneration.current) return;
-
-      toast.success('Transaction verified!', { id: 'verify-toast' });
-      dispatch({ type: 'VERIFY_SUCCEEDED', invoice: result?.data ?? null });
-      void loadInvoice();
-    } catch (error: any) {
-      if (generation !== requestGeneration.current) return;
-
-      console.error('Manual verification error:', error);
-      const message = describeVerifyError(error);
-      if (isApiUnavailableError(error)) setLoadError(apiErrorMessage(error));
-      toast.error(message, { id: 'verify-toast' });
-      dispatch({ type: 'VERIFY_FAILED', error: message });
-    }
-  };
-
-  const copyInfo = async (text: string, label: string) => {
-    const success = await copyToClipboard(text);
-    if (success) {
-      toast.success(`${label} copied`);
-    }
-  };
-
-  const handleDownloadPDF = () => {
-    if (invoice) {
-      openInvoicePDF(invoice as any);
-      toast.success('Opening payment proof');
-    }
-  };
-
-  const handleEmailShare = () => {
-    if (!invoice) return;
-    if (!invoice.customerEmail) {
-      toast.error('No client email on this invoice');
-      return;
-    }
-    shareInvoiceByEmail(invoice as any);
-  };
-
-  if (loading) {
+  if (page.loading) {
     return (
-      <div className="min-h-screen bg-logo-pattern relative flex items-center justify-center">
-        <div className="orb orb-1"></div>
-        <div className="orb orb-2"></div>
-        <div className="orb orb-3"></div>
-        <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full blur-2xl opacity-30"></div>
-          <Loader2 className="w-16 h-16 animate-spin text-cyan-400 relative z-10" />
-        </div>
-      </div>
+      <PageMessage>
+        <Loader2 className="w-16 h-16 animate-spin text-cyan-400" />
+      </PageMessage>
     );
   }
 
-  if (!invoice) {
-    if (loadError) {
+  if (!page.invoice) {
+    if (page.loadError) {
       return (
         <div className="min-h-screen bg-logo-pattern flex items-center justify-center px-4">
           <div className="max-w-lg w-full">
-            <ApiErrorState message={loadError} onRetry={() => void loadInvoice()} />
+            <ApiErrorState message={page.loadError} onRetry={() => void page.reload()} />
           </div>
         </div>
       );
     }
     return (
-      <div className="min-h-screen bg-logo-pattern relative flex items-center justify-center">
-        <div className="orb orb-1"></div>
-        <div className="orb orb-2"></div>
-        <div className="orb orb-3"></div>
-        <div className="card text-center max-w-md relative z-10">
-          <h2 className="text-2xl font-bold text-red-600 mb-2">Invoice Not Found</h2>
-          <p className="text-gray-700">The invoice you are looking for does not exist.</p>
-        </div>
-      </div>
+      <PageMessage>
+        <h2 className="text-2xl font-bold text-red-600">Invoice Not Found</h2>
+      </PageMessage>
     );
   }
 
-  const horizonUrl =
-    process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET'
-      ? 'https://stellar.expert/explorer/testnet'
-      : 'https://stellar.expert/explorer/public';
-  const isExpired = isExpiredInvoice(invoice);
-  const showPaymentControls = shouldShowPaymentControls(invoice);
+  const invoice = page.invoice;
+  const view = getPayPageView(invoice);
+  const copy = async (value: string, label: string) => {
+    if (await copyToClipboard(value)) toast.success(`${label} copied`);
+  };
+  const download = () => {
+    openInvoicePDF(invoice);
+    toast.success('Opening payment proof');
+  };
+  const email = () => {
+    if (!invoice.customerEmail) return toast.error('No client email on this invoice');
+    shareInvoiceByEmail(invoice);
+  };
 
   return (
-    <div className="min-h-screen bg-logo-pattern relative py-8 sm:py-12 px-4">
-      <div className="orb orb-1"></div>
-      <div className="orb orb-2"></div>
-      <div className="orb orb-3"></div>
-      <div className="max-w-4xl mx-auto relative z-10">
-        <header className="fixed top-0 left-0 right-0 z-50 premium-header border-b border-gray-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-3">
-              <span className="font-display text-2xl tracking-tight text-[var(--ink)]">
-                Quittance
-              </span>
-            </Link>
-            <div className="flex items-center gap-3">
-              {!userWallet ? (
-                <WalletConnect onConnect={setUserWallet} />
-              ) : (
-                <UserProfile userWallet={userWallet} onDisconnect={() => setUserWallet(null)} />
-              )}
-            </div>
-          </div>
-        </header>
-
-        <div className="pt-20">
-        {loadError && (
+    <main className="min-h-screen bg-logo-pattern relative py-8 sm:py-12 px-4">
+      <PayPageHeader
+        wallet={page.wallet}
+        onConnect={page.setWallet}
+        onDisconnect={() => page.setWallet(null)}
+      />
+      <div className="max-w-4xl mx-auto relative z-10 pt-20">
+        {page.loadError && (
           <div className="mb-6">
-            <ApiErrorState message={loadError} onRetry={() => void loadInvoice()} compact />
+            <ApiErrorState message={page.loadError} onRetry={() => void page.reload()} compact />
           </div>
         )}
         <div className="text-center mb-10 sm:mb-12">
-          <div className="inline-block mb-4 px-6 py-2 bg-gradient-to-r from-cyan-400/20 to-blue-500/20 backdrop-blur-md rounded-full border border-white/30">
-            <span className="text-white text-sm font-semibold tracking-wide">
-              {isExpired ? 'Expired Invoice' : 'Secure Payment'}
-            </span>
-          </div>
-          <h1 className="text-4xl sm:text-5xl font-bold text-white mb-3">
-            {isExpired ? 'Invoice Expired' : 'Complete Payment'}
+          <p className="pay-page-kicker">{view.expired ? 'Expired Invoice' : 'Secure Payment'}</p>
+          <h1 className="text-4xl sm:text-5xl font-bold text-[var(--ink)] mb-3">
+            {view.expired ? 'Invoice Expired' : 'Complete Payment'}
           </h1>
-          <p className="text-xl text-white/90">
-            {isExpired ? 'Payment is no longer available' : 'Pay with your Stellar wallet'}
+          <p className="text-xl text-[var(--muted)]">
+            {view.expired ? 'Payment is no longer available' : 'Pay with your Stellar wallet'}
           </p>
         </div>
-
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
-          <div className="card">
-            <h2 className="text-3xl font-bold text-gray-900 mb-8">Payment Details</h2>
-
-            <div className="space-y-5 mb-8">
-              <div className="bg-gradient-to-br from-cyan-50 to-blue-50 border-2 border-cyan-200/50 rounded-2xl p-8 text-center shadow-lg">
-                <p className="text-sm text-gray-600 mb-4 font-semibold uppercase tracking-wide">
-                  {isExpired ? 'Invoice Amount' : 'Amount to Pay'}
-                </p>
-                <div className="flex items-center justify-center gap-4">
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full blur-lg opacity-40"></div>
-                    <AssetLogo code={invoice.assetCode} size={50} showName={false} />
-                  </div>
-                  <div>
-                    <p className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
-                      {formatAmount(invoice.amount, 7)}
-                    </p>
-                    <p className="text-xl font-bold text-cyan-600 mt-2">
-                      {invoice.assetCode}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {invoice.description && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <p className="text-sm text-gray-600 mb-1">Payment For</p>
-                  <p className="text-gray-800 font-medium">{invoice.description}</p>
-                </div>
-              )}
-
-              {(invoice.sellerName || invoice.sellerEmail) && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
-                  <p className="text-sm text-blue-600 font-semibold">Seller Information</p>
-                  {invoice.sellerName && (
-                    <div>
-                      <p className="text-xs text-blue-500">Name</p>
-                      <p className="text-sm text-blue-800">{invoice.sellerName}</p>
-                    </div>
-                  )}
-                  {invoice.sellerEmail && (
-                    <div>
-                      <p className="text-xs text-blue-500">Email</p>
-                      <p className="text-sm text-blue-800">{invoice.sellerEmail}</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {invoice.sellerName && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-                  <p className="text-sm text-blue-600 font-semibold">Pay to</p>
-                  <p className="text-lg font-bold text-blue-800">{invoice.sellerName}</p>
-                  {invoice.sellerEmail && (
-                    <p className="text-sm text-blue-600">{invoice.sellerEmail}</p>
-                  )}
-                </div>
-              )}
-
-              <div className="border-b pb-4">
-                <p className="text-sm text-gray-600 mb-1">Status</p>
-                <div className="inline-flex items-center gap-2 mt-1">
-                  {invoice.status === 'PENDING' && !isExpired && (
-                    <>
-                      <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
-                      <span className="text-yellow-700 font-semibold">Waiting for Payment</span>
-                    </>
-                  )}
-                  {invoice.status === 'PAID' && (
-                    <>
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      <span className="text-green-700 font-semibold">Paid</span>
-                    </>
-                  )}
-                  {isExpired && (
-                    <>
-                      <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                      <span className="text-red-700 font-semibold">Expired</span>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {invoice.status === 'PENDING' && !isExpired && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <p className="text-sm text-blue-800 font-semibold mb-1">Expires In</p>
-                  <p className="text-blue-700 font-semibold text-lg">
-                    {getTimeRemaining(invoice.expiresAt)}
-                  </p>
-                </div>
-              )}
-
-              {invoice.status === 'PAID' && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <p className="text-sm text-green-800 font-semibold mb-1">Payment Completed</p>
-                  <p className="text-green-700 font-semibold">
-                    {formatDate(invoice.paidAt)}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {invoice.status === 'PAID' && (
-              <div className="border-t pt-5 flex gap-2">
-                <button
-                  onClick={handleDownloadPDF}
-                  className="btn btn-primary flex-1 flex items-center justify-center gap-2"
-                >
-                  <FileText className="w-4 h-4" />
-                  Download Proof
-                </button>
-                {invoice.customerEmail && (
-                  <button
-                    onClick={handleEmailShare}
-                    className="btn btn-outline flex items-center justify-center gap-2 px-4"
-                    title="Email Proof"
-                  >
-                    <Mail className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            )}
-
-            {invoice.status === 'PENDING' && !isExpired && (
-              <div className="bg-gray-50 p-4 rounded-lg space-y-3 border">
-                <h3 className="font-semibold text-gray-900 mb-3">Payment Information</h3>
-                
-                <div>
-                  <p className="text-xs text-gray-600 mb-1">Destination Address</p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 text-xs bg-white p-2 rounded border truncate">
-                      {invoice.sellerPublicKey}
-                    </code>
-                    <button
-                      onClick={() => copyInfo(invoice.sellerPublicKey, 'Address')}
-                      className="p-2 hover:bg-gray-200 rounded transition"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-xs text-gray-600 mb-1">Memo (Required)</p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 text-xs bg-white p-2 rounded border font-semibold">
-                      {invoice.memo}
-                    </code>
-                    <button
-                      onClick={() => copyInfo(invoice.memo, 'Memo')}
-                      className="p-2 hover:bg-gray-200 rounded transition"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-xs text-gray-600 mb-1">Exact Amount</p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 text-xs bg-white p-2 rounded border font-semibold">
-                      {invoice.amount} {invoice.assetCode}
-                    </code>
-                    <button
-                      onClick={() => copyInfo(invoice.amount.toString(), 'Amount')}
-                      className="p-2 hover:bg-gray-200 rounded transition"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {isExpired && (
-              <div className="bg-gray-50 p-4 rounded-lg border">
-                <h3 className="font-semibold text-gray-900 mb-3">Invoice Reference</h3>
-                <p className="text-xs text-gray-600 mb-1">Memo</p>
-                <code className="block text-xs bg-white p-2 rounded border font-semibold">
-                  {invoice.memo}
-                </code>
-              </div>
-            )}
-          </div>
-
           <div className="space-y-6">
-            {invoice.status === 'PAID' && (
-              <PaymentReceipt invoice={invoice} />
+            <PayAmountBlock invoice={invoice} />
+            <PayMemoBlock invoice={invoice} onCopy={copy} />
+          </div>
+          <div className="space-y-6">
+            {view.showProof && (
+              <PayProofPanel invoice={invoice} onDownload={download} onEmail={email} />
             )}
-
-            {isExpired && (
-              <div className="card text-center py-8">
-                <div className="inline-flex items-center justify-center w-20 h-20 bg-red-100 rounded-full mb-4">
-                  <svg className="w-12 h-12 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </div>
-                <h3 className="text-2xl font-bold text-red-700 mb-2">Payment Expired</h3>
-                <p className="text-gray-600">
+            {view.expired && (
+              <PageMessage>
+                <p className="text-red-700 font-semibold">
                   This invoice has expired and can no longer be paid.
                 </p>
-              </div>
+              </PageMessage>
             )}
-
-            {showPaymentControls && (
+            {view.showPaymentControls && (
               <>
-                <div className="card">
-                  <h3 className="text-lg font-semibold text-center mb-4">Scan QR Code</h3>
+                <section aria-label="Stellar payment QR code" className="card text-center">
+                  <h3 className="text-lg font-semibold mb-4">Scan QR Code</h3>
                   <QRCodeDisplay
-                    value={paymentInfo?.stellarQrCode || paymentInfo?.paymentUrl}
+                    value={page.paymentInfo?.stellarQrCode || page.paymentInfo?.paymentUrl || ''}
                     title=""
                     size={220}
                   />
-                  <p className="text-sm text-gray-600 text-center mt-4">
-                    Scan with your Stellar wallet app to pay instantly
+                  <p className="text-sm text-gray-600 mt-4">
+                    Scan with your Stellar wallet app to pay instantly.
                   </p>
-                </div>
-
-                <div className="card">
-                  <h3 className="text-xl font-semibold text-center mb-4">Pay with Wallet</h3>
-
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                    <p className="text-sm text-blue-800 font-semibold mb-2">How to Pay:</p>
-                    <ol className="text-sm text-blue-700 space-y-1.5 list-decimal list-inside">
-                      <li>Connect your Freighter wallet</li>
-                      <li>Click Pay with Freighter</li>
-                      <li>Confirm the transaction</li>
-                    </ol>
-                  </div>
-
+                </section>
+                <section aria-labelledby="wallet-pay-title" className="card">
+                  <h3 id="wallet-pay-title" className="text-xl font-semibold text-center mb-4">
+                    Pay with Wallet
+                  </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                    <div>
-                      <label htmlFor="payer-name" className="block text-sm font-medium text-gray-700 mb-1">
-                        Your name (optional)
-                      </label>
-                      <input
-                        id="payer-name"
-                        type="text"
-                        value={payerName}
-                        onChange={(event) => setPayerName(event.target.value)}
-                        maxLength={255}
-                        autoComplete="name"
-                        className="input text-sm"
-                        placeholder="Name on payment proof"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="payer-email" className="block text-sm font-medium text-gray-700 mb-1">
-                        Your email (optional)
-                      </label>
-                      <input
-                        id="payer-email"
-                        type="email"
-                        value={payerEmail}
-                        onChange={(event) => setPayerEmail(event.target.value)}
-                        maxLength={255}
-                        autoComplete="email"
-                        className="input text-sm"
-                        placeholder="Email on payment proof"
-                      />
-                    </div>
+                    <PayerField
+                      id="payer-name"
+                      label="Your name (optional)"
+                      value={page.payerName}
+                      onChange={page.setPayerName}
+                    />
+                    <PayerField
+                      id="payer-email"
+                      label="Your email (optional)"
+                      value={page.payerEmail}
+                      onChange={page.setPayerEmail}
+                      type="email"
+                    />
                   </div>
-
                   <div className="flex justify-center mb-4">
-                    <WalletConnect onConnect={setUserWallet} />
+                    <WalletConnect onConnect={page.setWallet} />
                   </div>
-
                   <PaymentButton
                     destination={invoice.sellerPublicKey}
-                    amount={invoice.amount.toString()}
+                    amount={String(invoice.amount)}
                     memo={invoice.memo}
                     assetCode={invoice.assetCode}
                     assetIssuer={invoice.assetIssuer}
                     invoiceId={invoice.id}
-                    payerName={payerName}
-                    payerEmail={payerEmail}
-                    invoiceStatus={isExpired ? 'EXPIRED' : invoice.status}
-                    onStart={() => dispatch({ type: 'PAY_STARTED' })}
-                    onSuccess={handlePaymentSuccess}
-                    onError={(message) => dispatch({ type: 'PAY_FAILED', error: message })}
+                    payerName={page.payerName}
+                    payerEmail={page.payerEmail}
+                    invoiceStatus={view.expired ? 'EXPIRED' : invoice.status}
+                    onStart={() => page.dispatch({ type: 'PAY_STARTED' })}
+                    onSuccess={(txHash) => {
+                      page.dispatch({ type: 'PAY_SENT', txHash });
+                      void page.reload();
+                    }}
+                    onError={(error) => page.dispatch({ type: 'PAY_FAILED', error })}
                   />
-
-                  <div className="mt-6 pt-4 border-t text-center">
-                    <p className="text-xs text-gray-500">Secure payment on Stellar blockchain</p>
-                  </div>
-                </div>
-
-                <div className="card">
-                  <h3 className="text-lg font-semibold text-center mb-4">Already paid? Verify your transaction</h3>
-                  <p className="text-sm text-gray-600 text-center mb-2">Enter the 64‑character Stellar transaction hash you received.</p>
-                  <div className="flex items-center gap-2 mb-4">
-                    <input
-                      type="text"
-                      placeholder="Transaction hash (64 chars)"
-                      value={verifyTxHash}
-                      onChange={(e) => setVerifyTxHash(e.target.value)}
-                      maxLength={64}
-                      className="flex-1 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                    />
-                    <button
-                      onClick={handleVerify}
-                      disabled={verifying}
-                      className="btn btn-primary flex items-center gap-2"
-                    >
-                      {verifying ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Verifying...
-                        </>
-                      ) : (
-                        <>Verify</>
-                      )}
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500 text-center">
-                    If verification succeeds, the invoice will show the receipt and download options.
-                  </p>
-                </div>
+                </section>
+                <PayMonitorPanel
+                  active={page.monitoring}
+                  intervalMs={
+                    page.paymentInfo?.statusPollingIntervalMs ?? PAYMENT_STATUS_POLL_INTERVAL_MS
+                  }
+                />
+                <PayVerifyPanel
+                  txHash={page.txHash}
+                  verifying={page.verifying}
+                  onChange={page.setTxHash}
+                  onVerify={() => void page.verify()}
+                />
               </>
             )}
           </div>
         </div>
-
-        </div>
       </div>
-    </div>
+    </main>
+  );
+}
+
+function PageMessage({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-[12rem] card flex items-center justify-center text-center">{children}</div>
+  );
+}
+
+function PayerField({
+  id,
+  label,
+  value,
+  onChange,
+  type = 'text',
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+}) {
+  return (
+    <label htmlFor={id} className="text-sm font-medium text-gray-700">
+      {label}
+      <input
+        id={id}
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        maxLength={255}
+        className="input text-sm mt-1"
+      />
+    </label>
   );
 }

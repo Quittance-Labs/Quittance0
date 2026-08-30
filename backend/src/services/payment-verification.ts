@@ -67,7 +67,7 @@ export interface VerificationSuccess<T> {
 export type VerificationResult<T> = VerificationSuccess<T> | VerificationFailure;
 
 /** Amount precision used by Stellar (7 decimal places). */
-const STROOP_PRECISION = 7;
+export const STROOP_PRECISION = 7;
 const MAX_PAYER_FIELD_LENGTH = 255;
 const PAYER_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TX_HASH_PATTERN = /^[0-9a-f]{64}$/i;
@@ -201,7 +201,7 @@ function assetCodeOf(operation: HorizonOperationLike): string {
   return operation.asset_type === 'native' ? 'XLM' : operation.asset_code ?? '';
 }
 
-function amountsMatch(actual: unknown, expected: string | number): boolean {
+export function amountsMatch(actual: unknown, expected: string | number): boolean {
   const actualAmount = parseFloat(String(actual));
   const expectedAmount = Number(expected);
 

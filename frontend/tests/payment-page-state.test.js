@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {
   PAY_STATES,
   describeVerifyError,
+  getPayPageView,
   initialPaymentState,
   isExpiredInvoice,
   isLikelyTransactionHash,
@@ -42,6 +43,18 @@ test('stale pending data fails closed after expiresAt', () => {
 test('keeps payment controls available for an unpaid pending invoice', () => {
   assert.equal(shouldShowPaymentControls('PENDING'), true);
   assert.equal(shouldShowPaymentControls('PENDING', 'existing-transaction'), false);
+});
+
+test('paid, pending, and expired components are mutually exclusive', () => {
+  assert.deepEqual(getPayPageView(pending), {
+    expired: false,
+    paid: false,
+    showPaymentControls: true,
+    showProof: false,
+    showMonitor: true,
+  });
+  assert.equal(getPayPageView(paid).showProof, true);
+  assert.equal(getPayPageView(expired).showPaymentControls, false);
 });
 
 // -------------------------------------------------------------- initial state

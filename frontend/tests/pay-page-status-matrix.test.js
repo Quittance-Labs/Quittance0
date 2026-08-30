@@ -17,6 +17,7 @@ const assert = require('node:assert/strict');
 const {
   isExpiredInvoice,
   shouldShowPaymentControls,
+  getPayPageView,
 } = require('../lib/payment-page-state');
 
 /** Every status the backend's invoice model can produce. */
@@ -76,4 +77,16 @@ test('an unknown status never offers payment controls', () => {
   // Statuses added on the backend must fail closed, not open.
   assert.equal(shouldShowPaymentControls('SOMETHING_NEW'), false);
   assert.equal(shouldShowPaymentControls(undefined), false);
+});
+
+test('component visibility is derived consistently for every invoice status', () => {
+  const matrix = Object.fromEntries(
+    ALL_STATUSES.map((status) => [status, getPayPageView({ status, paymentTxHash: status === 'PAID' ? 'hash' : undefined })])
+  );
+
+  assert.equal(matrix.PENDING.showPaymentControls, true);
+  assert.equal(matrix.PENDING.showMonitor, true);
+  assert.equal(matrix.PAID.showProof, true);
+  assert.equal(matrix.EXPIRED.expired, true);
+  assert.equal(matrix.CANCELLED.showPaymentControls, false);
 });

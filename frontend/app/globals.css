@@ -152,3 +152,46 @@ body {
     display: none !important;
   }
 }
+/* Pay-page components intentionally share these small surface primitives. */
+.pay-page-kicker {
+  display: inline-block;
+  margin-bottom: 1rem;
+  padding: 0.5rem 1.5rem;
+  border: 1px solid rgb(255 255 255 / 30%);
+  border-radius: 9999px;
+  color: var(--ink);
+  background: rgb(255 255 255 / 65%);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.pay-amount-panel {
+  border: 2px solid rgb(165 243 252 / 50%);
+  border-radius: 1rem;
+  padding: 2rem;
+  text-align: center;
+  background: linear-gradient(135deg, #ecfeff, #eff6ff);
+}
+
+.pay-detail-panel {
+  display: grid;
+  gap: 0.25rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  background: #eff6ff;
+}
+
+.pay-detail-panel > span {
+  color: #4b5563;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.pay-status-compact,
+.pay-qr-placeholder {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  background: #f9fafb;
+}
