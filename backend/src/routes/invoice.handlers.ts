@@ -12,6 +12,7 @@ import {
   checkTxHash,
   verifyHorizonPayment,
 } from '../services/payment-verification';
+import { simulationAllowed } from '../config/runtime';
 
 /** Only the part of the Stellar service the verify handler needs. */
 export interface TransactionLookup {
@@ -22,7 +23,7 @@ export interface InvoiceHandlerOptions {
   storage: InvoiceStorage;
   /** Defaults to FRONTEND_URL, read per request so tests and dev reloads see changes. */
   frontendUrl?: string;
-  /** Defaults to ALLOW_SIMULATE=true. */
+  /** Optional local-test override. Production always forces simulation off. */
   allowSimulate?: boolean;
   stellar?: TransactionLookup;
 }
@@ -64,9 +65,11 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
     options.frontendUrl || process.env.FRONTEND_URL || 'http://localhost:3000';
 
   const simulateAllowed = () =>
-    options.allowSimulate !== undefined
-      ? options.allowSimulate
-      : process.env.ALLOW_SIMULATE === 'true';
+    process.env.NODE_ENV !== 'production' && (
+      options.allowSimulate !== undefined
+        ? options.allowSimulate
+        : simulationAllowed()
+    );
 
   const buildPaymentPayload = async (invoice: StoredInvoice) => {
     const paymentUrl = `${frontendUrl()}/pay/${invoice.id}`;

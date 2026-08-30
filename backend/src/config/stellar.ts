@@ -4,7 +4,11 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Network configuration
-export const STELLAR_NETWORK = process.env.STELLAR_NETWORK || 'TESTNET';
+const configuredNetwork = (process.env.STELLAR_NETWORK || 'TESTNET').toUpperCase();
+if (configuredNetwork !== 'TESTNET' && configuredNetwork !== 'PUBLIC') {
+  throw new Error('STELLAR_NETWORK must be TESTNET or PUBLIC');
+}
+export const STELLAR_NETWORK: 'TESTNET' | 'PUBLIC' = configuredNetwork;
 export const STELLAR_HORIZON_URL = 
   process.env.STELLAR_HORIZON_URL || 
   (STELLAR_NETWORK === 'TESTNET' 
@@ -71,4 +75,3 @@ export default {
   validateStellarConfig,
   getSellerKeypair,
 };
-

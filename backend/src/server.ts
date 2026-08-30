@@ -5,6 +5,7 @@ import routes from './routes';
 import { pool } from './config/database';
 import { validateStellarConfig, SELLER_PUBLIC_KEY } from './config/stellar';
 import paymentMonitorService from './services/payment-monitor.service';
+import { corsOptions } from './config/runtime';
 
 // Load environment variables
 dotenv.config();
@@ -13,10 +14,7 @@ const app: Application = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true,
-}));
+app.use(cors(corsOptions()));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -41,8 +39,10 @@ app.get('/', (req: Request, res: Response) => {
 
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('Error:', err);
-  res.status(500).json({
+  const code = (err as Error & { code?: string }).code;
+  res.status(code === 'CORS_ORIGIN_DENIED' ? 403 : 500).json({
     success: false,
+    code,
     error: err.message || 'Internal server error',
   });
 });
@@ -98,4 +98,3 @@ process.on('SIGINT', async () => {
 initialize();
 
 export default app;
-
