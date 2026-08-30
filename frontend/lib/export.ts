@@ -2,7 +2,7 @@ import { format } from 'date-fns';
 import {
   assertPaymentProofAvailable,
   canExportPaymentProof,
-} from './payment-proof-policy';
+} from './payment-proof-policy.js';
 
 export { assertPaymentProofAvailable, canExportPaymentProof };
 
