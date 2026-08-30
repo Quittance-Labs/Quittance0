@@ -9,9 +9,10 @@ import PaymentStatus from '@/components/PaymentStatus';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
-import { formatAmount, formatDate, getTimeRemaining, getShareUrl } from '@/lib/utils';
+import { formatAmount, formatDate, getTimeRemaining } from '@/lib/utils';
 import { ArrowLeft, Share2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { invoiceSharePath } from '@/lib/invoice-share-path';
 
 export default function InvoiceDetailPage() {
   const params = useParams();
@@ -45,7 +46,7 @@ export default function InvoiceDetailPage() {
   };
 
   const handleShare = async () => {
-    const url = getShareUrl(invoice.id);
+    const url = `${window.location.origin}${invoiceSharePath(invoice.id)}`;
 
     if (navigator.share) {
       try {
