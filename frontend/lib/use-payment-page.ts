@@ -40,7 +40,7 @@ export function usePaymentPage(id: string) {
 
       dispatch({ type: 'INVOICE_LOADED', invoice: invoiceResult.value.data });
       if (infoResult.status === 'fulfilled') {
-        setPaymentInfo(infoResult.data);
+        setPaymentInfo(infoResult.value.data);
       } else {
         setLoadError(apiErrorMessage(infoResult.reason));
       }
