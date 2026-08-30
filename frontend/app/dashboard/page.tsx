@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { Loader2, Plus, TrendingUp, DollarSign, FileText, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadInvoiceCSV } from '@/lib/export';
+import { dashboardEmptyMessage } from '@/lib/dashboard-empty-copy';
 
 export default function DashboardPage() {
   const { publicKey, connected } = useWalletStore();
@@ -119,9 +120,7 @@ export default function DashboardPage() {
           <div className="card text-center py-16 max-w-lg mx-auto">
             <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Connect your wallet</h2>
-            <p className="text-gray-600 mb-6">
-              Dashboard shows only invoices for your connected Freighter wallet.
-            </p>
+                  <p className="text-gray-600 mb-6">{dashboardEmptyMessage(false)}</p>
             <div className="flex justify-center">
               <WalletConnect />
             </div>
@@ -269,9 +268,9 @@ export default function DashboardPage() {
                 <h3 className="text-xl font-semibold text-gray-700 mb-2">
                   {searchQuery ? 'No Matching Invoices' : 'No Invoices Found'}
                 </h3>
-                <p className="text-gray-600 mb-6">
-                  {searchQuery ? 'Try a different search term' : 'Create your first invoice to get started'}
-                </p>
+                  <p className="text-gray-600 mb-6">
+                    {searchQuery ? 'Try a different search term' : dashboardEmptyMessage(Boolean(connected && publicKey))}
+                  </p>
                 {!searchQuery && (
                   <Link href="/" className="btn btn-primary">
                     Create Invoice
@@ -302,4 +301,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
