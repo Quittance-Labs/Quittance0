@@ -10,6 +10,13 @@
  * Horizon and hand them in. See README.md "Payment verification contract".
  */
 
+import {
+  assetsMatch,
+  formatAssetIdentity,
+  resolveInvoiceAsset,
+  resolvePaymentAsset,
+} from '../utils/asset-helpers';
+
 export type VerificationCode =
   | 'MISSING_TX_HASH'
   | 'INVALID_TX_HASH'
@@ -240,15 +247,25 @@ export function verifyHorizonPayment(input: VerifyPaymentInput): VerificationRes
     return failure('AMOUNT_MISMATCH');
   }
 
-  const paidAssetCode = assetCodeOf(paymentOp);
-  if (paidAssetCode !== expected.assetCode) {
+  // A Stellar asset is the pair (code, issuer), never the code alone. Anyone
+  // can issue a credit asset coded "XLM", so comparing codes would let a
+  // worthless look-alike settle a native invoice. `assetsMatch` compares
+  // identities and fails closed when either side has no issuer to pin it to.
+  const invoiceAsset = resolveInvoiceAsset({
+    assetCode: expected.assetCode,
+    assetIssuer: expected.assetIssuer,
+  });
+  const paidAsset = resolvePaymentAsset({
+    assetType: paymentOp.asset_type,
+    assetCode: paymentOp.asset_code,
+    assetIssuer: paymentOp.asset_issuer,
+  });
+
+  if (!assetsMatch(invoiceAsset, paidAsset)) {
     return failure('ASSET_MISMATCH');
   }
 
-  // Non-native assets are only identical when the issuer matches too.
-  if (expected.assetIssuer && paymentOp.asset_issuer !== expected.assetIssuer) {
-    return failure('ASSET_MISMATCH');
-  }
+  const paidAssetCode = assetCodeOf(paymentOp);
 
   return {
     ok: true,
@@ -263,6 +280,8 @@ export function verifyHorizonPayment(input: VerifyPaymentInput): VerificationRes
     },
   };
 }
+
+export { formatAssetIdentity, resolveInvoiceAsset, resolvePaymentAsset };
 
 export default {
   VERIFICATION_MESSAGES,
