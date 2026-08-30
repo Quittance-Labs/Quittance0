@@ -3,6 +3,7 @@ import { pool } from '../config/database';
 import { generateInvoiceMemo } from '../utils/memo';
 import { CreateInvoiceInput } from '../utils/validation';
 import type { InvoiceStats } from '../storage/invoice-stats';
+import { calculateInvoiceExpiry } from '../domain/invoice-expiry';
 
 /** Minimal database surface used by this service (pg Pool or a test double). */
 export interface Queryable {
@@ -45,8 +46,7 @@ export class InvoiceService {
 
     const id = uuidv4();
     const memo = generateInvoiceMemo();
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + (input.expiresInDays || 7));
+    const expiresAt = calculateInvoiceExpiry(input.expiresInDays);
 
     const query = `
       INSERT INTO invoices (
@@ -87,6 +87,7 @@ export class InvoiceService {
    * Get invoice by ID
    */
   async getInvoiceById(id: string): Promise<Invoice | null> {
+    await this.markExpiredInvoices();
     const query = 'SELECT * FROM invoices WHERE id = $1';
     const result = await this.db.query(query, [id]);
 
@@ -101,6 +102,7 @@ export class InvoiceService {
    * Get invoice by memo
    */
   async getInvoiceByMemo(memo: string): Promise<Invoice | null> {
+    await this.markExpiredInvoices();
     const query = 'SELECT * FROM invoices WHERE memo = $1';
     const result = await this.db.query(query, [memo]);
 
@@ -124,7 +126,7 @@ export class InvoiceService {
       UPDATE invoices 
       SET status = 'PAID', payment_tx_hash = $2, payer_public_key = $3, paid_at = NOW(),
           payer_name = $4, payer_email = $5
-      WHERE id = $1
+      WHERE id = $1 AND status = 'PENDING' AND expires_at > NOW()
       RETURNING *
     `;
 
@@ -138,7 +140,7 @@ export class InvoiceService {
       ]);
 
       if (result.rows.length === 0) {
-        throw new Error('Invoice not found');
+        throw new Error('Invoice not found, expired, or already processed');
       }
 
       console.log('✅ Invoice marked as paid:', invoiceId);
@@ -168,6 +170,8 @@ export class InvoiceService {
       throw new Error('Seller public key is required');
     }
 
+    await this.markExpiredInvoices();
+
     let query = 'SELECT * FROM invoices WHERE seller_public_key = $1';
     const params: any[] = [sellerPublicKey];
 
@@ -187,6 +191,7 @@ export class InvoiceService {
    * Cancel an invoice
    */
   async cancelInvoice(invoiceId: string): Promise<Invoice> {
+    await this.markExpiredInvoices();
     const query = `
       UPDATE invoices 
       SET status = 'CANCELLED'
@@ -206,15 +211,15 @@ export class InvoiceService {
   /**
    * Mark expired invoices
    */
-  async markExpiredInvoices(): Promise<number> {
+  async markExpiredInvoices(now: Date = new Date()): Promise<number> {
     const query = `
       UPDATE invoices 
       SET status = 'EXPIRED'
-      WHERE status = 'PENDING' AND expires_at < NOW()
+      WHERE status = 'PENDING' AND expires_at <= $1
       RETURNING id
     `;
 
-    const result = await this.db.query(query);
+    const result = await this.db.query(query, [now]);
     console.log(`⏰ Marked ${result.rowCount} invoices as expired`);
     return result.rowCount || 0;
   }
@@ -239,11 +244,14 @@ export class InvoiceService {
       throw new Error('Seller public key is required');
     }
 
+    await this.markExpiredInvoices();
+
     const query = `
       SELECT 
         COUNT(*) as total_invoices,
         COALESCE(SUM(CASE WHEN status = 'PAID' THEN 1 ELSE 0 END), 0) as paid_invoices,
         COALESCE(SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END), 0) as pending_invoices,
+        COALESCE(SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END), 0) as actionable_invoices,
         COALESCE(SUM(CASE WHEN status = 'EXPIRED' THEN 1 ELSE 0 END), 0) as expired_invoices,
         COALESCE(
           (
@@ -280,6 +288,7 @@ export class InvoiceService {
       total_invoices: Number(row.total_invoices),
       paid_invoices: Number(row.paid_invoices),
       pending_invoices: Number(row.pending_invoices),
+      actionable_invoices: Number(row.actionable_invoices ?? row.pending_invoices),
       expired_invoices: Number(row.expired_invoices),
       revenue_by_asset: revenueByAsset,
     };

@@ -297,11 +297,14 @@ describe('checkInvoiceIsPayable', () => {
     assert.equal(paid.ok, false);
     assert.equal(paid.ok ? '' : paid.code, 'INVOICE_ALREADY_PAID');
 
-    for (const status of ['EXPIRED', 'CANCELLED']) {
-      const result = checkInvoiceIsPayable(status);
-      assert.equal(result.ok, false);
-      assert.equal(result.ok ? '' : result.code, 'INVOICE_NOT_PENDING');
-    }
+    const expired = checkInvoiceIsPayable('EXPIRED');
+    assert.equal(expired.ok, false);
+    assert.equal(expired.ok ? '' : expired.code, 'INVOICE_EXPIRED');
+    assert.equal(expired.ok ? '' : expired.error, 'Invoice has expired and can no longer accept payment');
+
+    const cancelled = checkInvoiceIsPayable('CANCELLED');
+    assert.equal(cancelled.ok, false);
+    assert.equal(cancelled.ok ? '' : cancelled.code, 'INVOICE_NOT_PENDING');
   });
 });
 

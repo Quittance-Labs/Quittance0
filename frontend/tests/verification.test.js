@@ -82,6 +82,7 @@ test('covers every rejection code with a message', () => {
     'INVALID_PAYER_EMAIL',
     'PAYER_INFO_TOO_LONG',
     'INVOICE_ALREADY_PAID',
+    'INVOICE_EXPIRED',
     'INVOICE_NOT_PENDING',
     'TRANSACTION_NOT_FOUND',
     'NO_PAYMENT_OPERATION',

@@ -210,11 +210,8 @@ export default function PaymentPage() {
     process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET'
       ? 'https://stellar.expert/explorer/testnet'
       : 'https://stellar.expert/explorer/public';
-  const isExpired = isExpiredInvoice(invoice.status);
-  const showPaymentControls = shouldShowPaymentControls(
-    invoice.status,
-    invoice.paymentTxHash
-  );
+  const isExpired = isExpiredInvoice(invoice);
+  const showPaymentControls = shouldShowPaymentControls(invoice);
 
   return (
     <div className="min-h-screen bg-logo-pattern relative py-8 sm:py-12 px-4">
@@ -317,7 +314,7 @@ export default function PaymentPage() {
               <div className="border-b pb-4">
                 <p className="text-sm text-gray-600 mb-1">Status</p>
                 <div className="inline-flex items-center gap-2 mt-1">
-                  {invoice.status === 'PENDING' && (
+                  {invoice.status === 'PENDING' && !isExpired && (
                     <>
                       <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
                       <span className="text-yellow-700 font-semibold">Waiting for Payment</span>
@@ -338,7 +335,7 @@ export default function PaymentPage() {
                 </div>
               </div>
 
-              {invoice.status === 'PENDING' && (
+              {invoice.status === 'PENDING' && !isExpired && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <p className="text-sm text-blue-800 font-semibold mb-1">Expires In</p>
                   <p className="text-blue-700 font-semibold text-lg">
@@ -378,7 +375,7 @@ export default function PaymentPage() {
               </div>
             )}
 
-            {invoice.status === 'PENDING' && (
+            {invoice.status === 'PENDING' && !isExpired && (
               <div className="bg-gray-50 p-4 rounded-lg space-y-3 border">
                 <h3 className="font-semibold text-gray-900 mb-3">Payment Information</h3>
                 
@@ -531,6 +528,7 @@ export default function PaymentPage() {
                     invoiceId={invoice.id}
                     payerName={payerName}
                     payerEmail={payerEmail}
+                    invoiceStatus={isExpired ? 'EXPIRED' : invoice.status}
                     onStart={() => dispatch({ type: 'PAY_STARTED' })}
                     onSuccess={handlePaymentSuccess}
                     onError={(message) => dispatch({ type: 'PAY_FAILED', error: message })}

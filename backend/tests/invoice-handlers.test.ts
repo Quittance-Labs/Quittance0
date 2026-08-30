@@ -121,8 +121,21 @@ function createFakePostgres() {
       return { rows: page.map(clone), rowCount: page.length };
     }
 
+    if (sql.startsWith("UPDATE invoices SET status = 'EXPIRED'")) {
+      const now = new Date(params[0]).getTime();
+      const expired = rows.filter(
+        row => row.status === 'PENDING' && new Date(row.expires_at).getTime() <= now
+      );
+      expired.forEach(row => { row.status = 'EXPIRED'; });
+      return { rows: expired.map(row => ({ id: row.id })), rowCount: expired.length };
+    }
+
     if (sql.startsWith("UPDATE invoices SET status = 'PAID'")) {
-      const row = rows.find(candidate => candidate.id === params[0]);
+      const row = rows.find(
+        candidate => candidate.id === params[0] &&
+          candidate.status === 'PENDING' &&
+          new Date(candidate.expires_at).getTime() > Date.now()
+      );
       if (!row) {
         return { rows: [], rowCount: 0 };
       }
@@ -163,6 +176,7 @@ function createFakePostgres() {
             total_invoices: String(owned.length),
             paid_invoices: String(owned.filter(row => row.status === 'PAID').length),
             pending_invoices: String(owned.filter(row => row.status === 'PENDING').length),
+            actionable_invoices: String(owned.filter(row => row.status === 'PENDING').length),
             expired_invoices: String(owned.filter(row => row.status === 'EXPIRED').length),
             revenue_by_asset: revenue,
           },
@@ -253,6 +267,55 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       );
       assert.match(res.body.data.qrCode, /^data:image\/png;base64,/);
       assert.match(res.body.data.stellarQrCode, /^data:image\/png;base64,/);
+      assert.equal(res.body.data.paymentAvailable, true);
+    });
+
+    it('accepts seller-selected expiry only within the 1-30 day contract', async () => {
+      const invoice = await createInvoice({ expiresInDays: 30 });
+      const lifetime = new Date(invoice.expiresAt).getTime() - new Date(invoice.createdAt).getTime();
+      assert.ok(lifetime > 29 * 24 * 60 * 60 * 1000);
+
+      for (const expiresInDays of [0, 31, 1.5]) {
+        const res = await call(
+          handlers().createInvoice,
+          createReq({ body: invoiceBody({ expiresInDays }) })
+        );
+        assert.equal(res.statusCode, 400);
+      }
+    });
+
+    it('expires lazily and closes payment, verification, and actionable stats', async () => {
+      const invoice = await createInvoice({ expiresInDays: 1 });
+      await storage.markExpiredInvoices(new Date(new Date(invoice.expiresAt).getTime() + 1));
+
+      const read = await call(
+        handlers().getInvoice,
+        createReq({ params: { id: invoice.id } })
+      );
+      assert.equal(read.body.data.status, 'EXPIRED');
+
+      const paymentInfo = await call(
+        handlers().getPaymentInfo,
+        createReq({ params: { id: invoice.id } })
+      );
+      assert.equal(paymentInfo.body.data.paymentAvailable, false);
+      assert.equal(paymentInfo.body.data.qrCode, null);
+      assert.equal(paymentInfo.body.data.stellarQrCode, null);
+
+      const verify = await call(
+        handlers().verifyPayment,
+        createReq({ params: { id: invoice.id }, body: { txHash: TX_HASH } })
+      );
+      assert.equal(verify.statusCode, 400);
+      assert.equal(verify.body.code, 'INVOICE_EXPIRED');
+
+      const stats = await call(
+        handlers().getStats,
+        createReq({ query: { sellerPublicKey: SELLER_A } })
+      );
+      assert.equal(stats.body.data[0].pending_invoices, 0);
+      assert.equal(stats.body.data[0].actionable_invoices, 0);
+      assert.equal(stats.body.data[0].expired_invoices, 1);
     });
 
     it('rejects an invoice with an invalid seller wallet', async () => {
@@ -447,6 +510,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
         total_invoices: 1,
         paid_invoices: 1,
         pending_invoices: 0,
+        actionable_invoices: 0,
         expired_invoices: 0,
         revenue_by_asset: { XLM: 42.5 },
       });

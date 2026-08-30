@@ -17,6 +17,7 @@ export type VerificationCode =
   | 'INVALID_PAYER_EMAIL'
   | 'PAYER_INFO_TOO_LONG'
   | 'INVOICE_ALREADY_PAID'
+  | 'INVOICE_EXPIRED'
   | 'INVOICE_NOT_PENDING'
   | 'TRANSACTION_NOT_FOUND'
   | 'NO_PAYMENT_OPERATION'
@@ -34,6 +35,7 @@ export const VERIFICATION_MESSAGES: Record<VerificationCode, string> = {
   INVALID_PAYER_EMAIL: 'Payer email is invalid',
   PAYER_INFO_TOO_LONG: 'Payer information is too long',
   INVOICE_ALREADY_PAID: 'Invoice has already been paid',
+  INVOICE_EXPIRED: 'Invoice has expired and can no longer accept payment',
   INVOICE_NOT_PENDING: 'Invoice is not pending',
   TRANSACTION_NOT_FOUND: 'Transaction not found on Stellar',
   NO_PAYMENT_OPERATION: 'No payment operation found in transaction',
@@ -125,6 +127,9 @@ export function checkPayerInfo(input: PayerInfo | Record<string, any>): Verifica
 export function checkInvoiceIsPayable(status: string): VerificationResult<null> {
   if (status === 'PAID') {
     return failure('INVOICE_ALREADY_PAID');
+  }
+  if (status === 'EXPIRED') {
+    return failure('INVOICE_EXPIRED');
   }
   if (status !== 'PENDING') {
     return failure('INVOICE_NOT_PENDING');

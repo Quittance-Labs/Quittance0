@@ -74,6 +74,7 @@ Rejections return a stable `code` alongside the human-readable `error`:
 | `INVALID_PAYER_EMAIL` | Payer email is invalid | 400 |
 | `PAYER_INFO_TOO_LONG` | Payer information is too long | 400 |
 | `INVOICE_ALREADY_PAID` | Invoice has already been paid | 400 |
+| `INVOICE_EXPIRED` | Invoice has expired and can no longer accept payment | 400 |
 | `INVOICE_NOT_PENDING` | Invoice is not pending | 400 |
 | `TRANSACTION_NOT_FOUND` | Transaction not found on Stellar | 404 |
 | `NO_PAYMENT_OPERATION` | No payment operation found in transaction | 400 |
@@ -91,6 +92,16 @@ Amounts compare at Stellar's 7-decimal (stroop) precision, so `100` and
 `100.0000000` match while a partial payment does not.
 
 Run the checks: `cd backend && npm test` — `cd frontend && npm test`.
+
+### Invoice expiry lifecycle
+
+Sellers choose a payment window of **1–30 days** (7 days by default). Both
+storage backends persist `expiresAt` and lazily transition elapsed `PENDING`
+invoices to `EXPIRED` before get, list, stats, verify, cancel, or monitor work.
+Expired invoices remain visible in seller history, but they are excluded from
+pending/actionable counts and cannot expose QR, pay, verify, or payment-proof
+controls. The client also projects stale pending data through `expiresAt` so a
+page fails closed while it waits for the next authoritative server response.
 
 ---
 

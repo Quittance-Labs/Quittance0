@@ -12,6 +12,7 @@ import PaymentReceipt from '@/components/PaymentReceipt';
 import { formatAmount, formatDate, getTimeRemaining, getShareUrl } from '@/lib/utils';
 import { ArrowLeft, Share2, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
 
 export default function InvoiceDetailPage() {
   const params = useParams();
@@ -22,10 +23,16 @@ export default function InvoiceDetailPage() {
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [userWallet, setUserWallet] = useState<string | null>(null);
+  const [lifecycleNow, setLifecycleNow] = useState(() => Date.now());
 
   useEffect(() => {
     loadInvoice();
   }, [id]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setLifecycleNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const loadInvoice = async () => {
     try {
@@ -101,6 +108,9 @@ export default function InvoiceDetailPage() {
     );
   }
 
+  const effectiveStatus = (effectiveInvoiceStatus(invoice, lifecycleNow) || invoice.status) as
+    'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
+
   return (
     <div className="min-h-screen bg-logo-pattern relative py-8 sm:py-12 px-4">
       <div className="orb orb-1"></div>
@@ -129,7 +139,7 @@ export default function InvoiceDetailPage() {
               ) : (
                 <UserProfile userWallet={userWallet} onDisconnect={() => setUserWallet(null)} />
               )}
-              {invoice.status === 'PENDING' && (
+              {effectiveStatus === 'PENDING' && (
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleShare}
@@ -202,12 +212,19 @@ export default function InvoiceDetailPage() {
                   <p className="text-gray-900">{formatDate(invoice.createdAt)}</p>
                 </div>
 
-                {invoice.status === 'PENDING' && (
+                {effectiveStatus === 'PENDING' && (
                   <div className="border-b pb-4">
                     <p className="text-sm text-gray-600 mb-1">Expires In</p>
                     <p className="text-gray-900 font-semibold">
                       {getTimeRemaining(invoice.expiresAt)}
                     </p>
+                  </div>
+                )}
+
+                {effectiveStatus === 'EXPIRED' && (
+                  <div className="border-b pb-4">
+                    <p className="text-sm text-gray-600 mb-1">Expired At</p>
+                    <p className="text-red-700 font-semibold">{formatDate(invoice.expiresAt)}</p>
                   </div>
                 )}
 
@@ -221,15 +238,15 @@ export default function InvoiceDetailPage() {
             </div>
 
             <div className="space-y-6">
-              {invoice.status !== 'PAID' && (
-                <PaymentStatus status={invoice.status} txHash={invoice.paymentTxHash} />
+              {effectiveStatus !== 'PAID' && (
+                <PaymentStatus status={effectiveStatus} txHash={invoice.paymentTxHash} />
               )}
 
-              {invoice.status === 'PAID' && (
+              {effectiveStatus === 'PAID' && (
                 <PaymentReceipt invoice={invoice} />
               )}
 
-              {invoice.status === 'PENDING' && paymentInfo && (
+              {effectiveStatus === 'PENDING' && paymentInfo?.paymentAvailable !== false && (
                 <div className="card">
                   <h3 className="text-lg font-semibold mb-4 text-center">
                     Payment QR Code

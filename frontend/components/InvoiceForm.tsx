@@ -21,6 +21,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   const [sellerEmail, setSellerEmail] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  const [expiresInDays, setExpiresInDays] = useState(7);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,7 +53,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
         amount: parseFloat(amount),
         assetCode: assetCode,
         assetIssuer: selectedAsset?.issuer,
-        expiresInDays: 7,
+        expiresInDays,
         sellerPublicKey: userWallet,
         sellerName: sellerName.trim() || undefined,
         sellerEmail: sellerEmail.trim() || undefined,
@@ -70,6 +71,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       setSellerEmail('');
       setCustomerName('');
       setCustomerEmail('');
+      setExpiresInDays(7);
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to create invoice');
     } finally {
@@ -120,6 +122,25 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
           onChange={(e) => setDescription(e.target.value)}
           maxLength={500}
         />
+      </div>
+
+      <div>
+        <label className="label" htmlFor="invoice-expiry">Payment window</label>
+        <select
+          id="invoice-expiry"
+          className="input w-full text-sm"
+          value={expiresInDays}
+          onChange={(event) => setExpiresInDays(Number(event.target.value))}
+        >
+          {[1, 3, 7, 14, 30].map((days) => (
+            <option key={days} value={days}>
+              {days} day{days === 1 ? '' : 's'}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-gray-500 mt-1">
+          After this window the invoice stays in history but cannot be paid or verified.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

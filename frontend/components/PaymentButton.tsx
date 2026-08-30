@@ -17,6 +17,7 @@ interface PaymentButtonProps {
   invoiceId?: string;
   payerName?: string;
   payerEmail?: string;
+  invoiceStatus?: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
   /** Fired when the payer commits to paying, before the wallet is opened. */
   onStart?: () => void;
   onSuccess?: (txHash: string) => void;
@@ -35,6 +36,7 @@ export default function PaymentButton({
   invoiceId,
   payerName,
   payerEmail,
+  invoiceStatus = 'PENDING',
   onStart,
   onSuccess,
   onError,
@@ -42,6 +44,15 @@ export default function PaymentButton({
   const [loading, setLoading] = useState(false);
 
   const handlePayment = async () => {
+    if (invoiceStatus !== 'PENDING') {
+      const message = invoiceStatus === 'EXPIRED'
+        ? 'This invoice has expired and cannot be paid'
+        : 'This invoice is not available for payment';
+      toast.error(message);
+      onError?.(message);
+      return;
+    }
+
     // Payer details are validated by the shared state module, so the button,
     // the page and the tests all agree on what a valid email is.
     const payer = normalizePayerDetails({ payerName, payerEmail });
@@ -116,7 +127,7 @@ export default function PaymentButton({
   return (
     <button
       onClick={handlePayment}
-      disabled={loading}
+      disabled={loading || invoiceStatus !== 'PENDING'}
       className="btn btn-primary w-full flex items-center justify-center gap-2 text-lg py-4"
     >
       {loading ? (
