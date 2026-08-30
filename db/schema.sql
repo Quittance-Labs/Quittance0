@@ -22,9 +22,9 @@ CREATE TABLE IF NOT EXISTS invoices (
   payer_public_key VARCHAR(56),
   payer_name VARCHAR(255),
   payer_email VARCHAR(255),
-  created_at TIMESTAMP DEFAULT NOW(),
-  paid_at TIMESTAMP,
-  expires_at TIMESTAMP DEFAULT NOW() + INTERVAL '7 days',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  paid_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '7 days',
   metadata JSONB
 );
 
@@ -59,12 +59,20 @@ CREATE TABLE IF NOT EXISTS payment_events (
 ALTER TABLE invoices DROP COLUMN IF EXISTS user_id;
 DROP TABLE IF EXISTS users CASCADE;
 
+-- Converge databases created before expiry became an enforced lifecycle.
+UPDATE invoices
+SET expires_at = COALESCE(created_at, NOW()) + INTERVAL '7 days'
+WHERE expires_at IS NULL;
+ALTER TABLE invoices ALTER COLUMN expires_at SET DEFAULT NOW() + INTERVAL '7 days';
+ALTER TABLE invoices ALTER COLUMN expires_at SET NOT NULL;
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_invoices_seller ON invoices(seller_public_key);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
 CREATE INDEX IF NOT EXISTS idx_invoices_memo ON invoices(memo);
 CREATE INDEX IF NOT EXISTS idx_invoices_created_at ON invoices(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_invoices_seller_created_at ON invoices(seller_public_key, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_invoices_pending_expiry ON invoices(expires_at) WHERE status = 'PENDING';
 CREATE INDEX IF NOT EXISTS idx_transactions_tx_hash ON transactions(tx_hash);
 CREATE INDEX IF NOT EXISTS idx_transactions_invoice_id ON transactions(invoice_id);
 
@@ -75,6 +83,8 @@ SELECT
   COUNT(*) as total_invoices,
   SUM(CASE WHEN status = 'PAID' THEN 1 ELSE 0 END) as paid_invoices,
   SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) as pending_invoices,
+  SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) as actionable_invoices,
+  SUM(CASE WHEN status = 'EXPIRED' THEN 1 ELSE 0 END) as expired_invoices,
   SUM(CASE WHEN status = 'PAID' THEN amount ELSE 0 END) as total_revenue,
   asset_code
 FROM invoices

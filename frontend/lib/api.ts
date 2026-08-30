@@ -1,11 +1,22 @@
 import axios from 'axios';
 import { mockInvoiceApi, mockStellarApi, mockHealthCheck } from './mock-api';
+import {
+  ApiUnavailableError,
+  apiErrorMessage,
+  isApiUnavailableError,
+  resolveApiConfig,
+  toApiError,
+} from './api-runtime';
 
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+export const API_CONFIG = resolveApiConfig(
+  process.env.NEXT_PUBLIC_API_URL,
+  process.env.NODE_ENV
+);
 
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_CONFIG.baseUrl,
+  timeout: 12000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -14,8 +25,9 @@ const api = axios.create({
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
-    return Promise.reject(error);
+    const normalized = toApiError(error);
+    console.error('API Error:', normalized.code, normalized.message);
+    return Promise.reject(normalized);
   }
 );
 export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
@@ -26,7 +38,7 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     description?: string;
     customerName?: string;
     customerEmail?: string;
-    expiresInDays?: number;
+    expiresInDays: number;
     sellerPublicKey?: string;
     sellerName?: string;
     sellerEmail?: string;
@@ -113,9 +125,13 @@ export const stellarApi = USE_MOCK_API ? mockStellarApi : {
 
 // Health check
 export const healthCheck = USE_MOCK_API ? mockHealthCheck : async () => {
+  if (!API_CONFIG.configured) {
+    throw new ApiUnavailableError(API_CONFIG.error || undefined);
+  }
   const response = await api.get('/health');
   return response.data;
 };
 
-export default api;
+export { apiErrorMessage, isApiUnavailableError };
 
+export default api;

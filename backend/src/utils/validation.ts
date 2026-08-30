@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  DEFAULT_INVOICE_EXPIRY_DAYS,
+  MAX_INVOICE_EXPIRY_DAYS,
+  MIN_INVOICE_EXPIRY_DAYS,
+} from '../domain/invoice-expiry';
 import { NATIVE_ASSET_CODE, requiresIssuer } from './asset-helpers';
 
 // Stellar public key validation
@@ -24,7 +29,11 @@ export const createInvoiceSchema = z
     customerEmail: z.string().email().optional(),
     sellerName: z.string().max(255).optional(),
     sellerEmail: z.string().email().optional(),
-    expiresInDays: z.number().min(1).max(365).default(7).optional(),
+    expiresInDays: z.number()
+      .int()
+      .min(MIN_INVOICE_EXPIRY_DAYS)
+      .max(MAX_INVOICE_EXPIRY_DAYS)
+      .default(DEFAULT_INVOICE_EXPIRY_DAYS),
     sellerPublicKey: stellarPublicKeySchema,
   })
   .refine(
@@ -59,4 +68,3 @@ export default {
   paymentSchema,
   stellarPublicKeySchema,
 };
-

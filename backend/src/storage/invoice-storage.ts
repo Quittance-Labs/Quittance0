@@ -59,4 +59,6 @@ export interface InvoiceStorage {
     payerInfo?: PayerInfo
   ): Promise<StoredInvoice>;
   getInvoiceStats(sellerPublicKey: string): Promise<InvoiceStats[]>;
+  /** Explicit maintenance hook; reads also apply this transition lazily. */
+  markExpiredInvoices(now?: Date): Promise<number>;
 }

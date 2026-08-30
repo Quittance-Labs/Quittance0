@@ -5,7 +5,8 @@ import {
   checkWalletConnection, 
   requestWalletAccess, 
   getUserPublicKey,
-  getAccountBalance 
+  getAccountBalance,
+  describeStellarNetworkError,
 } from '@/lib/stellar';
 import { useWalletStore } from '@/lib/store';
 import { paymentMonitor } from '@/lib/payment-monitor';
@@ -46,6 +47,12 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
       if (error.message?.includes('Not Found') || error.response?.status === 404) {
         setWallet(key, '0.00');
         toast.warning('Account needs funding');
+      } else {
+        // Wallet identity is still usable even if Horizon balance lookup is down.
+        setWallet(key, '—');
+        toast.warning('Wallet connected; balance unavailable', {
+          description: describeStellarNetworkError(error),
+        });
       }
     }
   };

@@ -32,6 +32,12 @@ test('only EXPIRED is treated as expired', () => {
   }
 });
 
+test('a PENDING status with elapsed expiresAt is treated as expired', () => {
+  const invoice = { status: 'PENDING', expiresAt: '2000-01-01T00:00:00.000Z' };
+  assert.equal(isExpiredInvoice(invoice), true);
+  assert.equal(shouldShowPaymentControls(invoice), false);
+});
+
 test('an unknown or missing status is not treated as expired', () => {
   assert.equal(isExpiredInvoice(undefined), false);
   assert.equal(isExpiredInvoice(null), false);

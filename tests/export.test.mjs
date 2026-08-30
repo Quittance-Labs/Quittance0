@@ -1,19 +1,8 @@
 import assert from 'node:assert/strict';
-import { registerHooks } from 'node:module';
+import { register } from 'node:module';
 import test from 'node:test';
 
-registerHooks({
-  resolve(specifier, context, nextResolve) {
-    if (specifier === 'date-fns') {
-      return {
-        shortCircuit: true,
-        url: 'data:text/javascript,export function format() { return "formatted date"; }',
-      };
-    }
-
-    return nextResolve(specifier, context);
-  },
-});
+register('./export-loader.mjs', import.meta.url);
 
 const {
   escapeHtml,

@@ -12,9 +12,11 @@ const assert = require('node:assert/strict');
 const {
   belongsToSeller,
   dashboardDataFor,
+  actionableInvoices,
   emptyDashboardData,
   exportableInvoices,
   hasAnyInvoices,
+  historicalInvoices,
   invoiceSearchText,
   revenueEntries,
   scopeInvoicesToSeller,
@@ -158,6 +160,34 @@ test('only paid invoices are exportable', () => {
   ];
 
   assert.deepEqual(exportableInvoices(invoices).map((i) => i.id), ['a', 'd']);
+});
+
+test('elapsed pending invoices leave actionable counts but remain in history', () => {
+  const now = '2026-08-30T12:00:00.000Z';
+  const invoices = [
+    invoice({ id: 'live', expiresAt: '2026-08-31T12:00:00.000Z' }),
+    invoice({ id: 'elapsed', expiresAt: '2026-08-29T12:00:00.000Z' }),
+    invoice({ id: 'paid', status: 'PAID' }),
+  ];
+
+  assert.deepEqual(actionableInvoices(invoices, now).map((i) => i.id), ['live']);
+  assert.deepEqual(historicalInvoices(invoices, now).map((i) => i.id), ['elapsed', 'paid']);
+  assert.equal(historicalInvoices(invoices, now)[0].status, 'EXPIRED');
+});
+
+test('dashboard stats reconcile a locally elapsed invoice until the next server read', () => {
+  const now = '2026-08-30T12:00:00.000Z';
+  const loaded = {
+    owner: ALICE,
+    invoices: [invoice({ expiresAt: '2026-08-29T12:00:00.000Z' })],
+    stats: { total_invoices: 1, pending_invoices: 1, actionable_invoices: 1, expired_invoices: 0 },
+  };
+  const shown = dashboardDataFor(loaded, ALICE, now);
+
+  assert.equal(shown.stats.pending_invoices, 0);
+  assert.equal(shown.stats.actionable_invoices, 0);
+  assert.equal(shown.stats.expired_invoices, 1);
+  assert.equal(shown.invoices[0].status, 'EXPIRED');
 });
 
 test('export handles nothing to export', () => {

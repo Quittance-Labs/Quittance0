@@ -155,6 +155,14 @@ describe('invoice payment loop', () => {
     await new Promise<void>((resolve) => horizon.close(() => resolve()));
   });
 
+  it('exposes the deploy liveness contract', async () => {
+    const health = await jsonRequest(port, 'GET', '/api/health');
+    assert.equal(health.status, 200);
+    assert.equal(health.body.status, 'ok');
+    assert.equal(health.body.storage, 'in-memory');
+    assert.equal(health.body.simulationEnabled, false);
+  });
+
   it('marks an invoice PAID when the transaction matches', async () => {
     const invoice = await createInvoice(port);
     assert.equal(invoice.status, 'PENDING');

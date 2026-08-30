@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { invoiceApi } from '@/lib/api';
+import { apiErrorMessage, invoiceApi, isApiUnavailableError } from '@/lib/api';
 import PaymentButton from '@/components/PaymentButton';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import WalletConnect from '@/components/WalletConnect';
@@ -25,6 +25,7 @@ import {
   shouldShowPaymentControls,
 } from '@/lib/payment-page-state';
 import { checkTxHash } from '@/lib/verification';
+import ApiErrorState from '@/components/ApiErrorState';
 
 export default function PaymentPage() {
   const params = useParams();
@@ -39,6 +40,7 @@ export default function PaymentPage() {
   const [verifyTxHash, setVerifyTxHash] = useState<string>('');
   const [payerName, setPayerName] = useState<string>('');
   const [payerEmail, setPayerEmail] = useState<string>('');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const invoice = payment.invoice as any;
   const verifying = payment.status === PAY_STATES.VERIFYING;
@@ -50,20 +52,28 @@ export default function PaymentPage() {
 
   const loadInvoice = useCallback(async () => {
     const generation = requestGeneration.current;
+    setLoadError(null);
 
     try {
-      const [invoiceResult, paymentResult] = await Promise.all([
+      const [invoiceResult, paymentResult] = await Promise.allSettled([
         invoiceApi.getById(id),
         invoiceApi.getPaymentInfo(id),
       ]);
 
       if (generation !== requestGeneration.current) return;
+      if (invoiceResult.status === 'rejected') throw invoiceResult.reason;
 
-      dispatch({ type: 'INVOICE_LOADED', invoice: invoiceResult.data });
-      setPaymentInfo(paymentResult.data);
+      dispatch({ type: 'INVOICE_LOADED', invoice: invoiceResult.value.data });
+      if (paymentResult.status === 'fulfilled') {
+        setPaymentInfo(paymentResult.value.data);
+      } else {
+        setLoadError(apiErrorMessage(paymentResult.reason));
+      }
     } catch (error: any) {
       if (generation !== requestGeneration.current) return;
-      toast.error('Failed to load invoice');
+      const message = apiErrorMessage(error, 'Failed to load invoice');
+      setLoadError(message);
+      toast.error(message);
     } finally {
       if (generation === requestGeneration.current) {
         setLoading(false);
@@ -105,6 +115,7 @@ export default function PaymentPage() {
         }
       } catch (error) {
         console.error('Polling error:', error);
+        if (isApiUnavailableError(error)) setLoadError(apiErrorMessage(error));
       }
     }, 3000);
 
@@ -150,6 +161,7 @@ export default function PaymentPage() {
 
       console.error('Manual verification error:', error);
       const message = describeVerifyError(error);
+      if (isApiUnavailableError(error)) setLoadError(apiErrorMessage(error));
       toast.error(message, { id: 'verify-toast' });
       dispatch({ type: 'VERIFY_FAILED', error: message });
     }
@@ -193,6 +205,15 @@ export default function PaymentPage() {
   }
 
   if (!invoice) {
+    if (loadError) {
+      return (
+        <div className="min-h-screen bg-logo-pattern flex items-center justify-center px-4">
+          <div className="max-w-lg w-full">
+            <ApiErrorState message={loadError} onRetry={() => void loadInvoice()} />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-logo-pattern relative flex items-center justify-center">
         <div className="orb orb-1"></div>
@@ -210,11 +231,8 @@ export default function PaymentPage() {
     process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET'
       ? 'https://stellar.expert/explorer/testnet'
       : 'https://stellar.expert/explorer/public';
-  const isExpired = isExpiredInvoice(invoice.status);
-  const showPaymentControls = shouldShowPaymentControls(
-    invoice.status,
-    invoice.paymentTxHash
-  );
+  const isExpired = isExpiredInvoice(invoice);
+  const showPaymentControls = shouldShowPaymentControls(invoice);
 
   return (
     <div className="min-h-screen bg-logo-pattern relative py-8 sm:py-12 px-4">
@@ -240,6 +258,11 @@ export default function PaymentPage() {
         </header>
 
         <div className="pt-20">
+        {loadError && (
+          <div className="mb-6">
+            <ApiErrorState message={loadError} onRetry={() => void loadInvoice()} compact />
+          </div>
+        )}
         <div className="text-center mb-10 sm:mb-12">
           <div className="inline-block mb-4 px-6 py-2 bg-gradient-to-r from-cyan-400/20 to-blue-500/20 backdrop-blur-md rounded-full border border-white/30">
             <span className="text-white text-sm font-semibold tracking-wide">
@@ -317,7 +340,7 @@ export default function PaymentPage() {
               <div className="border-b pb-4">
                 <p className="text-sm text-gray-600 mb-1">Status</p>
                 <div className="inline-flex items-center gap-2 mt-1">
-                  {invoice.status === 'PENDING' && (
+                  {invoice.status === 'PENDING' && !isExpired && (
                     <>
                       <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
                       <span className="text-yellow-700 font-semibold">Waiting for Payment</span>
@@ -338,7 +361,7 @@ export default function PaymentPage() {
                 </div>
               </div>
 
-              {invoice.status === 'PENDING' && (
+              {invoice.status === 'PENDING' && !isExpired && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <p className="text-sm text-blue-800 font-semibold mb-1">Expires In</p>
                   <p className="text-blue-700 font-semibold text-lg">
@@ -378,7 +401,7 @@ export default function PaymentPage() {
               </div>
             )}
 
-            {invoice.status === 'PENDING' && (
+            {invoice.status === 'PENDING' && !isExpired && (
               <div className="bg-gray-50 p-4 rounded-lg space-y-3 border">
                 <h3 className="font-semibold text-gray-900 mb-3">Payment Information</h3>
                 
@@ -531,6 +554,7 @@ export default function PaymentPage() {
                     invoiceId={invoice.id}
                     payerName={payerName}
                     payerEmail={payerEmail}
+                    invoiceStatus={isExpired ? 'EXPIRED' : invoice.status}
                     onStart={() => dispatch({ type: 'PAY_STARTED' })}
                     onSuccess={handlePaymentSuccess}
                     onError={(message) => dispatch({ type: 'PAY_FAILED', error: message })}

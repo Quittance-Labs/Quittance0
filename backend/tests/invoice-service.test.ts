@@ -45,6 +45,15 @@ class FakeInvoiceDb implements Queryable {
       return { rows: [row], rowCount: 1 };
     }
 
+    if (text.includes("SET status = 'EXPIRED'")) {
+      const now = new Date(params[0]).getTime();
+      const expired = this.rows.filter(
+        row => row.status === 'PENDING' && new Date(row.expires_at).getTime() <= now
+      );
+      expired.forEach(row => { row.status = 'EXPIRED'; });
+      return { rows: expired.map(row => ({ id: row.id })), rowCount: expired.length };
+    }
+
     if (text.includes('FROM invoices')) {
       const scoped = text.includes('seller_public_key = $1')
         ? this.rows.filter(row => row.seller_public_key === params[0])
@@ -63,6 +72,7 @@ class FakeInvoiceDb implements Queryable {
             total_invoices: scoped.length,
             paid_invoices: paid.length,
             pending_invoices: scoped.filter(row => row.status === 'PENDING').length,
+            actionable_invoices: scoped.filter(row => row.status === 'PENDING').length,
             expired_invoices: scoped.filter(row => row.status === 'EXPIRED').length,
             revenue_by_asset: revenueByAsset,
           }],
@@ -149,6 +159,21 @@ describe('InvoiceService (Postgres) seller scoping', () => {
       assert.ok(entry.text.includes('seller_public_key = $1'));
       assert.ok([SELLER_A, SELLER_B].includes(entry.params[0]));
     });
+  });
+
+  it('persists expiry before read, list, and stats responses', async () => {
+    const db = new FakeInvoiceDb();
+    const service = new InvoiceService(db);
+    const created = await service.createInvoice(input(SELLER_A, { expiresInDays: 1 }));
+    db.rows[0].expires_at = new Date(Date.now() - 1);
+
+    assert.equal((await service.getInvoiceById(created.id))?.status, 'EXPIRED');
+    assert.equal((await service.getInvoicesBySeller(SELLER_A))[0].status, 'EXPIRED');
+
+    const [stats] = await service.getInvoiceStats(SELLER_A);
+    assert.equal(stats.pending_invoices, 0);
+    assert.equal(stats.actionable_invoices, 0);
+    assert.equal(stats.expired_invoices, 1);
   });
 
   it('requires a seller wallet for create, list and stats', async () => {

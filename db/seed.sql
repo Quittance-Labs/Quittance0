@@ -8,7 +8,7 @@
 -- Replace them with your own Freighter address to see seeded invoices in the
 -- dashboard while your wallet is connected.
 
--- Seller A: two pending, one paid
+-- Seller A: one pending, one paid, one expired (visible in history, never actionable)
 INSERT INTO invoices (
   id,
   seller_public_key,
@@ -71,12 +71,12 @@ VALUES
     'Consulting hours',
     'USDC Customer',
     NULL,
-    'PENDING',
+    'EXPIRED',
     NULL,
     NULL,
-    NOW() - INTERVAL '3 hours',
+    NOW() - INTERVAL '8 days',
     NULL,
-    NOW() + INTERVAL '6 days'
+    NOW() - INTERVAL '1 day'
   ),
   -- Seller B: one paid invoice, must never show up for Seller A
   (
