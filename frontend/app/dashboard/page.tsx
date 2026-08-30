@@ -31,11 +31,21 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [lifecycleNow, setLifecycleNow] = useState(() => Date.now());
 
-  const { invoices, stats } = dashboardDataFor(loaded, connected ? publicKey : null);
+  const { invoices, stats } = dashboardDataFor(
+    loaded,
+    connected ? publicKey : null,
+    lifecycleNow
+  );
   const filteredInvoices = searchInvoices(invoices, searchQuery);
   const hasAnyInvoices = hasAnyInvoicesIn(stats);
   const revenueByAsset = revenueEntries(stats);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setLifecycleNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!connected || !publicKey) {
@@ -136,7 +146,7 @@ export default function DashboardPage() {
         */}
         <>
             {stats && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
             <div className="card">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -174,6 +184,20 @@ export default function DashboardPage() {
                   <p className="text-sm text-gray-600">Pending</p>
                   <p className="text-2xl font-bold text-gray-900">
                     {stats.pending_invoices || 0}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                  <FileText className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Expired</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {stats.expired_invoices || 0}
                   </p>
                 </div>
               </div>

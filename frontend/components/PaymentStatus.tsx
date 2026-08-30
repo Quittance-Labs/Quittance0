@@ -32,7 +32,7 @@ export default function PaymentStatus({ status, txHash }: PaymentStatusProps) {
       case 'EXPIRED':
         return {
           title: 'Invoice Expired',
-          description: 'This invoice is no longer valid.',
+          description: 'The payment window ended. This record remains available for reference.',
           color: 'text-red-600',
         };
       case 'CANCELLED':
@@ -82,4 +82,3 @@ export default function PaymentStatus({ status, txHash }: PaymentStatusProps) {
     </div>
   );
 }
-
