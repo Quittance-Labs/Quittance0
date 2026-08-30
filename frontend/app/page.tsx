@@ -12,6 +12,7 @@ import { useWalletStore } from '@/lib/store';
 import { Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { shareInvoiceByEmail } from '@/lib/export';
+import { renderLandingBullets } from '@/lib/landing-feature-bullets';
 
 export default function HomePage() {
   const [createdInvoice, setCreatedInvoice] = useState<any>(null);
@@ -103,23 +104,7 @@ export default function HomePage() {
             How it works
           </motion.h2>
           <ol className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-10">
-            {[
-              {
-                n: '01',
-                title: 'Create',
-                body: 'Connect Freighter and issue an invoice. Share the link or QR with your client.',
-              },
-              {
-                n: '02',
-                title: 'Get paid',
-                body: 'They pay on Stellar. We match memo, amount, and destination on Horizon.',
-              },
-              {
-                n: '03',
-                title: 'Keep proof',
-                body: 'Download your quittance as PDF, or email it when a client address is set.',
-              },
-            ].map((step, i) => (
+            {renderLandingBullets().map((step, i) => (
               <motion.li
                 key={step.n}
                 className="border-t border-[var(--ink)] pt-6"
