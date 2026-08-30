@@ -78,22 +78,46 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    /*
+     * Every control below is associated with a visible `<label htmlFor>`. They
+     * previously relied on an adjacent unassociated `<label>` plus a
+     * `placeholder`, which axe accepts as a name but which disappears the moment
+     * the field has a value — leaving a screen-reader user editing an unnamed
+     * box. The asset `<select>` had neither, and failed axe's `select-name`
+     * outright.
+     */
+    <form onSubmit={handleSubmit} className="space-y-4" aria-labelledby="invoice-form-heading">
+      <h3 id="invoice-form-heading" className="sr-only">
+        Invoice details
+      </h3>
+
       <div>
-        <label className="label">Invoice Amount *</label>
+        <label htmlFor="invoice-amount" className="label">
+          Invoice amount <span aria-hidden="true">*</span>
+          <span className="sr-only">(required)</span>
+        </label>
         <div className="flex gap-3 flex-col sm:flex-row">
           <input
+            id="invoice-amount"
+            name="amount"
             type="number"
             step="0.0000001"
             min="0.0000001"
             required
+            aria-required="true"
+            aria-describedby="invoice-amount-hint"
             className="input flex-1 text-2xl font-semibold"
             placeholder="10.00"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
           />
           <div className="relative">
+            <label htmlFor="invoice-asset" className="sr-only">
+              Asset
+            </label>
             <select
+              id="invoice-asset"
+              name="assetCode"
               value={assetCode}
               onChange={(e) => setAssetCode(e.target.value)}
               className="input w-full sm:w-40 text-sm font-semibold pl-12 pr-3 appearance-none cursor-pointer"
@@ -104,16 +128,28 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
                 </option>
               ))}
             </select>
+            {/*
+              The logo repeats the asset code already announced by the select's
+              own value, so it is hidden from assistive technology rather than
+              read twice.
+            */}
             <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-              <AssetLogo code={assetCode} size={24} showName={false} />
+              <AssetLogo code={assetCode} size={24} showName={false} decorative />
             </div>
           </div>
         </div>
+        <p id="invoice-amount-hint" className="field-hint">
+          The amount your client pays, in the selected asset.
+        </p>
       </div>
 
       <div>
-        <label className="label">Description</label>
+        <label htmlFor="invoice-description" className="label">
+          Description
+        </label>
         <textarea
+          id="invoice-description"
+          name="description"
           className="input min-h-[80px] resize-none text-sm"
           placeholder="What is this invoice for?"
           value={description}
@@ -124,9 +160,14 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className="label">Your name (optional)</label>
+          <label htmlFor="seller-name" className="label">
+            Your name (optional)
+          </label>
           <input
+            id="seller-name"
+            name="sellerName"
             type="text"
+            autoComplete="name"
             className="input text-sm"
             placeholder="Your name or business"
             value={sellerName}
@@ -136,9 +177,14 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
         </div>
 
         <div>
-          <label className="label">Your email (optional)</label>
+          <label htmlFor="seller-email" className="label">
+            Your email (optional)
+          </label>
           <input
+            id="seller-email"
+            name="sellerEmail"
             type="email"
+            autoComplete="email"
             className="input text-sm"
             placeholder="you@example.com"
             value={sellerEmail}
@@ -149,8 +195,12 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       </div>
 
       <div>
-        <label className="label">Client name (optional)</label>
+        <label htmlFor="customer-name" className="label">
+          Client name (optional)
+        </label>
         <input
+          id="customer-name"
+          name="customerName"
           type="text"
           className="input text-sm"
           placeholder="Client or company name"
@@ -161,16 +211,21 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       </div>
 
       <div>
-        <label className="label">Client email (optional)</label>
+        <label htmlFor="customer-email" className="label">
+          Client email (optional)
+        </label>
         <input
+          id="customer-email"
+          name="customerEmail"
           type="email"
+          aria-describedby="customer-email-hint"
           className="input text-sm"
-          placeholder="client@example.com — for sending the invoice"
+          placeholder="client@example.com"
           value={customerEmail}
           onChange={(e) => setCustomerEmail(e.target.value)}
           maxLength={255}
         />
-        <p className="text-xs text-gray-500 mt-1">
+        <p id="customer-email-hint" className="field-hint">
           Used only to send the invoice or payment proof. Not required to create an invoice.
         </p>
       </div>
@@ -178,11 +233,12 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       <button
         type="submit"
         disabled={loading}
+        aria-busy={loading}
         className="btn btn-primary w-full flex items-center justify-center gap-2 mt-6"
       >
         {loading ? (
           <>
-            <Loader2 className="w-5 h-5 animate-spin" />
+            <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
             Creating...
           </>
         ) : (

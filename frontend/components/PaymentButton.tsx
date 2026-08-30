@@ -114,19 +114,35 @@ export default function PaymentButton({
   };
 
   return (
+    /*
+     * The accessible name spells out the amount and asset (issue #289). "Pay
+     * with Freighter" on its own does not say what is about to leave the
+     * payer's wallet, and the amount lives in a separate panel rendered with
+     * `bg-clip-text`, so a screen-reader user confirming a payment had no way
+     * to hear the figure from the control itself.
+     *
+     * `aria-busy` reports the in-flight attempt; the label change to
+     * "Processing..." covers the visual side.
+     */
     <button
       onClick={handlePayment}
       disabled={loading}
+      aria-busy={loading}
+      aria-label={
+        loading
+          ? `Processing payment of ${amount} ${assetCode}`
+          : `Pay ${amount} ${assetCode} with Freighter`
+      }
       className="btn btn-primary w-full flex items-center justify-center gap-2 text-lg py-4"
     >
       {loading ? (
         <>
-          <Loader2 className="w-6 h-6 animate-spin" />
+          <Loader2 className="w-6 h-6 animate-spin" aria-hidden="true" />
           Processing...
         </>
       ) : (
         <>
-          <Wallet className="w-6 h-6" />
+          <Wallet className="w-6 h-6" aria-hidden="true" />
           Pay with Freighter
         </>
       )}

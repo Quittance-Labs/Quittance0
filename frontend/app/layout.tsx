@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Instrument_Serif } from 'next/font/google';
 import { GeistSans } from 'geist/font/sans';
 import { Toaster } from 'sonner';
+import { MAIN_CONTENT_ID } from '@/lib/a11y';
 import './globals.css';
 
 const instrumentSerif = Instrument_Serif({
@@ -25,7 +26,21 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${GeistSans.variable} ${instrumentSerif.variable}`}>
       <body className={`${GeistSans.className} antialiased`}>
-        <Toaster position="top-right" richColors />
+        {/*
+          First focusable element on every page, so a keyboard user can jump the
+          fixed header — which holds the wallet control on all four routes —
+          instead of tabbing through it on every navigation. Each page provides
+          the matching `<main id={MAIN_CONTENT_ID} tabIndex={-1}>` target.
+        */}
+        <a href={`#${MAIN_CONTENT_ID}`} className="skip-link">
+          Skip to main content
+        </a>
+        {/*
+          Toasts are the only feedback for several actions, so they need to reach
+          a screen reader. Sonner renders its own polite live region; naming the
+          region keeps it distinguishable from the pages' own status regions.
+        */}
+        <Toaster position="top-right" richColors closeButton />
         {children}
       </body>
     </html>

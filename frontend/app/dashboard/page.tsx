@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { invoiceApi } from '@/lib/api';
+import { invoiceApi, describeApiError } from '@/lib/api';
 import InvoiceCard from '@/components/InvoiceCard';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
@@ -18,6 +18,7 @@ import {
   revenueEntries,
   searchInvoices,
 } from '@/lib/dashboard-history';
+import { DASHBOARD_RESULTS_ID, MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';
 
 export default function DashboardPage() {
   const { publicKey, connected } = useWalletStore();
@@ -31,6 +32,9 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  // What the results live region says. A load failure used to reach the user
+  // only as a toast, which vanishes before a screen reader reaches it.
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const { invoices, stats } = dashboardDataFor(loaded, connected ? publicKey : null);
   const filteredInvoices = searchInvoices(invoices, searchQuery);
@@ -46,6 +50,7 @@ export default function DashboardPage() {
 
     let active = true;
     setLoading(true);
+    setLoadError(null);
 
     (async () => {
       try {
@@ -66,7 +71,9 @@ export default function DashboardPage() {
         });
       } catch (error) {
         if (!active) return;
-        toast.error('Failed to load data');
+        const message = describeApiError(error, 'Failed to load your invoices.');
+        setLoadError(message);
+        toast.error('Failed to load data', { description: message });
       } finally {
         if (active) setLoading(false);
       }
@@ -88,6 +95,26 @@ export default function DashboardPage() {
     toast.success(`Exported ${paidInvoices.length} paid invoices to CSV`);
   };
 
+  const paidCount = filteredInvoices.filter((inv) => inv.status === 'PAID').length;
+  const canExport = paidCount > 0;
+
+  /*
+   * One sentence describing the current result set, read by the live region
+   * below (issue #289). Filtering and searching both replace the grid without
+   * any page navigation, so without this a screen-reader user pressing
+   * "Pending" gets no feedback that anything happened at all.
+   */
+  const resultsAnnouncement = (() => {
+    if (loadError) return `Could not load your invoices. ${loadError}`;
+    if (loading) return 'Loading your invoices.';
+    const scope = filter === 'all' ? '' : ` ${statusText(filter).label.toLowerCase()}`;
+    const suffix = searchQuery ? ` matching “${searchQuery}”` : '';
+    if (filteredInvoices.length === 0) return `No${scope} invoices${suffix}.`;
+    return `${filteredInvoices.length}${scope} invoice${
+      filteredInvoices.length === 1 ? '' : 's'
+    }${suffix}.`;
+  })();
+
   return (
     <div className="min-h-screen bg-logo-pattern relative">
       <div className="accent-blob accent-blob-1"></div>
@@ -97,7 +124,7 @@ export default function DashboardPage() {
           <Link href="/" className="font-display text-xl tracking-tight text-[var(--ink)] hover:opacity-80 transition-opacity">
             Quittance
           </Link>
-          <div className="flex items-center gap-3">
+          <nav className="flex items-center gap-3" aria-label="Main">
             {!connected ? (
               <WalletConnect />
             ) : (
@@ -106,18 +133,20 @@ export default function DashboardPage() {
               }} />
             )}
             <Link href="/" className="btn btn-primary flex items-center gap-2">
-              <Plus className="w-5 h-5" />
+              <Plus className="w-5 h-5" aria-hidden="true" />
               <span className="hidden sm:inline">New Invoice</span>
+              <span className="sm:hidden sr-only">New Invoice</span>
             </Link>
-          </div>
+          </nav>
         </div>
       </header>
 
-      <div className="pt-20">
+      <main id={MAIN_CONTENT_ID} tabIndex={-1} className="pt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 relative z-10">
+        <h1 className="sr-only">Invoice dashboard</h1>
         {!connected || !publicKey ? (
           <div className="card text-center py-16 max-w-lg mx-auto">
-            <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <FileText className="w-16 h-16 text-gray-500 mx-auto mb-4" aria-hidden="true" />
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Connect your wallet</h2>
             <p className="text-gray-600 mb-6">
               The dashboard shows the Quittance invoices issued by your connected
@@ -136,11 +165,15 @@ export default function DashboardPage() {
         */}
         <>
             {stats && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              /*
+               * A named region, so the statistics can be skipped or jumped to
+               * rather than being four unlabelled cards ahead of the list.
+               */
+              <section aria-label="Invoice statistics" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div className="card">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <FileText className="w-6 h-6 text-blue-600" />
+                  <FileText className="w-6 h-6 text-blue-700" aria-hidden="true" />
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Total Invoices</p>
@@ -154,7 +187,7 @@ export default function DashboardPage() {
             <div className="card">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                  <TrendingUp className="w-6 h-6 text-green-600" />
+                  <TrendingUp className="w-6 h-6 text-green-700" aria-hidden="true" />
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Paid</p>
@@ -168,7 +201,7 @@ export default function DashboardPage() {
             <div className="card">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
-                  <FileText className="w-6 h-6 text-yellow-600" />
+                  <FileText className="w-6 h-6 text-yellow-800" aria-hidden="true" />
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Pending</p>
@@ -182,19 +215,23 @@ export default function DashboardPage() {
             <div className="card">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center">
-                  <DollarSign className="w-6 h-6 text-cyan-600" />
+                  <DollarSign className="w-6 h-6 text-cyan-700" aria-hidden="true" />
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Revenue</p>
                   {revenueByAsset.length > 0 ? (
                     <div className="space-y-1">
                       {revenueByAsset.map(([assetCode, revenue]) => (
-                        <div key={assetCode} className="flex items-center gap-2">
-                          <p className="text-2xl font-bold text-gray-900">
+                        <p key={assetCode} className="flex items-center gap-2">
+                          <span className="text-2xl font-bold text-gray-900" aria-hidden="true">
                             {Number(revenue).toFixed(2)}
-                          </p>
-                          <AssetLogo code={assetCode} size={20} />
-                        </div>
+                          </span>
+                          <AssetLogo code={assetCode} size={20} decorative />
+                          {/* The figure and the logo read as two values. */}
+                          <span className="sr-only">
+                            {describeAmount(Number(revenue).toFixed(2), assetCode)}
+                          </span>
+                        </p>
                       ))}
                     </div>
                   ) : (
@@ -203,38 +240,64 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
-          </div>
+          </section>
             )}
 
             <div className="flex gap-3 mb-4">
               <div className="card flex-1 mb-0">
+                <label htmlFor="invoice-search" className="sr-only">
+                  Search invoices
+                </label>
                 <input
-                  type="text"
+                  id="invoice-search"
+                  // type="search" so the control is announced as a search field
+                  // and gets the platform's clear affordance.
+                  type="search"
                   placeholder="Search invoices..."
                   className="input w-full"
                   value={searchQuery}
+                  aria-describedby={DASHBOARD_RESULTS_ID}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
+              {/*
+                aria-disabled rather than disabled, so the button keeps its tab
+                stop and the reason for it being unavailable is announced.
+              */}
               <button
-                onClick={handleExportCSV}
+                onClick={canExport ? handleExportCSV : undefined}
                 className="btn btn-primary flex items-center gap-2 whitespace-nowrap"
-                disabled={filteredInvoices.filter(inv => inv.status === 'PAID').length === 0}
-                title="Export paid invoices only"
+                aria-disabled={!canExport}
+                aria-describedby={canExport ? undefined : 'export-csv-reason'}
+                aria-label="Export paid invoices to CSV"
               >
-                <Download className="w-5 h-5" />
+                <Download className="w-5 h-5" aria-hidden="true" />
                 <span className="hidden sm:inline">Export CSV</span>
               </button>
+              {!canExport && (
+                <span id="export-csv-reason" className="sr-only">
+                  Unavailable: there are no paid invoices in the current view.
+                </span>
+              )}
             </div>
 
-            <div className="bg-white rounded-lg border border-gray-200 mb-6 p-2 flex gap-2 flex-wrap">
+            {/*
+              Toggle buttons in a named group. aria-pressed carries the selected
+              state, which was previously only a background colour.
+            */}
+            <div
+              role="group"
+              aria-label="Filter invoices by status"
+              className="bg-white rounded-lg border border-gray-200 mb-6 p-2 flex gap-2 flex-wrap"
+            >
               {['all', 'pending', 'paid', 'expired', 'cancelled'].map((status) => (
                 <button
                   key={status}
                   onClick={() => setFilter(status)}
+                  aria-pressed={filter === status}
                   className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
                     filter === status
-                      ? 'bg-cyan-500 text-white'
+                      ? 'bg-cyan-700 text-white'
                       : 'text-gray-600 hover:bg-gray-100'
                   }`}
                 >
@@ -243,13 +306,28 @@ export default function DashboardPage() {
               ))}
             </div>
 
+            {/*
+              The one live region for the grid below. Filtering, searching and
+              loading all replace the results without a navigation, so this is
+              the only thing that tells a screen-reader user what happened.
+            */}
+            <p
+              id={DASHBOARD_RESULTS_ID}
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              className={`mb-4 text-sm ${loadError ? 'text-red-700' : 'text-gray-600'}`}
+            >
+              {resultsAnnouncement}
+            </p>
+
             {loading ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-12 h-12 animate-spin text-cyan-500" />
+                <Loader2 className="w-12 h-12 animate-spin text-cyan-700" aria-hidden="true" />
               </div>
             ) : filteredInvoices.length === 0 ? (
               <div className="card text-center py-12">
-                <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <FileText className="w-16 h-16 text-gray-500 mx-auto mb-4" aria-hidden="true" />
                 <h3 className="text-xl font-semibold text-gray-700 mb-2">
                   {searchQuery
                     ? 'No Matching Invoices'
@@ -282,31 +360,40 @@ export default function DashboardPage() {
                   </button>
                 ) : (
                   <Link href="/" className="btn btn-primary inline-flex items-center gap-2">
-                    <Plus className="w-5 h-5" />
+                    <Plus className="w-5 h-5" aria-hidden="true" />
                     Create Invoice
                   </Link>
                 )}
               </div>
             ) : (
-              <>
-                {searchQuery && (
-                  <div className="mb-4 text-sm text-gray-600">
-                    Found {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? 's' : ''}
-                  </div>
-                )}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              /*
+                The count that used to sit here is now in the live region above,
+                which covers filtering too and not only searching.
+              */
+              <section aria-labelledby="invoice-list-heading">
+                {/*
+                  The cards below are h3s. Without this h2 the outline jumped
+                  from the page's h1 straight to h3, which axe reports as
+                  heading-order and which breaks heading-based navigation.
+                */}
+                <h2 id="invoice-list-heading" className="sr-only">
+                  Invoices
+                </h2>
+                <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 list-none p-0">
                   {filteredInvoices.map((invoice) => (
-                    <InvoiceCard key={invoice.id} invoice={invoice as any} />
+                    <li key={invoice.id}>
+                      <InvoiceCard invoice={invoice as any} />
+                    </li>
                   ))}
-                </div>
-              </>
+                </ul>
+              </section>
             )}
           </>
           </>
         )}
       </div>
 
-      </div>
+      </main>
     </div>
   );
 }

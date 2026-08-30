@@ -18,6 +18,36 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+/**
+ * Turns a failed request into an English sentence for a live region.
+ *
+ * A failed load used to reach the user only as a toast, which disappears, and
+ * as a console entry, which does not reach them at all — so a page that failed
+ * to load simply stayed blank for a screen-reader user (issue #289). The status
+ * regions on the pages read this instead.
+ *
+ * The backend's own wording is preferred because it is the most specific thing
+ * available; this mirrors `describeVerifyError` in `payment-page-state.js`,
+ * which does the same for the verify endpoint.
+ */
+export function describeApiError(error: any, fallback = 'Something went wrong.'): string {
+  const serverMessage = error?.response?.data?.error;
+  if (typeof serverMessage === 'string' && serverMessage.trim()) {
+    return serverMessage;
+  }
+
+  if (error?.response?.status === 404) {
+    return 'Not found.';
+  }
+
+  const transportMessage = error?.message;
+  if (typeof transportMessage === 'string' && transportMessage.trim()) {
+    return transportMessage;
+  }
+
+  return fallback;
+}
 export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
   create: async (data: {
     amount: number;

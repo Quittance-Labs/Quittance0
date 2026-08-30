@@ -2,14 +2,29 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Colour tokens (issue #289).
+ *
+ * Every foreground token below reaches at least WCAG AA (4.5:1 for body text)
+ * against both --paper and white, which are the only two surfaces they are used
+ * on. `tests/a11y-core-pages.test.js` recomputes those ratios from
+ * `tailwind.config.js`, so changing a value here without changing it there — or
+ * lightening either one past AA — fails the suite rather than the audit.
+ *
+ * --teal-hover used to lighten on hover (#0d9488, 3.7:1 against white), which
+ * dropped the label on a primary button below AA exactly while the pointer was
+ * on it. Hover now darkens instead.
+ */
 :root {
   --ink: #0f1419;
   --paper: #f4f5f7;
   --paper-deep: #e8eaee;
   --teal: #0f766e;
-  --teal-hover: #0d9488;
+  --teal-hover: #115e59;
   --muted: #5c6570;
   --line: #d8dce3;
+  --disabled-surface: #e4e7ec;
+  --disabled-ink: #4a525d;
   --font-display: 'Instrument Serif', Georgia, serif;
 }
 
@@ -28,18 +43,91 @@ body {
     @apply scroll-smooth;
   }
 
-  * {
-    @apply focus-visible:outline-none;
+  /*
+   * The native outline is replaced, not removed. `outline: none` on its own
+   * left keyboard users with no visible focus at all in forced-colours mode,
+   * where box-shadow is dropped, so a transparent outline is kept as the
+   * high-contrast fallback and the ring below is the normal presentation.
+   */
+  *:focus-visible {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    /* Opaque, and 3:1 against both --paper and white (WCAG 2.2 SC 1.4.11). */
+    box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--teal);
   }
 
-  *:focus-visible {
-    box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px rgba(15, 118, 110, 0.4);
+  /*
+   * Panels that take focus programmatically when an async result arrives are
+   * targets, not controls. They get no ring — the announcement is the feedback,
+   * and a ring around a whole card reads as a bug.
+   */
+  [tabindex='-1']:focus,
+  [tabindex='-1']:focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
 @layer components {
+  /*
+   * Skip link — the first thing in the tab order on every page.
+   *
+   * Every page opens with a fixed header holding a wallet control, so reaching
+   * the invoice itself meant tabbing past the whole banner on every navigation.
+   * It is visually hidden until focused, and then must be visible and legible,
+   * so it is positioned rather than clipped to zero size.
+   */
+  .skip-link {
+    position: absolute;
+    left: 1rem;
+    top: -4rem;
+    z-index: 100;
+    padding: 0.75rem 1.25rem;
+    border-radius: 0.375rem;
+    background-color: var(--ink);
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: top 150ms ease-in-out;
+  }
+
+  .skip-link:focus {
+    top: 1rem;
+  }
+
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-md text-sm font-medium transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-md text-sm font-medium transition-colors duration-150;
+  }
+
+  /*
+   * Disabled buttons used to be `opacity: .5`, which multiplies the label's
+   * contrast by roughly a half and put every disabled control under 3:1 — axe
+   * flagged them, and they were genuinely hard to read. Explicit tokens keep a
+   * disabled label at 7:1 while still reading as unavailable.
+   *
+   * `aria-disabled` is styled the same as `disabled` because the controls that
+   * carry a reason worth hearing use `aria-disabled` and stay focusable.
+   */
+  .btn:disabled,
+  .btn[aria-disabled='true'] {
+    background-color: var(--disabled-surface) !important;
+    border-color: var(--line) !important;
+    color: var(--disabled-ink) !important;
+    cursor: not-allowed;
   }
 
   .btn-primary {
@@ -95,6 +183,12 @@ body {
   .label {
     @apply block text-sm font-medium mb-2;
     color: var(--ink);
+  }
+
+  /* Help and error text sitting under an input, referenced by aria-describedby. */
+  .field-hint {
+    @apply block text-xs mt-1;
+    color: var(--muted);
   }
 
   .premium-header {

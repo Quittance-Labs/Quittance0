@@ -11,6 +11,11 @@ interface QRCodeDisplayProps {
   title?: string;
   size?: number;
   showCopy?: boolean;
+  /**
+   * What the code encodes, for the text alternative. Defaults to the generic
+   * wording; the pay page passes something more specific.
+   */
+  description?: string;
 }
 
 export default function QRCodeDisplay({
@@ -18,6 +23,7 @@ export default function QRCodeDisplay({
   title,
   size = 256,
   showCopy = true,
+  description = 'the payment link for this invoice',
 }: QRCodeDisplayProps) {
   const [copied, setCopied] = useState(false);
 
@@ -35,29 +41,42 @@ export default function QRCodeDisplay({
   // Check if value is a base64 image (from backend)
   const isBase64Image = value.startsWith('data:image');
 
+  /*
+   * A QR code is an image of a link, and "QR Code" as alt text says nothing
+   * about which link. Both branches now describe what scanning it does, and the
+   * link itself is exposed as selectable text below — a keyboard or
+   * screen-reader user cannot scan a code with a phone camera, so the copyable
+   * value is the equivalent, not a convenience.
+   */
+  const alternativeText = `QR code containing ${description}. Scan it with a Stellar wallet app, or use the link below.`;
+
   return (
     <div className="flex flex-col items-center gap-4">
       {title && (
         <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
       )}
-      
+
       <div className="bg-white p-5 rounded-xl border-2 border-gray-200 shadow-lg">
         {isBase64Image ? (
           // Display base64 image from backend
-          <img 
-            src={value} 
-            alt="QR Code" 
-            width={size} 
+          // eslint-disable-next-line @next/next/no-img-element -- a data: URL, not a remote asset
+          <img
+            src={value}
+            alt={alternativeText}
+            width={size}
             height={size}
             className="block"
           />
         ) : (
-          // Generate QR code from URL
+          // Generate QR code from URL. QRCodeSVG renders a bare <svg>, which is
+          // an unnamed graphic to assistive technology without these.
           <QRCodeSVG
             value={value}
             size={size}
             level="H"
             includeMargin={true}
+            role="img"
+            aria-label={alternativeText}
           />
         )}
       </div>
@@ -71,12 +90,12 @@ export default function QRCodeDisplay({
             <button
               onClick={handleCopy}
               className="btn btn-secondary p-2 shrink-0 hover:scale-105 transition-transform"
-              title="Copy to clipboard"
+              aria-label={copied ? 'Payment link copied' : 'Copy payment link'}
             >
               {copied ? (
-                <Check className="w-4 h-4 text-green-600" />
+                <Check className="w-4 h-4 text-green-700" aria-hidden="true" />
               ) : (
-                <Copy className="w-4 h-4" />
+                <Copy className="w-4 h-4" aria-hidden="true" />
               )}
             </button>
           </div>

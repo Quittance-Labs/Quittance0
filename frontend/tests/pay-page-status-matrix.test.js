@@ -18,6 +18,7 @@ const {
   isExpiredInvoice,
   shouldShowPaymentControls,
 } = require('../lib/payment-page-state');
+const { statusText, statusBadgeLabel, statusAnnouncement } = require('../lib/a11y');
 
 /** Every status the backend's invoice model can produce. */
 const ALL_STATUSES = ['PENDING', 'PAID', 'EXPIRED', 'CANCELLED'];
@@ -70,4 +71,65 @@ test('an unknown status never offers payment controls', () => {
   // Statuses added on the backend must fail closed, not open.
   assert.equal(shouldShowPaymentControls('SOMETHING_NEW'), false);
   assert.equal(shouldShowPaymentControls(undefined), false);
+});
+
+/*
+ * Text equivalents (issue #289).
+ *
+ * The same statuses drive three colour-only indicators — the pay page's dot,
+ * the dashboard card's pill and the detail page's icon. The matrix above proves
+ * each status routes to the right controls; these prove each one also has words
+ * behind it, so status never depends on seeing a colour.
+ */
+
+test('every status has a distinct, non-empty text equivalent', () => {
+  const labels = ALL_STATUSES.map((status) => statusText(status).label);
+
+  for (const [index, status] of ALL_STATUSES.entries()) {
+    assert.ok(labels[index], `${status} has no label`);
+  }
+
+  assert.equal(
+    new Set(labels).size,
+    ALL_STATUSES.length,
+    'two statuses share a label, so they are indistinguishable without colour'
+  );
+});
+
+test('every status description is a sentence a live region can read', () => {
+  for (const status of ALL_STATUSES) {
+    const { description } = statusText(status);
+    assert.ok(description.length > 10, `${status} description is too terse to be read aloud`);
+    assert.ok(description.endsWith('.'), `${status} description is not a sentence`);
+  }
+});
+
+test('a status badge label names the status it stands for', () => {
+  for (const status of ALL_STATUSES) {
+    assert.equal(statusBadgeLabel(status), `Invoice status: ${statusText(status).label}`);
+  }
+});
+
+test('a status announcement carries both the label and the explanation', () => {
+  for (const status of ALL_STATUSES) {
+    const { label, description } = statusText(status);
+    assert.equal(statusAnnouncement(status), `${label}. ${description}`);
+  }
+});
+
+test('an unrecognised status still says something rather than nothing', () => {
+  // A badge with no text equivalent reads as a bare coloured rectangle, which
+  // is worse than an honest "Unknown".
+  for (const value of ['SOMETHING_NEW', '', null, undefined]) {
+    const { label, description } = statusText(value);
+    assert.equal(label, 'Unknown');
+    assert.ok(description);
+  }
+});
+
+test('status lookup is case insensitive, as the dashboard filter needs', () => {
+  // The dashboard holds its filter in lower case and reuses the same lookup.
+  for (const status of ALL_STATUSES) {
+    assert.deepEqual(statusText(status.toLowerCase()), statusText(status));
+  }
 });
