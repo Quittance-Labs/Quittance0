@@ -11,7 +11,7 @@
 // fall back to a single generic label so callers never hand the UI a raw
 // `undefined`.
 
-export type VerificationCodeLabel =
+type VerificationCodeLabel =
   | 'MISSING_TX_HASH'
   | 'INVALID_TX_HASH'
   | 'INVALID_PAYER_NAME'
