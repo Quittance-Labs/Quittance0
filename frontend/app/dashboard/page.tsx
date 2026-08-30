@@ -20,6 +20,7 @@ import {
 } from '@/lib/dashboard-history';
 import ApiErrorState from '@/components/ApiErrorState';
 import { apiErrorMessage } from '@/lib/api';
+import { dashboardEmptyMessage } from '@/lib/dashboard-empty-copy';
 
 export default function DashboardPage() {
   const { publicKey, connected } = useWalletStore();
@@ -136,10 +137,7 @@ export default function DashboardPage() {
           <div className="card text-center py-16 max-w-lg mx-auto">
             <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Connect your wallet</h2>
-            <p className="text-gray-600 mb-6">
-              The dashboard shows the Quittance invoices issued by your connected
-              Freighter wallet. It never reads the rest of your wallet activity.
-            </p>
+            <p className="text-gray-600 mb-6">{dashboardEmptyMessage(false)}</p>
             <div className="flex justify-center">
               <WalletConnect />
             </div>
@@ -298,7 +296,7 @@ export default function DashboardPage() {
                     ? 'Try a different search term or clear your search.'
                     : hasAnyInvoices
                       ? 'Choose another status to see your other invoices.'
-                      : 'Create your first invoice and start accepting Stellar payments. Only Quittance invoices appear here.'}
+                      : dashboardEmptyMessage(true)}
                 </p>
                 {searchQuery ? (
                   <button
