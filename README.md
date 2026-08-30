@@ -320,6 +320,13 @@ Env template: `backend/env.mvp.example`.
 
 ---
 
+### Asset and verification contracts
+
+A Stellar asset is the pair `(code, issuer)`, never the code alone — anyone can
+issue a credit asset coded `USDC`, or even `XLM`. How invoices name assets and
+how settlement compares them is documented in
+[`docs/ASSETS.md`](./docs/ASSETS.md) and [`docs/VERIFY.md`](./docs/VERIFY.md).
+
 ## Tests & CI
 
 Every pull request and every push to `main` runs the same three jobs defined in

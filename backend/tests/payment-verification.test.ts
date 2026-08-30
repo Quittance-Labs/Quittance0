@@ -196,6 +196,55 @@ describe('verifyHorizonPayment — rejections', () => {
     assert.equal(codeOf(result), 'ASSET_MISMATCH');
   });
 
+  it('refuses a credit asset coded XLM against a native invoice', () => {
+    // Anyone can issue an asset whose code is "XLM". Comparing codes alone
+    // would let a worthless look-alike settle a native invoice.
+    const result = verifyHorizonPayment(
+      input({
+        expected: expected({ assetCode: 'XLM' }),
+        operations: [
+          paymentOp({
+            asset_type: 'credit_alphanum4',
+            asset_code: 'XLM',
+            asset_issuer: OTHER_ACCOUNT,
+          }),
+        ],
+      }),
+    );
+
+    assert.equal(codeOf(result), 'ASSET_MISMATCH');
+  });
+
+  it('refuses a native payment against a credit invoice', () => {
+    const result = verifyHorizonPayment(
+      input({
+        expected: expected({ assetCode: 'USDC', assetIssuer: USDC_ISSUER }),
+        operations: [paymentOp({ asset_type: 'native' })],
+      }),
+    );
+
+    assert.equal(codeOf(result), 'ASSET_MISMATCH');
+  });
+
+  it('refuses a credit invoice that records no issuer', () => {
+    // An asset nobody pinned is not an asset anyone agreed to accept, so it is
+    // unsettleable rather than settleable by anything.
+    const result = verifyHorizonPayment(
+      input({
+        expected: expected({ assetCode: 'USDC' }),
+        operations: [
+          paymentOp({
+            asset_type: 'credit_alphanum4',
+            asset_code: 'USDC',
+            asset_issuer: USDC_ISSUER,
+          }),
+        ],
+      }),
+    );
+
+    assert.equal(codeOf(result), 'ASSET_MISMATCH');
+  });
+
   it('rejects a transaction with no payment operation', () => {
     assert.equal(
       codeOf(verifyHorizonPayment(input({ operations: [{ type: 'create_account' }] }))),
