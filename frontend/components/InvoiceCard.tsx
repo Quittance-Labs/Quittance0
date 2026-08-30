@@ -8,6 +8,7 @@ import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import AssetLogo from './AssetLogo';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
+import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
 
 interface Invoice {
   id: string;
@@ -36,7 +37,8 @@ interface InvoiceCardProps {
 
 export default function InvoiceCard({ invoice }: InvoiceCardProps) {
   const [linkCopied, setLinkCopied] = useState(false);
-  const statusColor = getStatusColor(invoice.status);
+  const status = effectiveInvoiceStatus(invoice) || invoice.status;
+  const statusColor = getStatusColor(status);
   const paymentUrl = `${window.location.origin}/pay/${invoice.id}`;
 
   const handleCopyLink = async () => {
@@ -74,7 +76,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
           )}
         </div>
         <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${statusColor}`}>
-          {invoice.status}
+          {status}
         </span>
       </div>
 
@@ -89,10 +91,16 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
           <Clock className="w-4 h-4" />
           <span>Created: {formatDate(invoice.createdAt)}</span>
         </div>
-        {invoice.status === 'PENDING' && (
+        {status === 'PENDING' && (
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <Clock className="w-4 h-4" />
             <span>Expires: {getTimeRemaining(invoice.expiresAt)}</span>
+          </div>
+        )}
+        {status === 'EXPIRED' && (
+          <div className="flex items-center gap-2 text-xs text-red-600">
+            <Clock className="w-4 h-4" />
+            <span>Expired: {formatDate(invoice.expiresAt)}</span>
           </div>
         )}
       </div>
@@ -105,7 +113,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
           <ExternalLink className="w-4 h-4" />
           View
         </Link>
-        {invoice.status === 'PENDING' && (
+        {status === 'PENDING' && (
           <button
             onClick={handleCopyLink}
             className="btn btn-secondary flex items-center justify-center gap-2 px-3"
@@ -119,7 +127,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
             )}
           </button>
         )}
-        {invoice.status === 'PAID' && (
+        {status === 'PAID' && (
           <button
             onClick={handleDownloadPDF}
             className="btn btn-primary flex-1 flex items-center justify-center gap-2 text-sm"
@@ -128,7 +136,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
             Download Proof
           </button>
         )}
-        {invoice.status === 'PAID' && (
+        {status === 'PAID' && (
           <button
             onClick={!invoice.customerEmail ? undefined : handleEmailShare}
             disabled={!invoice.customerEmail}

@@ -13,6 +13,7 @@
 
 /** Invoice statuses the dashboard can filter by, plus the catch-all. */
 const INVOICE_FILTERS = Object.freeze(['all', 'pending', 'paid', 'expired', 'cancelled']);
+const { applyExpiryLifecycle, isActionableInvoice } = require('./invoice-lifecycle');
 
 /**
  * Whether an invoice belongs to the connected seller.
@@ -66,6 +67,16 @@ function exportableInvoices(invoices) {
   return invoices.filter((invoice) => invoice?.status === 'PAID');
 }
 
+/** Pending invoices that may still accept a payment right now. */
+function actionableInvoices(invoices, now) {
+  return applyExpiryLifecycle(invoices, now).filter((invoice) => isActionableInvoice(invoice, now));
+}
+
+/** Settled, cancelled and expired records remain visible as history. */
+function historicalInvoices(invoices, now) {
+  return applyExpiryLifecycle(invoices, now).filter((invoice) => !isActionableInvoice(invoice, now));
+}
+
 /** The empty dashboard, used on disconnect and on every wallet switch. */
 function emptyDashboardData() {
   return { invoices: [], stats: null };
@@ -78,14 +89,39 @@ function emptyDashboardData() {
  * previous seller's invoices from staying on screen while the next seller's
  * request is still in flight.
  */
-function dashboardDataFor(data, sellerPublicKey) {
+function reconcileExpiryStats(stats, originalInvoices, projectedInvoices) {
+  if (!stats) return null;
+  const transitioned = projectedInvoices.reduce((count, invoice, index) => (
+    originalInvoices[index]?.status === 'PENDING' && invoice.status === 'EXPIRED'
+      ? count + 1
+      : count
+  ), 0);
+
+  if (transitioned === 0) return stats;
+  const pending = Math.max(0, Number(stats.pending_invoices || 0) - transitioned);
+
+  return {
+    ...stats,
+    pending_invoices: pending,
+    actionable_invoices: Math.max(
+      0,
+      Number(stats.actionable_invoices ?? stats.pending_invoices ?? 0) - transitioned
+    ),
+    expired_invoices: Number(stats.expired_invoices || 0) + transitioned,
+  };
+}
+
+function dashboardDataFor(data, sellerPublicKey, now) {
   if (!sellerPublicKey || !data || data.owner !== sellerPublicKey) {
     return emptyDashboardData();
   }
 
+  const owned = scopeInvoicesToSeller(data.invoices, sellerPublicKey);
+  const invoices = applyExpiryLifecycle(owned, now);
+
   return {
-    invoices: scopeInvoicesToSeller(data.invoices, sellerPublicKey),
-    stats: data.stats ?? null,
+    invoices,
+    stats: reconcileExpiryStats(data.stats, owned, invoices),
   };
 }
 
@@ -108,8 +144,11 @@ module.exports = {
   invoiceSearchText,
   searchInvoices,
   exportableInvoices,
+  actionableInvoices,
+  historicalInvoices,
   emptyDashboardData,
   dashboardDataFor,
+  reconcileExpiryStats,
   revenueEntries,
   hasAnyInvoices,
 };

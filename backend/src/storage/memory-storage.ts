@@ -2,6 +2,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { calculateInvoiceStats } from './invoice-stats';
 import type { InvoiceStats } from './invoice-stats';
+import { isPendingInvoiceExpired } from '../domain/invoice-expiry';
 
 interface Invoice {
   id: string;
@@ -57,11 +58,13 @@ class MemoryStorage {
 
   // Get invoice by ID
   getInvoiceById(id: string): Invoice | undefined {
+    this.markExpiredInvoices();
     return this.invoices.get(id);
   }
 
   // Get invoice by memo
   getInvoiceByMemo(memo: string): Invoice | undefined {
+    this.markExpiredInvoices();
     const id = this.invoicesByMemo.get(memo);
     return id ? this.invoices.get(id) : undefined;
   }
@@ -85,6 +88,10 @@ class MemoryStorage {
     payerPublicKey: string,
     payerInfo?: { payerName?: string; payerEmail?: string }
   ): Invoice | undefined {
+    this.markExpiredInvoices();
+    const invoice = this.invoices.get(id);
+    if (!invoice || invoice.status !== 'PENDING') return undefined;
+
     return this.updateInvoice(id, {
       status: 'PAID',
       paymentTxHash: txHash,
@@ -97,6 +104,7 @@ class MemoryStorage {
 
   // Get all invoices
   getAllInvoices(filter?: { status?: string }): Invoice[] {
+    this.markExpiredInvoices();
     let invoices = Array.from(this.invoices.values());
 
     if (filter?.status) {
@@ -108,16 +116,16 @@ class MemoryStorage {
 
   // Get stats
   getStats(sellerPublicKey: string): InvoiceStats {
+    this.markExpiredInvoices();
     return calculateInvoiceStats(Array.from(this.invoices.values()), sellerPublicKey);
   }
 
   // Mark expired invoices
-  markExpiredInvoices(): number {
-    const now = new Date();
+  markExpiredInvoices(now: Date = new Date()): number {
     let count = 0;
 
     this.invoices.forEach((invoice) => {
-      if (invoice.status === 'PENDING' && invoice.expiresAt < now) {
+      if (isPendingInvoiceExpired(invoice, now)) {
         invoice.status = 'EXPIRED';
         count++;
       }

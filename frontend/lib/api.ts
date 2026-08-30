@@ -38,7 +38,7 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     description?: string;
     customerName?: string;
     customerEmail?: string;
-    expiresInDays?: number;
+    expiresInDays: number;
     sellerPublicKey?: string;
     sellerName?: string;
     sellerEmail?: string;

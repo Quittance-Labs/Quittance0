@@ -14,6 +14,7 @@ const VERIFICATION_MESSAGES = {
   INVALID_PAYER_EMAIL: 'Payer email is invalid',
   PAYER_INFO_TOO_LONG: 'Payer information is too long',
   INVOICE_ALREADY_PAID: 'Invoice has already been paid',
+  INVOICE_EXPIRED: 'Invoice has expired and can no longer accept payment',
   INVOICE_NOT_PENDING: 'Invoice is not pending',
   TRANSACTION_NOT_FOUND: 'Transaction not found on Stellar',
   NO_PAYMENT_OPERATION: 'No payment operation found in transaction',

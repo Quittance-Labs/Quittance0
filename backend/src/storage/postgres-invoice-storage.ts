@@ -45,6 +45,10 @@ export class PostgresInvoiceStorage implements InvoiceStorage {
   async getInvoiceStats(sellerPublicKey: string): Promise<InvoiceStats[]> {
     return this.service.getInvoiceStats(sellerPublicKey);
   }
+
+  async markExpiredInvoices(now?: Date): Promise<number> {
+    return this.service.markExpiredInvoices(now);
+  }
 }
 
 export default new PostgresInvoiceStorage();

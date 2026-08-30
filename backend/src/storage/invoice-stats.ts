@@ -9,6 +9,7 @@ export interface InvoiceStats {
   total_invoices: number;
   paid_invoices: number;
   pending_invoices: number;
+  actionable_invoices: number;
   expired_invoices: number;
   revenue_by_asset: Record<string, number>;
 }
@@ -34,10 +35,13 @@ export function calculateInvoiceStats(
       revenueByAsset[invoice.assetCode] = currentRevenue + invoice.amount;
     });
 
+  const pendingInvoices = invoices.filter(invoice => invoice.status === 'PENDING').length;
+
   return {
     total_invoices: invoices.length,
     paid_invoices: invoices.filter(invoice => invoice.status === 'PAID').length,
-    pending_invoices: invoices.filter(invoice => invoice.status === 'PENDING').length,
+    pending_invoices: pendingInvoices,
+    actionable_invoices: pendingInvoices,
     expired_invoices: invoices.filter(invoice => invoice.status === 'EXPIRED').length,
     revenue_by_asset: revenueByAsset,
   };

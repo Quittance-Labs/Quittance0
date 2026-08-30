@@ -36,6 +36,20 @@ describe('calculateInvoiceStats', () => {
     assert.equal(stats.total_invoices, 4);
     assert.equal(stats.paid_invoices, 3);
     assert.equal(stats.pending_invoices, 1);
+    assert.equal(stats.actionable_invoices, 1);
+  });
+
+  it('keeps expired invoices in history but removes them from actionable stats', () => {
+    const all = [
+      invoice(sellerA, 10, 'XLM', 'PENDING'),
+      invoice(sellerA, 20, 'XLM', 'EXPIRED'),
+    ];
+    const stats = calculateInvoiceStats(all, sellerA);
+
+    assert.equal(stats.total_invoices, 2);
+    assert.equal(stats.pending_invoices, 1);
+    assert.equal(stats.actionable_invoices, 1);
+    assert.equal(stats.expired_invoices, 1);
   });
 
   it('only includes invoices belonging to the requested seller', () => {
