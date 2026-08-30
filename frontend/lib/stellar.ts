@@ -7,6 +7,7 @@ import {
   setAllowed,
 } from '@stellar/freighter-api';
 import { detectFreighter } from './freighter-availability';
+import { networkDisplayName } from './network-display-name';
 
 // Network configuration
 const STELLAR_NETWORK = process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET';
@@ -20,6 +21,8 @@ export const NETWORK_PASSPHRASE =
   STELLAR_NETWORK === 'TESTNET'
     ? StellarSdk.Networks.TESTNET
     : StellarSdk.Networks.PUBLIC;
+
+export const NETWORK_DISPLAY_NAME = networkDisplayName(NETWORK_PASSPHRASE);
 
 export const server = new StellarSdk.Horizon.Server(HORIZON_URL);
 
