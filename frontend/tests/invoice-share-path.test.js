@@ -1,12 +1,14 @@
-import { invoiceSharePath } from '../lib/invoice-share-path';
-import { invoiceSharePathFixture } from './fixtures/invoice-share-path.fixture';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { invoiceSharePath } = require('../lib/invoice-share-path');
+const { invoiceSharePathFixture } = require('./fixtures/invoice-share-path.fixture');
 
-describe('invoiceSharePath', () => {
-  it.each(invoiceSharePathFixture)('builds $output for $input', ({ input, output }) => {
-    expect(invoiceSharePath(input)).toBe(output);
+for (const { input, output } of invoiceSharePathFixture) {
+  test(`invoiceSharePath builds ${output} for ${JSON.stringify(input)}`, () => {
+    assert.equal(invoiceSharePath(input), output);
   });
+}
 
-  it('encodes reserved URL characters', () => {
-    expect(invoiceSharePath('a/b?c')).toBe('/pay/a%2Fb%3Fc');
-  });
+test('invoiceSharePath encodes reserved URL characters', () => {
+  assert.equal(invoiceSharePath('a/b?c'), '/pay/a%2Fb%3Fc');
 });

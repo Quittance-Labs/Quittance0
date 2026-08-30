@@ -1,8 +1,10 @@
-import { dashboardEmptyMessage } from '../lib/dashboard-empty-copy';
-import { dashboardEmptyCopyFixture } from './fixtures/dashboard-empty-copy.fixture';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { dashboardEmptyMessage } = require('../lib/dashboard-empty-copy');
+const { dashboardEmptyCopyFixture } = require('./fixtures/dashboard-empty-copy.fixture');
 
-describe('dashboardEmptyMessage', () => {
-  it.each(dashboardEmptyCopyFixture)('returns context-aware copy', ({ walletConnected, output }) => {
-    expect(dashboardEmptyMessage(walletConnected)).toBe(output);
+for (const { walletConnected, output } of dashboardEmptyCopyFixture) {
+  test(`dashboardEmptyMessage when walletConnected=${walletConnected}`, () => {
+    assert.equal(dashboardEmptyMessage(walletConnected), output);
   });
-});
+}

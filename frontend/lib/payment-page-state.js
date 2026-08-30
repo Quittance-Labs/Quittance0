@@ -210,6 +210,79 @@ function isLikelyTransactionHash(value) {
   return /^[a-fA-F0-9]{64}$/.test((value ?? '').trim());
 }
 
+/**
+ * The states that mean an asynchronous attempt is still running (issue #289).
+ *
+ * A sighted payer sees a spinner. Everyone else needs `aria-busy`, and the
+ * result panel must not steal focus while the answer is still pending.
+ */
+function isBusyState(state) {
+  return state?.status === PAY_STATES.PAYING || state?.status === PAY_STATES.VERIFYING;
+}
+
+/**
+ * The states that carry an answer worth moving focus to (issue #289).
+ *
+ * Verification and background polling both finish without any keyboard event,
+ * so the payer's focus is still on the Verify button — or nowhere at all —
+ * when the answer lands. These are the transitions that justify taking focus.
+ */
+function isResultState(state) {
+  return (
+    state?.status === PAY_STATES.PAID ||
+    state?.status === PAY_STATES.EXPIRED ||
+    state?.status === PAY_STATES.ERROR
+  );
+}
+
+/**
+ * Whether a result should interrupt the screen reader.
+ *
+ * Only a failure does: the payer is blocked on it. A confirmed payment is good
+ * news that can wait for a gap in the announcement queue.
+ */
+function paymentStateKind(state) {
+  return state?.status === PAY_STATES.ERROR ? 'error' : 'status';
+}
+
+/**
+ * Ends a clause with a full stop.
+ *
+ * Backend rejections arrive as fragments — "Memo mismatch", "Amount mismatch"
+ * — and a live region reads its content straight through, so two announcements
+ * run together into one breathless sentence without this.
+ */
+function asSentence(text) {
+  const trimmed = (text ?? '').trim();
+  if (!trimmed) return '';
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+/**
+ * The sentence a live region reads when the pay page changes state.
+ *
+ * Every branch returns English prose rather than a state name, because this
+ * text is read aloud verbatim — "verifying" on its own is not a sentence.
+ */
+function describePaymentState(state) {
+  switch (state?.status) {
+    case PAY_STATES.PAYING:
+      return 'Opening your wallet. Confirm the payment in Freighter.';
+    case PAY_STATES.VERIFYING:
+      return 'Verifying your payment on the Stellar network. This takes a few seconds.';
+    case PAY_STATES.PAID:
+      return 'Payment confirmed. Your payment proof is ready to download.';
+    case PAY_STATES.EXPIRED:
+      return 'This invoice has expired and can no longer be paid.';
+    case PAY_STATES.ERROR:
+      return state?.error
+        ? `Payment could not be completed. ${asSentence(state.error)}`
+        : 'Payment could not be completed.';
+    default:
+      return '';
+  }
+}
+
 module.exports = {
   PAY_STATES,
   TERMINAL_STATES,
@@ -223,4 +296,8 @@ module.exports = {
   normalizePayerDetails,
   describeVerifyError,
   isLikelyTransactionHash,
+  isBusyState,
+  isResultState,
+  paymentStateKind,
+  describePaymentState,
 };

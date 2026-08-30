@@ -68,3 +68,7 @@ export function shouldPoll(state: PaymentState): boolean;
 export function normalizePayerDetails(details?: PayerDetails): PayerDetailsResult;
 export function describeVerifyError(error: unknown, fallback?: string): string;
 export function isLikelyTransactionHash(value?: string | null): boolean;
+export function isBusyState(state?: PaymentState | null): boolean;
+export function isResultState(state?: PaymentState | null): boolean;
+export function paymentStateKind(state?: PaymentState | null): 'status' | 'error';
+export function describePaymentState(state?: PaymentState | null): string;

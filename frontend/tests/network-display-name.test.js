@@ -1,12 +1,14 @@
-import { networkDisplayName } from '../lib/network-display-name';
-import { networkDisplayNameFixture } from './fixtures/network-display-name.fixture';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { networkDisplayName } = require('../lib/network-display-name');
+const { networkDisplayNameFixture } = require('./fixtures/network-display-name.fixture');
 
-describe('networkDisplayName', () => {
-  it.each(networkDisplayNameFixture)('maps $input to $output', ({ input, output }) => {
-    expect(networkDisplayName(input)).toBe(output);
+for (const { input, output } of networkDisplayNameFixture) {
+  test(`networkDisplayName maps ${JSON.stringify(input)} to ${output}`, () => {
+    assert.equal(networkDisplayName(input), output);
   });
+}
 
-  it('handles surrounding whitespace and casing', () => {
-    expect(networkDisplayName('  TESTNET  ')).toBe('Testnet');
-  });
+test('networkDisplayName handles surrounding whitespace and casing', () => {
+  assert.equal(networkDisplayName('  TESTNET  '), 'Testnet');
 });

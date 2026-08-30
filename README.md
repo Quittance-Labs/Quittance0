@@ -383,9 +383,18 @@ cd backend && npm ci && npm run typecheck && npm test
 # Frontend: lint + typecheck + unit tests
 cd frontend && npm ci && npm run lint && npm run typecheck && npm test
 
+# Frontend: focused axe, focus-management, live-region, and contrast checks
+cd frontend && npm run test:a11y
+
 # Shared export helpers (repository root)
 node --test "tests/**/*.test.mjs"
 ```
+
+The focused accessibility suite renders the landing, dashboard, pay, and
+invoice-detail routes in jsdom, audits them with axe, and directly checks the
+focus and live-region behavior that a static axe scan cannot observe. Because
+jsdom has no layout engine, WCAG contrast ratios are verified separately from
+the color pairs declared in `frontend/tailwind.config.js`.
 
 ### The invoice payment loop is covered end to end
 

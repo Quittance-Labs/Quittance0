@@ -107,6 +107,7 @@ export function usePaymentPage(id: string) {
 
   return {
     invoice: payment.invoice as PayPageInvoice | null,
+    payment,
     loading,
     loadError,
     paymentInfo,

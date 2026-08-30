@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import AssetLogo from './AssetLogo';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
+import { describeAmount, statusBadgeLabel, statusText } from '@/lib/a11y';
 
 interface Invoice {
   id: string;
@@ -62,22 +63,38 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
     shareInvoiceByEmail(invoice as any);
   };
 
+  // Ids are scoped to the invoice: the dashboard renders many of these cards.
+  const headingId = `invoice-${invoice.id}-heading`;
+  const emailReasonId = `invoice-${invoice.id}-email-reason`;
+  const canEmail = Boolean(invoice.customerEmail);
+  const amountLabel = describeAmount(formatAmount(invoice.amount), invoice.assetCode);
+
   return (
-    <div className="card hover:shadow-xl group">
+    /*
+     * An `<article>` labelled by its own heading, so the dashboard grid is a
+     * list of named items a screen reader can jump between rather than one
+     * undifferentiated run of text.
+     */
+    <article className="card hover:shadow-xl group" aria-labelledby={headingId}>
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <AssetLogo code={invoice.assetCode} size={24} showName={false} />
-            <h3 className="text-lg font-bold text-gray-900">
-              {formatAmount(invoice.amount)} <span className="text-cyan-600">{invoice.assetCode}</span>
+            {/* The heading already names the asset — the logo would repeat it. */}
+            <AssetLogo code={invoice.assetCode} size={24} showName={false} decorative />
+            <h3 id={headingId} className="text-lg font-bold text-gray-900">
+              {formatAmount(invoice.amount)} <span className="text-cyan-700">{invoice.assetCode}</span>
+              <span className="sr-only"> invoice</span>
             </h3>
           </div>
           {invoice.customerName && (
             <p className="text-sm text-gray-600">{invoice.customerName}</p>
           )}
         </div>
-        <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${statusColor}`}>
-          {status}
+        <span
+          className={`px-3 py-1 rounded-lg text-xs font-semibold ${statusColor}`}
+          aria-label={statusBadgeLabel(status)}
+        >
+          {statusText(status).label}
         </span>
       </div>
 
@@ -88,43 +105,52 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
       )}
 
       <div className="space-y-2 mb-4">
-        <div className="flex items-center gap-2 text-xs text-gray-500">
-          <Clock className="w-4 h-4" />
+        <div className="flex items-center gap-2 text-xs text-gray-600">
+          <Clock className="w-4 h-4" aria-hidden="true" />
           <span>Created: {formatDate(invoice.createdAt)}</span>
         </div>
         {status === 'PENDING' && (
           <div className="flex items-center gap-2 text-xs text-gray-500">
-            <Clock className="w-4 h-4" />
+            <Clock className="w-4 h-4" aria-hidden="true" />
             <span>Expires: {expirySummary(invoice.expiresAt)}</span>
           </div>
         )}
         {status === 'EXPIRED' && (
           <div className="flex items-center gap-2 text-xs text-red-600">
-            <Clock className="w-4 h-4" />
+            <Clock className="w-4 h-4" aria-hidden="true" />
             <span>Expired: {formatDate(invoice.expiresAt)}</span>
           </div>
         )}
       </div>
 
       <div className="flex gap-2">
+        {/*
+          "View", "Download Proof" and the icon-only buttons repeat verbatim on
+          every card, so each accessible name carries the amount that identifies
+          which invoice it acts on.
+        */}
         <Link
           href={`/invoice/${invoice.id}`}
           className="btn btn-outline flex-1 flex items-center justify-center gap-2 text-sm"
+          aria-label={`View ${amountLabel} invoice`}
         >
-          <ExternalLink className="w-4 h-4" />
+          <ExternalLink className="w-4 h-4" aria-hidden="true" />
           View
         </Link>
         {status === 'PENDING' && (
           <button
             onClick={handleCopyLink}
             className="btn btn-secondary flex items-center justify-center gap-2 px-3"
-            aria-label={linkCopied ? 'Invoice link copied' : 'Copy invoice link'}
-            title={linkCopied ? 'Invoice link copied' : 'Copy invoice link'}
+            aria-label={
+              linkCopied
+                ? `Payment link for the ${amountLabel} invoice copied`
+                : `Copy payment link for the ${amountLabel} invoice`
+            }
           >
             {linkCopied ? (
-              <Check className="w-4 h-4 text-green-700" />
+              <Check className="w-4 h-4 text-green-700" aria-hidden="true" />
             ) : (
-              <Copy className="w-4 h-4" />
+              <Copy className="w-4 h-4" aria-hidden="true" />
             )}
           </button>
         )}
@@ -132,24 +158,31 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
           <button
             onClick={handleDownloadPDF}
             className="btn btn-primary flex-1 flex items-center justify-center gap-2 text-sm"
+            aria-label={`Download payment proof for the ${amountLabel} invoice`}
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-4 h-4" aria-hidden="true" />
             Download Proof
           </button>
         )}
         {status === 'PAID' && (
-          <button
-            onClick={!invoice.customerEmail ? undefined : handleEmailShare}
-            disabled={!invoice.customerEmail}
-            title={!invoice.customerEmail ? 'No client email on this invoice' : 'Email Proof'}
-            className={`btn btn-outline flex items-center justify-center gap-2 px-3 ${
-              !invoice.customerEmail ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-          >
-            <Mail className="w-4 h-4" />
-          </button>
+          <>
+            <button
+              onClick={canEmail ? handleEmailShare : undefined}
+              aria-disabled={!canEmail}
+              aria-describedby={canEmail ? undefined : emailReasonId}
+              aria-label={`Email payment proof for the ${amountLabel} invoice`}
+              className="btn btn-outline flex items-center justify-center gap-2 px-3"
+            >
+              <Mail className="w-4 h-4" aria-hidden="true" />
+            </button>
+            {!canEmail && (
+              <span id={emailReasonId} className="sr-only">
+                Unavailable: this invoice has no client email.
+              </span>
+            )}
+          </>
         )}
       </div>
-    </div>
+    </article>
   );
 }
