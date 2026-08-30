@@ -3,19 +3,17 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { createInvoiceRouter } from './routes/invoice.routes';
 import memoryInvoiceStorage from './storage/memory-invoice-storage';
+import { configuredFrontendOrigins, corsOptions } from './config/runtime';
+import { healthHandler, readinessHandler } from './health';
 
 // Load environment variables
 dotenv.config();
 
 const app: Application = express();
 const PORT = process.env.PORT || 3001;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
 // Middleware
-app.use(cors({
-  origin: FRONTEND_URL,
-  credentials: true,
-}));
+app.use(cors(corsOptions()));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -38,16 +36,8 @@ app.get('/', (req: Request, res: Response) => {
 });
 
 // Health check
-app.get('/api/health', (req: Request, res: Response) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    service: 'Quittance API',
-    mode: 'MVP - In-Memory Storage (Dynamic Seller)',
-    storage: memoryInvoiceStorage.mode,
-    message: 'Each user uses their own wallet for payments',
-  });
-});
+app.get('/api/health', healthHandler(memoryInvoiceStorage.mode));
+app.get('/api/ready', readinessHandler(memoryInvoiceStorage.mode));
 
 // Invoice routes — same handlers the Postgres server uses, backed by in-memory storage
 app.use('/api', createInvoiceRouter({ storage: memoryInvoiceStorage }));
@@ -71,8 +61,10 @@ app.get('/api/stellar/account', (req: Request, res: Response) => {
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('Unhandled error:', err);
-  res.status(500).json({
+  const code = (err as Error & { code?: string }).code;
+  res.status(code === 'CORS_ORIGIN_DENIED' ? 403 : 500).json({
     success: false,
+    code,
     error: err.message || 'Internal server error',
   });
 });
@@ -100,7 +92,7 @@ export function startServer(port: number | string = PORT) {
     console.log(`🏥 Health: http://localhost:${port}/api/health`);
     console.log(`💾 Storage: In-Memory (No Database)`);
     console.log(`💰 Dynamic Seller: Each user uses their own wallet!`);
-    console.log(`🌐 Frontend: ${FRONTEND_URL}`);
+    console.log(`🌐 Frontends: ${configuredFrontendOrigins().join(', ') || 'not configured'}`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
   });
 }

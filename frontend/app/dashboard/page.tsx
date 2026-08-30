@@ -18,6 +18,8 @@ import {
   revenueEntries,
   searchInvoices,
 } from '@/lib/dashboard-history';
+import ApiErrorState from '@/components/ApiErrorState';
+import { apiErrorMessage } from '@/lib/api';
 
 export default function DashboardPage() {
   const { publicKey, connected } = useWalletStore();
@@ -31,6 +33,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [lifecycleNow, setLifecycleNow] = useState(() => Date.now());
 
   const { invoices, stats } = dashboardDataFor(
@@ -56,6 +60,7 @@ export default function DashboardPage() {
 
     let active = true;
     setLoading(true);
+    setLoadError(null);
 
     (async () => {
       try {
@@ -76,7 +81,9 @@ export default function DashboardPage() {
         });
       } catch (error) {
         if (!active) return;
-        toast.error('Failed to load data');
+        const message = apiErrorMessage(error, 'Failed to load dashboard data');
+        setLoadError(message);
+        toast.error(message);
       } finally {
         if (active) setLoading(false);
       }
@@ -86,7 +93,7 @@ export default function DashboardPage() {
     return () => {
       active = false;
     };
-  }, [filter, connected, publicKey]);
+  }, [filter, connected, publicKey, reloadKey]);
 
   const handleExportCSV = () => {
     const paidInvoices = exportableInvoices(filteredInvoices);
@@ -267,7 +274,12 @@ export default function DashboardPage() {
               ))}
             </div>
 
-            {loading ? (
+            {loadError ? (
+              <ApiErrorState
+                message={loadError}
+                onRetry={() => setReloadKey((value) => value + 1)}
+              />
+            ) : loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-12 h-12 animate-spin text-cyan-500" />
               </div>

@@ -13,6 +13,8 @@
     "start": "node dist/server.js",
     "start:pg": "node dist/server.js",
     "start:mvp": "tsx src/server-mvp.ts",
+    "start:mvp:prod": "node dist/server-mvp.js",
+    "deploy:smoke": "node ../scripts/deploy-smoke.mjs",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "typecheck": "tsc --noEmit"

@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { invoiceApi } from '@/lib/api';
+import { apiErrorMessage, invoiceApi, isApiUnavailableError } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { STELLAR_ASSETS, getAssetByCode } from '@/lib/assets';
 import AssetLogo from './AssetLogo';
+import ApiErrorState from './ApiErrorState';
 
 interface InvoiceFormProps {
   onSuccess?: (invoice: any) => void;
@@ -21,6 +22,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   const [sellerEmail, setSellerEmail] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  const [apiError, setApiError] = useState<string | null>(null);
   const [expiresInDays, setExpiresInDays] = useState(7);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,6 +49,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
     }
 
     setLoading(true);
+    setApiError(null);
     try {
       const selectedAsset = getAssetByCode(assetCode);
       const result = await invoiceApi.create({
@@ -73,7 +76,9 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       setCustomerEmail('');
       setExpiresInDays(7);
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to create invoice');
+      const message = apiErrorMessage(error, 'Failed to create invoice');
+      if (isApiUnavailableError(error)) setApiError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -81,6 +86,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {apiError && <ApiErrorState message={apiError} compact />}
       <div>
         <label className="label">Invoice Amount *</label>
         <div className="flex gap-3 flex-col sm:flex-row">

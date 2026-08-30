@@ -273,10 +273,11 @@ and PostgreSQL storage adapters, so create/verify regressions surface without a 
 
 ## Deploy frontend (Vercel)
 
-1. Import the GitHub repo in [Vercel](https://vercel.com).  
-2. Set **Root Directory** to `frontend`.  
-3. Framework preset: Next.js (see `frontend/vercel.json`).  
-4. Add environment variables (Production):
+1. Create/import the project in Vercel and set **Root Directory** to `frontend`.
+2. Keep the Next.js preset; `frontend/vercel.json` uses `npm ci`, builds `.next`,
+   and applies the public security headers.
+3. Add these variables to **Production** (and Preview when preview deploys should
+   call the API):
 
 | Variable | Example |
 |----------|---------|
@@ -286,7 +287,9 @@ and PostgreSQL storage adapters, so create/verify regressions surface without a 
 | `NEXT_PUBLIC_APP_URL` | `https://YOUR-APP.vercel.app` |
 | `NEXT_PUBLIC_USE_MOCK` | `false` |
 
-5. Deploy. After the API is live (Phase D2), point `NEXT_PUBLIC_API_URL` at it and set the backend `FRONTEND_URL` to this Vercel URL.
+4. Run `npm run deploy:check` locally with the same variables before deploying.
+5. Deploy. A missing/invalid production API URL fails closed in the UI with an
+   explicit configuration warning; it never falls back to a visitor's localhost.
 
 Templates: `frontend/env.example.txt`, `frontend/env.mvp.local`.
 
@@ -294,15 +297,17 @@ Templates: `frontend/env.example.txt`, `frontend/env.mvp.local`.
 
 ## Deploy backend MVP (Render)
 
-Recommended host for `server-mvp.ts` (in-memory). Do **not** use `backend/vercel.json` for the demo — that targets the Postgres full server.
+Recommended host for `server-mvp.ts` (in-memory). `backend/vercel.json` now has
+an optional serverless MVP entrypoint, but Render is the documented demo path
+because it exposes normal liveness/readiness checks and predictable logs.
 
 ### Manual Web Service
 
 1. Create a **Web Service** on [Render](https://render.com) from this repo.  
 2. **Root Directory:** `backend`  
-3. **Build:** `npm install`  
-4. **Start:** `npm run start:mvp`  
-5. Health check path: `/api/health`  
+3. **Build:** `npm ci && npm run build`
+4. **Start:** `npm run start:mvp:prod`
+5. Health check path: `/api/ready` (`/api/health` remains liveness)
 6. Environment variables:
 
 | Variable | Value |
@@ -311,19 +316,37 @@ Recommended host for `server-mvp.ts` (in-memory). Do **not** use `backend/vercel
 | `STELLAR_NETWORK` | `TESTNET` |
 | `STELLAR_HORIZON_URL` | `https://horizon-testnet.stellar.org` |
 | `FRONTEND_URL` | `https://YOUR-APP.vercel.app` (exact frontend origin) |
+| `FRONTEND_URLS` | Optional comma-separated preview/custom origins |
 | `ALLOW_SIMULATE` | `false` |
 
 `PORT` is set by Render automatically.
 
 ### Blueprint (optional)
 
-`backend/render.yaml` can be used as a starting point. Set `FRONTEND_URL` in the dashboard after the frontend URL is known.
+`backend/render.yaml` is a complete Blueprint for this path. Set the unsynced
+`FRONTEND_URL` value in Render; origins are exact and wildcards are rejected.
 
 ### After API is live
 
 1. Copy the public API URL (e.g. `https://quittance-api.onrender.com`).  
 2. Set frontend `NEXT_PUBLIC_API_URL` to `https://…/api` and redeploy Vercel.  
 3. Confirm CORS: browser call from the Vercel origin to `/api/health` succeeds.
+4. Confirm `GET /api/ready` returns HTTP 200 with `ready: true`.
+5. Run the deployed create/read round-trip:
+
+```bash
+DEPLOY_API_URL=https://YOUR-API-HOST/api node scripts/deploy-smoke.mjs
+```
+
+The smoke command creates one tiny in-memory XLM invoice, reads it back, and
+checks health/readiness. It never simulates or submits a Stellar payment.
+
+### Safe deploy order
+
+1. Reserve/deploy the Vercel project URL.
+2. Configure that exact origin as Render `FRONTEND_URL`, then deploy Render.
+3. Put the Render URL plus `/api` into Vercel `NEXT_PUBLIC_API_URL` and redeploy.
+4. Run the smoke command and the browser checklist in `EVIDENCE.md`.
 
 **Note:** Free-tier / in-memory means cold starts and process restarts clear all invoices. Fine for a short demo; document this for reviewers.
 
