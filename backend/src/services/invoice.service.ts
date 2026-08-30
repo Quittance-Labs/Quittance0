@@ -5,6 +5,15 @@ import { CreateInvoiceInput } from '../utils/validation';
 import type { InvoiceStats } from '../storage/invoice-stats';
 import { calculateInvoiceExpiry } from '../domain/invoice-expiry';
 
+// PostgreSQL invoice service. Kept behaviourally identical to
+// InvoiceMemoryService so callers that go through the shared InvoiceStorage
+// interface cannot tell which backend is running. Invariants mirrored on both
+// sides: (1) markAsPaid only succeeds when status is PENDING AND expires_at
+// is strictly after now(), (2) cancelInvoice only succeeds when status is
+// PENDING, (3) every read path calls markExpiredInvoices first so expired
+// rows transition before being reported, (4) list + stats are scoped to the
+// caller's seller_public_key, (5) credit assets always carry their
+// asset_issuer because createInvoiceSchema already rejected anything less.
 /** Minimal database surface used by this service (pg Pool or a test double). */
 export interface Queryable {
   query(text: string, params?: any[]): Promise<{ rows: any[]; rowCount?: number | null }>;

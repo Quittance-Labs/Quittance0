@@ -10,6 +10,14 @@
  *
  * The stub must exist before the app is imported, because
  * `config/stellar.ts` builds its Horizon client at module load.
+ *
+ * Field parity coverage: these end-to-end HTTP tests exercise create + get +
+ * verify + cancel through server-mvp.ts's in-memory InvoiceStorage,
+ * asserting sellerPublicKey, assetCode (native XLM / credit with issuer),
+ * memo, status transitions, payer info on markAsPaid, and expiresAt
+ * semantics. Any new parity field added to StoredInvoice / createInvoiceSchema
+ * should get an equivalent HTTP assertion here so the integration loop stays
+ * pinned.
  */
 
 import { after, before, describe, it } from 'node:test';

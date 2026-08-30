@@ -5,6 +5,14 @@ import { pool } from '../config/database';
 // SQL lives at the repo root (db/), the runner lives with the backend code so
 // `npm run db:seed` (tsx src/db/seed.ts) resolves both the script and its
 // dependencies.
+//
+// seed.sql applied here uses a full 20-column INSERT (no implicit column
+// defaults) so every parity field is seeded explicitly: seller_email,
+// asset_issuer, payer_name, payer_email, expires_at, paid_at, JSONB
+// metadata, USDC credit-asset issuer on the expired row. The INSERT uses
+// ON CONFLICT (memo) DO NOTHING so re-seeding is idempotent — integration
+// tests in invoice-postgres.integration.test.ts run the seed twice and
+// assert exactly 4 rows to guard against accidental column changes.
 const SQL_DIR = path.join(__dirname, '../../../db');
 
 async function seed() {

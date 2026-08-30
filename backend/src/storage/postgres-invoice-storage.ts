@@ -5,7 +5,13 @@ import type { InvoiceStorage, PayerInfo, StoredInvoice } from './invoice-storage
 
 /**
  * PostgreSQL storage backend. Same contract as the in-memory backend, but the
- * invoices survive restarts.
+ * invoices survive restarts. Field parity with the memory backend is enforced
+ * through the shared StoredInvoice interface: every column the Postgres path
+ * writes (seller_email, asset_issuer, payer_name/email, expires_at, metadata,
+ * paid_at) is matched by the same field name in MemoryStorage. Behavioural
+ * parity (expires_at > NOW() guard in markAsPaid, seller-scoped list+stats,
+ * PENDING-only cancel) is enforced by the SQL WHERE clauses mirroring the
+ * branches in memory-storage.ts.
  */
 export class PostgresInvoiceStorage implements InvoiceStorage {
   readonly mode = 'postgres';

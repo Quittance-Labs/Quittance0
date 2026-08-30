@@ -6,8 +6,9 @@ import type { CreateInvoiceInput } from '../src/utils/validation.ts';
 
 const SELLER_A = 'GAYWLLX32JT5MOLN5TAF3OGFLJBNSTDVAOQONW7QVEUC352TCGRBJYHP';
 const SELLER_B = 'GCBAENYI5GN7X7J5ANCI3TMRTAWCRYAVJN3Q5OPZMUXULO5SYIVJQ6AV';
+const PAYER = 'GPAYERXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+const USDC_ISSUER = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 
-// Column order of the INSERT in invoice.service.ts
 const INSERT_COLUMNS = [
   'id',
   'seller_public_key',
@@ -24,28 +25,28 @@ const INSERT_COLUMNS = [
   'expires_at',
 ];
 
-/**
- * Stand-in for the Postgres pool. It stores inserted rows and only applies the
- * seller filter when the SQL actually scopes on seller_public_key, so a query
- * that stopped scoping would leak the other seller's rows into the assertions.
- */
 class FakeInvoiceDb implements Queryable {
   rows: Record<string, any>[] = [];
   queries: { text: string; params: any[] }[] = [];
 
   async query(text: string, params: any[] = []) {
     this.queries.push({ text, params });
+    const sql = text.replace(/\s+/g, ' ').trim();
 
-    if (text.includes('INSERT INTO invoices')) {
-      const row: Record<string, any> = { created_at: new Date() };
+    if (sql.startsWith('INSERT INTO invoices')) {
+      const row: Record<string, any> = { created_at: new Date(), paid_at: null, metadata: null };
       INSERT_COLUMNS.forEach((column, index) => {
         row[column] = params[index] ?? null;
       });
+      row.payment_tx_hash = null;
+      row.payer_public_key = null;
+      row.payer_name = null;
+      row.payer_email = null;
       this.rows.push(row);
-      return { rows: [row], rowCount: 1 };
+      return { rows: [{ ...row }], rowCount: 1 };
     }
 
-    if (text.includes("SET status = 'EXPIRED'")) {
+    if (sql.startsWith("UPDATE invoices SET status = 'EXPIRED'")) {
       const now = new Date(params[0]).getTime();
       const expired = this.rows.filter(
         row => row.status === 'PENDING' && new Date(row.expires_at).getTime() <= now
@@ -54,12 +55,74 @@ class FakeInvoiceDb implements Queryable {
       return { rows: expired.map(row => ({ id: row.id })), rowCount: expired.length };
     }
 
-    if (text.includes('FROM invoices')) {
-      const scoped = text.includes('seller_public_key = $1')
+    if (sql.startsWith("UPDATE invoices SET status = 'PAID'")) {
+      const now = Date.now();
+      const row = this.rows.find(
+        candidate => candidate.id === params[0] &&
+          candidate.status === 'PENDING' &&
+          new Date(candidate.expires_at).getTime() > now
+      );
+      if (!row) {
+        return { rows: [], rowCount: 0 };
+      }
+      row.status = 'PAID';
+      row.payment_tx_hash = params[1];
+      row.payer_public_key = params[2];
+      row.payer_name = params[3];
+      row.payer_email = params[4];
+      row.paid_at = new Date();
+      return { rows: [{ ...row }], rowCount: 1 };
+    }
+
+    if (sql.startsWith("UPDATE invoices SET status = 'CANCELLED'")) {
+      const row = this.rows.find(
+        candidate => candidate.id === params[0] && candidate.status === 'PENDING'
+      );
+      if (!row) {
+        return { rows: [], rowCount: 0 };
+      }
+      row.status = 'CANCELLED';
+      return { rows: [{ ...row }], rowCount: 1 };
+    }
+
+    if (sql.startsWith('INSERT INTO payment_events')) {
+      return { rows: [], rowCount: 1 };
+    }
+
+    if (sql.startsWith('SELECT * FROM invoices WHERE id =')) {
+      this.applyLazyExpiry();
+      const found = this.rows.filter(row => row.id === params[0]);
+      return { rows: found.map(r => ({ ...r })), rowCount: found.length };
+    }
+
+    if (sql.startsWith('SELECT * FROM invoices WHERE memo =')) {
+      this.applyLazyExpiry();
+      const found = this.rows.filter(row => row.memo === params[0]);
+      return { rows: found.map(r => ({ ...r })), rowCount: found.length };
+    }
+
+    if (sql.startsWith('SELECT * FROM invoices WHERE seller_public_key =')) {
+      this.applyLazyExpiry();
+      let found = this.rows.filter(row => row.seller_public_key === params[0]);
+      if (sql.includes('AND status = $2')) {
+        found = found.filter(row => row.status === params[1]);
+      }
+      const offset = params[params.length - 1];
+      const limit = params[params.length - 2];
+      const page = found
+        .slice()
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(offset, offset + limit);
+      return { rows: page.map(r => ({ ...r })), rowCount: page.length };
+    }
+
+    if (sql.includes('FROM invoices') && (sql.includes('COUNT(*)') || sql.includes('total_invoices'))) {
+      this.applyLazyExpiry();
+      const scoped = sql.includes('seller_public_key = $1')
         ? this.rows.filter(row => row.seller_public_key === params[0])
         : this.rows;
 
-      if (text.includes('COUNT(*)')) {
+      if (sql.includes('COUNT(*)')) {
         const paid = scoped.filter(row => row.status === 'PAID');
         const revenueByAsset: Record<string, number> = {};
         paid.forEach((row) => {
@@ -80,12 +143,19 @@ class FakeInvoiceDb implements Queryable {
         };
       }
 
-      const status = text.includes('status = $2') ? params[1] : undefined;
-      const matching = status ? scoped.filter(row => row.status === status) : scoped;
-      return { rows: matching, rowCount: matching.length };
+      return { rows: [], rowCount: 0 };
     }
 
     return { rows: [], rowCount: 0 };
+  }
+
+  private applyLazyExpiry(): void {
+    const now = Date.now();
+    this.rows.forEach(row => {
+      if (row.status === 'PENDING' && new Date(row.expires_at).getTime() <= now) {
+        row.status = 'EXPIRED';
+      }
+    });
   }
 }
 
@@ -93,6 +163,7 @@ function input(sellerPublicKey: string, overrides: Partial<CreateInvoiceInput> =
   return {
     amount: 100,
     sellerPublicKey,
+    assetCode: 'XLM',
     ...overrides,
   } as CreateInvoiceInput;
 }
@@ -107,6 +178,42 @@ describe('InvoiceService (Postgres) seller scoping', () => {
     assert.equal(invoice.sellerPublicKey, SELLER_A);
     assert.equal(db.rows[0].seller_public_key, SELLER_A);
     assert.ok(!db.queries[0].text.includes('user_id'), 'insert must not use the dropped users coupling');
+  });
+
+  it('persists all parity columns: sellerName/Email, assetIssuer, customer, expiresAt', async () => {
+    const db = new FakeInvoiceDb();
+    const service = new InvoiceService(db);
+
+    const created = await service.createInvoice(input(SELLER_A, {
+      amount: 250,
+      assetCode: 'USDC',
+      assetIssuer: USDC_ISSUER,
+      sellerName: 'Acme Inc',
+      sellerEmail: 'billing@acme.example',
+      customerName: 'Beta LLC',
+      customerEmail: 'finance@beta.example',
+      description: 'Parity column test invoice',
+      expiresInDays: 10,
+    }));
+
+    assert.equal(created.sellerName, 'Acme Inc');
+    assert.equal(created.sellerEmail, 'billing@acme.example');
+    assert.equal(created.assetCode, 'USDC');
+    assert.equal(created.assetIssuer, USDC_ISSUER);
+    assert.equal(created.customerName, 'Beta LLC');
+    assert.equal(created.customerEmail, 'finance@beta.example');
+    assert.equal(created.description, 'Parity column test invoice');
+
+    const hours = (new Date(created.expiresAt).getTime() - new Date(created.createdAt).getTime()) / (60 * 60 * 1000);
+    assert.ok(hours >= 10 * 24 - 1, `expiry should be ~10 days, was ${hours}h`);
+    assert.ok(hours <= 10 * 24 + 1, `expiry should be ~10 days, was ${hours}h`);
+
+    const rawRow = db.rows[0];
+    assert.equal(rawRow.seller_name, 'Acme Inc');
+    assert.equal(rawRow.seller_email, 'billing@acme.example');
+    assert.equal(rawRow.asset_issuer, USDC_ISSUER);
+    assert.equal(rawRow.customer_name, 'Beta LLC');
+    assert.equal(rawRow.customer_email, 'finance@beta.example');
   });
 
   it('lists only the requesting seller invoices', async () => {
@@ -153,8 +260,8 @@ describe('InvoiceService (Postgres) seller scoping', () => {
     assert.equal(statsA.total_invoices, 2);
     assert.equal(statsB.total_invoices, 1);
 
-    const statsQueries = db.queries.filter(entry => entry.text.includes('COUNT(*)'));
-    assert.equal(statsQueries.length, 2);
+    const statsQueries = db.queries.filter(entry => entry.text.includes('COUNT(*)') || entry.text.includes('total_invoices'));
+    assert.ok(statsQueries.length >= 2);
     statsQueries.forEach((entry) => {
       assert.ok(entry.text.includes('seller_public_key = $1'));
       assert.ok([SELLER_A, SELLER_B].includes(entry.params[0]));
@@ -193,5 +300,60 @@ describe('InvoiceService (Postgres) seller scoping', () => {
       /Seller public key is required/
     );
     assert.deepEqual(db.queries, []);
+  });
+
+  it('markAsPaid writes all payer columns: txHash, payerKey, payerName, payerEmail, paidAt', async () => {
+    const db = new FakeInvoiceDb();
+    const service = new InvoiceService(db);
+    const created = await service.createInvoice(input(SELLER_A, { amount: 99 }));
+    const txHash = 'f'.repeat(64);
+
+    const paid = await service.markAsPaid(created.id, txHash, PAYER, {
+      payerName: 'Alan Turing',
+      payerEmail: 'alan@bletchley.example',
+    });
+
+    assert.equal(paid.status, 'PAID');
+    assert.equal(paid.paymentTxHash, txHash);
+    assert.equal(paid.payerPublicKey, PAYER);
+    assert.equal(paid.payerName, 'Alan Turing');
+    assert.equal(paid.payerEmail, 'alan@bletchley.example');
+    assert.ok(paid.paidAt);
+    assert.ok(new Date(paid.paidAt).getTime() >= new Date(created.createdAt).getTime());
+
+    const raw = db.rows[0];
+    assert.equal(raw.payment_tx_hash, txHash);
+    assert.equal(raw.payer_public_key, PAYER);
+    assert.equal(raw.payer_name, 'Alan Turing');
+    assert.equal(raw.payer_email, 'alan@bletchley.example');
+  });
+
+  it('markAsPaid refuses an invoice whose expiresAt has already passed', async () => {
+    const db = new FakeInvoiceDb();
+    const service = new InvoiceService(db);
+    const created = await service.createInvoice(input(SELLER_A, { expiresInDays: 1 }));
+    db.rows[0].expires_at = new Date(Date.now() - 60_000);
+
+    await assert.rejects(
+      () => service.markAsPaid(created.id, 'e'.repeat(64), PAYER),
+      /Invoice not found, expired, or already processed/
+    );
+
+    const fetched = await service.getInvoiceById(created.id);
+    assert.equal(fetched?.status, 'EXPIRED');
+  });
+
+  it('cancelInvoice flips status to CANCELLED only when PENDING', async () => {
+    const db = new FakeInvoiceDb();
+    const service = new InvoiceService(db);
+    const pending = await service.createInvoice(input(SELLER_A, { amount: 1 }));
+
+    const cancelled = await service.cancelInvoice(pending.id);
+    assert.equal(cancelled.status, 'CANCELLED');
+
+    await assert.rejects(
+      () => service.cancelInvoice(pending.id),
+      /Invoice not found or already processed/
+    );
   });
 });

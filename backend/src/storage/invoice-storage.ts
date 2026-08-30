@@ -1,6 +1,13 @@
 import { CreateInvoiceInput } from '../utils/validation';
 import type { InvoiceStats } from './invoice-stats';
 
+// Shared shape and shared storage contract. Both MemoryInvoiceStorage and
+// PostgresInvoiceStorage implement these 8 methods with the same semantics,
+// and every invoice they return is the StoredInvoice type below. Behaviour
+// parity (expiry guard on markAsPaid, single-transition PENDING->CANCELLED,
+// PENDING->PAID only when expiresAt still in the future, lazy
+// markExpiredInvoices on all reads, strict seller_public_key scoping on list
+// and stats) is pinned by the shared test suite in invoice-handlers.test.ts.
 export type InvoiceStatus = 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
 
 // Invoice shape shared by both storage backends.

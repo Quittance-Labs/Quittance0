@@ -1,15 +1,15 @@
-// Invoice service with in-memory storage
 import { generateInvoiceMemo } from '../utils/memo';
 import { CreateInvoiceInput } from '../utils/validation';
-import memoryStorage from '../storage/memory-storage';
+import memoryStorage, { MemoryStorage } from '../storage/memory-storage';
 import { calculateInvoiceExpiry } from '../domain/invoice-expiry';
+import type { StoredInvoice } from '../storage/invoice-storage';
+import type { InvoiceStats } from '../storage/invoice-stats';
+import type { PayerInfo } from '../storage/invoice-storage';
 
-class InvoiceMemoryService {
-  /**
-   * Create a new invoice
-   */
-  async createInvoice(input: CreateInvoiceInput): Promise<any> {
-    // Seller public key artık frontend'den geliyor!
+export class InvoiceMemoryService {
+  constructor(private readonly storage: MemoryStorage = memoryStorage) {}
+
+  async createInvoice(input: CreateInvoiceInput): Promise<StoredInvoice> {
     if (!input.sellerPublicKey) {
       throw new Error('Seller public key is required');
     }
@@ -17,8 +17,8 @@ class InvoiceMemoryService {
     const memo = generateInvoiceMemo();
     const expiresAt = calculateInvoiceExpiry(input.expiresInDays);
 
-    const invoice = memoryStorage.createInvoice({
-      sellerPublicKey: input.sellerPublicKey, // Dinamik!
+    const invoice = this.storage.createInvoice({
+      sellerPublicKey: input.sellerPublicKey,
       sellerName: input.sellerName,
       sellerEmail: input.sellerEmail,
       amount: input.amount,
@@ -35,30 +35,23 @@ class InvoiceMemoryService {
     return invoice;
   }
 
-  /**
-   * Get invoice by ID
-   */
-  async getInvoiceById(id: string): Promise<any | null> {
-    return memoryStorage.getInvoiceById(id);
+  async getInvoiceById(id: string): Promise<StoredInvoice | null> {
+    const invoice = this.storage.getInvoiceById(id);
+    return invoice ?? null;
   }
 
-  /**
-   * Get invoice by memo
-   */
-  async getInvoiceByMemo(memo: string): Promise<any | null> {
-    return memoryStorage.getInvoiceByMemo(memo);
+  async getInvoiceByMemo(memo: string): Promise<StoredInvoice | null> {
+    const invoice = this.storage.getInvoiceByMemo(memo);
+    return invoice ?? null;
   }
 
-  /**
-   * Update invoice status to PAID
-   */
   async markAsPaid(
     invoiceId: string,
     txHash: string,
     payerPublicKey: string,
-    payerInfo?: { payerName?: string; payerEmail?: string }
-  ): Promise<any> {
-    const invoice = memoryStorage.markAsPaid(invoiceId, txHash, payerPublicKey, payerInfo);
+    payerInfo?: PayerInfo
+  ): Promise<StoredInvoice> {
+    const invoice = this.storage.markAsPaid(invoiceId, txHash, payerPublicKey, payerInfo);
 
     if (!invoice) {
       throw new Error('Invoice not found, expired, or already processed');
@@ -68,16 +61,13 @@ class InvoiceMemoryService {
     return invoice;
   }
 
-  /**
-   * Get all invoices for a seller
-   */
   async getInvoicesBySeller(
     sellerPublicKey: string,
     status?: string,
     limit: number = 50,
     offset: number = 0
-  ): Promise<any[]> {
-    let invoices = memoryStorage.getAllInvoices(status ? { status } : undefined);
+  ): Promise<StoredInvoice[]> {
+    let invoices = this.storage.getAllInvoices(status ? { status } : undefined);
 
     if (sellerPublicKey) {
       invoices = invoices.filter((inv) => inv.sellerPublicKey === sellerPublicKey);
@@ -86,31 +76,26 @@ class InvoiceMemoryService {
     return invoices.slice(offset, offset + limit);
   }
 
-  /**
-   * Cancel an invoice
-   */
-  async cancelInvoice(invoiceId: string): Promise<any> {
-    const invoice = memoryStorage.getInvoiceById(invoiceId);
+  async cancelInvoice(invoiceId: string): Promise<StoredInvoice> {
+    const invoice = this.storage.getInvoiceById(invoiceId);
 
     if (!invoice || invoice.status !== 'PENDING') {
       throw new Error('Invoice not found or already processed');
     }
 
-    return memoryStorage.updateInvoice(invoiceId, { status: 'CANCELLED' });
+    const updated = this.storage.updateInvoice(invoiceId, { status: 'CANCELLED' });
+    if (!updated) {
+      throw new Error('Invoice not found or already processed');
+    }
+    return updated;
   }
 
-  /**
-   * Mark expired invoices
-   */
   async markExpiredInvoices(now?: Date): Promise<number> {
-    return memoryStorage.markExpiredInvoices(now);
+    return this.storage.markExpiredInvoices(now);
   }
 
-  /**
-   * Get invoice statistics
-   */
-  async getInvoiceStats(sellerPublicKey: string): Promise<any> {
-    return [memoryStorage.getStats(sellerPublicKey)];
+  async getInvoiceStats(sellerPublicKey: string): Promise<InvoiceStats[]> {
+    return [this.storage.getStats(sellerPublicKey)];
   }
 }
 

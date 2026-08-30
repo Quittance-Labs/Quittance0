@@ -3,6 +3,17 @@
 --
 -- Identity is the connected Freighter wallet: every invoice is keyed by
 -- seller_public_key. There is no user/email login table.
+--
+-- Full parity column set (kept in sync with backend/types StoredInvoice via
+-- db/migrate.ts + InvoiceService INSERT/SELECT column lists):
+--   seller_name, seller_email
+--   amount, asset_code, asset_issuer   (credit assets always require both)
+--   memo, description
+--   customer_name, customer_email
+--   status, payment_tx_hash
+--   payer_public_key, payer_name, payer_email, paid_at
+--   created_at, expires_at             (expires_at NOT NULL, default 7d)
+--   metadata (JSONB)
 
 -- Invoices Table
 CREATE TABLE IF NOT EXISTS invoices (

@@ -2,6 +2,11 @@ import { Response } from 'express';
 import type { VerificationCode } from '../services/payment-verification';
 
 // Shared response envelope used by both the MVP and the Postgres server.
+// Both servers send the same success/failure shape so clients stay
+// storage-agnostic: a frontend pointed at server-mvp.ts behaves exactly the
+// same against server.ts (only persistence duration changes).
+// sendSuccess / sendFailure wrap this envelope; they are shared helpers, so
+// HTTP status codes and envelope keys are also pinned across backends.
 export interface ApiPagination {
   limit: number;
   offset: number;

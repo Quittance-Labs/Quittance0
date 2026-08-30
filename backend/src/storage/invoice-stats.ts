@@ -1,3 +1,9 @@
+// Projection of StoredInvoice used by the dashboard stats aggregator. Uses a
+// strict subset of StoredInvoice fields so both storage backends can feed the
+// same pure calculateInvoiceStats helper without re-mapping types — the memory
+// backend passes raw invoices, the Postgres backend maps a COUNT/SUM row to
+// this shape.  Keeps sellerPublicKey, amount, assetCode, status in the same
+// casing as StoredInvoice to avoid silent rename bugs.
 export interface StatsInvoice {
   sellerPublicKey: string;
   amount: number;
