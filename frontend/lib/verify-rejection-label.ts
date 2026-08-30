@@ -73,9 +73,9 @@ export function rejectionLabel(
     return fallback ?? UNKNOWN_LABEL;
   }
 
-  const record: Record<string, string> = REJECTION_LABELS;
-  if (Object.prototype.hasOwnProperty.call(record, code)) {
-    return record[code];
+  const key = code as keyof typeof REJECTION_LABELS;
+  if (Object.prototype.hasOwnProperty.call(REJECTION_LABELS, code)) {
+    return REJECTION_LABELS[key];
   }
 
   return fallback ?? UNKNOWN_LABEL;
