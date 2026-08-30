@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { formatAmount, formatDate, getStatusColor, getTimeRemaining } from '@/lib/utils';
+import { formatAmount, formatDate, getStatusColor } from '@/lib/utils';
+import { expirySummary } from '@/lib/card-expiry-summary';
 import { Clock, ExternalLink, Copy, Check, Mail, Download } from 'lucide-react';
 import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -94,7 +95,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
         {status === 'PENDING' && (
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <Clock className="w-4 h-4" />
-            <span>Expires: {getTimeRemaining(invoice.expiresAt)}</span>
+            <span>Expires: {expirySummary(invoice.expiresAt)}</span>
           </div>
         )}
         {status === 'EXPIRED' && (
