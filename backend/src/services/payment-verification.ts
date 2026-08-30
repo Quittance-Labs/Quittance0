@@ -16,6 +16,7 @@ import {
   resolveInvoiceAsset,
   resolvePaymentAsset,
 } from '../utils/asset-helpers';
+import { amountsMatch as stroopAmountsMatch } from '../utils/verify-amount-tolerance';
 
 export type VerificationCode =
   | 'MISSING_TX_HASH'
@@ -202,14 +203,7 @@ function assetCodeOf(operation: HorizonOperationLike): string {
 }
 
 export function amountsMatch(actual: unknown, expected: string | number): boolean {
-  const actualAmount = parseFloat(String(actual));
-  const expectedAmount = Number(expected);
-
-  if (!Number.isFinite(actualAmount) || !Number.isFinite(expectedAmount)) {
-    return false;
-  }
-
-  return actualAmount.toFixed(STROOP_PRECISION) === expectedAmount.toFixed(STROOP_PRECISION);
+  return stroopAmountsMatch(expected, actual, 0);
 }
 
 /**
