@@ -27,6 +27,8 @@ const VERIFICATION_MESSAGES = {
 const MAX_PAYER_FIELD_LENGTH = 255;
 const PAYER_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TX_HASH_PATTERN = /^[0-9a-f]{64}$/i;
+const normalizeTransactionHash = (value) =>
+  typeof value === 'string' ? value.trim() : '';
 
 const failure = (code) => ({
   ok: false,
@@ -36,7 +38,7 @@ const failure = (code) => ({
 
 /** A Stellar transaction hash is 64 hexadecimal characters. */
 const isValidTxHash = (txHash) =>
-  typeof txHash === 'string' && TX_HASH_PATTERN.test(txHash.trim());
+  TX_HASH_PATTERN.test(normalizeTransactionHash(txHash));
 
 /** Same order of checks as the backend, so both sides report the same first failure. */
 const checkTxHash = (txHash) => {
@@ -44,7 +46,7 @@ const checkTxHash = (txHash) => {
     return failure('MISSING_TX_HASH');
   }
 
-  const normalized = txHash.trim();
+  const normalized = normalizeTransactionHash(txHash);
   if (!isValidTxHash(normalized)) {
     return failure('INVALID_TX_HASH');
   }
@@ -101,6 +103,7 @@ module.exports = {
   VERIFICATION_MESSAGES,
   failure,
   isValidTxHash,
+  normalizeTransactionHash,
   checkTxHash,
   checkPayerInfo,
   resolveVerificationError,

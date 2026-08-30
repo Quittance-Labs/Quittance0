@@ -3,6 +3,7 @@ import { mockInvoiceApi, mockStellarApi, mockHealthCheck } from './mock-api';
 
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+export const PAYMENT_STATUS_POLL_INTERVAL_MS = 3000;
 
 const api = axios.create({
   baseURL: API_URL,
@@ -118,4 +119,3 @@ export const healthCheck = USE_MOCK_API ? mockHealthCheck : async () => {
 };
 
 export default api;
-

@@ -253,6 +253,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       );
       assert.match(res.body.data.qrCode, /^data:image\/png;base64,/);
       assert.match(res.body.data.stellarQrCode, /^data:image\/png;base64,/);
+      assert.equal(res.body.data.statusPollingIntervalMs, 3000);
     });
 
     it('rejects an invoice with an invalid seller wallet', async () => {

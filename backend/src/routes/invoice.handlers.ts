@@ -13,6 +13,9 @@ import {
   verifyHorizonPayment,
 } from '../services/payment-verification';
 
+/** Kept explicit so clients can tune polling without duplicating backend policy. */
+export const PAYMENT_STATUS_POLL_INTERVAL_MS = 3000;
+
 /** Only the part of the Stellar service the verify handler needs. */
 export interface TransactionLookup {
   getTransaction(txHash: string): Promise<any>;
@@ -73,6 +76,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
     return {
       paymentUrl,
+      statusPollingIntervalMs: PAYMENT_STATUS_POLL_INTERVAL_MS,
       qrCode: await generatePaymentQR(paymentUrl),
       stellarQrCode: await generateStellarPaymentQR(
         invoice.sellerPublicKey,
@@ -94,6 +98,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         sendSuccess(res, 201, {
           invoice,
           paymentUrl: payment.paymentUrl,
+          statusPollingIntervalMs: payment.statusPollingIntervalMs,
           qrCode: payment.qrCode,
           stellarQrCode: payment.stellarQrCode,
         });

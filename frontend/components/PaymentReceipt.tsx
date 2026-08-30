@@ -5,17 +5,14 @@ import { Check, Download, ExternalLink, FileText, Mail } from 'lucide-react';
 import AssetLogo from './AssetLogo';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { toast } from 'sonner';
+import type { PayPageInvoice } from './pay-page.types';
+import { getExplorerTransactionUrl } from '@/lib/stellar';
 
 interface PaymentReceiptProps {
-  invoice: any;
+  invoice: PayPageInvoice;
 }
 
 export default function PaymentReceipt({ invoice }: PaymentReceiptProps) {
-  const horizonUrl =
-    process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET'
-      ? 'https://stellar.expert/explorer/testnet'
-      : 'https://stellar.expert/explorer/public';
-
   const handleDownloadPDF = () => {
     openInvoicePDF(invoice as any);
     toast.success('Opening payment proof');
@@ -37,7 +34,7 @@ export default function PaymentReceipt({ invoice }: PaymentReceiptProps) {
 
 Invoice ID: ${invoice.id}
 Status: ${invoice.status}
-Payment Date: ${formatDate(invoice.paidAt)}
+Payment Date: ${formatDate(invoice.paidAt || invoice.createdAt)}
 
 ───────────────────────────────────────
 PAYMENT DETAILS
@@ -121,7 +118,7 @@ Stellar Blockchain Payment System
 
           <div className="bg-gray-50 rounded-lg p-4">
             <p className="text-xs text-gray-600 mb-1">Payment Date</p>
-            <p className="text-sm text-gray-900">{formatDate(invoice.paidAt)}</p>
+            <p className="text-sm text-gray-900">{formatDate(invoice.paidAt || invoice.createdAt)}</p>
           </div>
         </div>
 
@@ -216,7 +213,7 @@ Stellar Blockchain Payment System
         </button>
 
         <a
-          href={`${horizonUrl}/tx/${invoice.paymentTxHash}`}
+          href={getExplorerTransactionUrl(invoice.paymentTxHash || '')}
           target="_blank"
           rel="noopener noreferrer"
           className="btn btn-outline w-full flex items-center justify-center gap-2"

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   VERIFICATION_MESSAGES,
+  STROOP_PRECISION,
+  amountsMatch,
   checkInvoiceIsPayable,
   checkPayerInfo,
   checkTxHash,
@@ -58,6 +60,13 @@ function codeOf(result: ReturnType<typeof verifyHorizonPayment>): string {
 }
 
 describe('verifyHorizonPayment — happy path', () => {
+  it('compares values at Stellar stroop precision', () => {
+    assert.equal(STROOP_PRECISION, 7);
+    assert.equal(amountsMatch('1.00000004', 1), true);
+    assert.equal(amountsMatch('1.00000006', 1), false);
+    assert.equal(amountsMatch('not-an-amount', 1), false);
+  });
+
   it('accepts a payment matching memo, destination, amount, and asset', () => {
     const result = verifyHorizonPayment(input());
 

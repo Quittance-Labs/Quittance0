@@ -23,6 +23,11 @@ export const NETWORK_PASSPHRASE =
 
 export const server = new StellarSdk.Horizon.Server(HORIZON_URL);
 
+export const getExplorerTransactionUrl = (txHash: string): string => {
+  const network = STELLAR_NETWORK === 'TESTNET' ? 'testnet' : 'public';
+  return `https://stellar.expert/explorer/${network}/tx/${encodeURIComponent(txHash)}`;
+};
+
 const getTrustlineMessage = (assetCode: string): string =>
   `Your wallet does not have a ${assetCode} trustline on ${STELLAR_NETWORK.toLowerCase()}. Add the ${assetCode} trustline in Freighter, or ask the seller for an XLM invoice.`;
 

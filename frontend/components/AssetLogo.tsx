@@ -23,7 +23,7 @@ export default function AssetLogo({
   }
 
   return (
-    <div className={`inline-flex items-center gap-2 ${className}`}>
+    <div className={`inline-flex items-center gap-2 ${className}`} data-asset-code={asset.code}>
       <div 
         className="rounded-full overflow-hidden flex items-center justify-center bg-white shadow-sm border border-gray-100"
         style={{ 
@@ -50,4 +50,3 @@ export default function AssetLogo({
     </div>
   );
 }
-
