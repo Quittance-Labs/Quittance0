@@ -1,3 +1,9 @@
+// Handlers for both backends (in-memory and PostgreSQL). They take an
+// InvoiceStorage implementation and do not branch on the storage mode, so a
+// bug in one backend is a bug in both. All seller/payer/asset/customer/
+// metadata/expiry fields pass through unchanged from the storage layer. The
+// shared suite in invoice-handlers.test.ts runs these same handlers against
+// both adapters with the same assertions to guarantee field parity.
 import { Request, Response } from 'express';
 import stellarService from '../services/stellar.service';
 import { createInvoiceSchema } from '../utils/validation';

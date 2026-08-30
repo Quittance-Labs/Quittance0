@@ -1,13 +1,14 @@
 {
   "name": "quittance-backend",
   "version": "1.0.0",
-  "description": "Stellar-based invoice system backend",
+  "description": "Stellar-based invoice system backend. Two servers share the same InvoiceStorage contract, StoredInvoice shape, Zod schemas, route handlers and HTTP envelopes: server.ts (Postgres persistence) and server-mvp.ts (in-memory MVP). Field and behaviour parity between the two backends is pinned by the shared invoice-handlers.test.ts suite.",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "dev:pg": "tsx watch src/server.ts",
     "dev:mvp": "tsx watch src/server-mvp.ts",
     "test": "node --import tsx --test tests/*.test.ts tests/isolated/*.test.js",
+    "test:pg": "node --import tsx --test tests/invoice-postgres.integration.test.ts",
     "test:isolated": "node --test tests/isolated/*.test.js",
     "build": "tsc",
     "start": "node dist/server.js",

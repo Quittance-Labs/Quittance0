@@ -1,3 +1,8 @@
+// MVP in-memory backend. Mirrors server.ts exactly in HTTP surface, route
+// order, response envelopes and StoredInvoice shape — the only substantive
+// difference is the storage adapter passed to createInvoiceRouter. Both
+// servers export startServer(port?) with the same signature so the same
+// integration harness (see invoice-payment-loop.test.ts) can drive either.
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';

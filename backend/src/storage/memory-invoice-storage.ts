@@ -1,15 +1,12 @@
-import invoiceMemoryService from '../services/invoice-memory.service';
+import { InvoiceMemoryService } from '../services/invoice-memory.service';
 import { CreateInvoiceInput } from '../utils/validation';
 import type { InvoiceStats } from './invoice-stats';
 import type { InvoiceStorage, PayerInfo, StoredInvoice } from './invoice-storage';
 
-/**
- * In-memory storage backend (MVP). Invoices are lost on restart.
- */
 export class MemoryInvoiceStorage implements InvoiceStorage {
   readonly mode = 'in-memory';
 
-  constructor(private readonly service = invoiceMemoryService) {}
+  constructor(private readonly service: InvoiceMemoryService = new InvoiceMemoryService()) {}
 
   async createInvoice(input: CreateInvoiceInput): Promise<StoredInvoice> {
     return this.service.createInvoice(input);

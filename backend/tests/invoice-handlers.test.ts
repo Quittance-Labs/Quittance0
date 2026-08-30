@@ -223,6 +223,8 @@ function invoiceBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const USDC_ISSUER = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+
 /**
  * Both storage backends must expose identical request/response behaviour.
  */
@@ -249,6 +251,85 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       memoryStorage.clear();
       storage = createStorage();
       transaction = undefined;
+    });
+
+    it('round-trips all seller, payer, asset, customer and expiry parity fields through create+get+verify+list', async () => {
+      const sellerName = 'Round-trip Studio';
+      const sellerEmail = 'studio@roundtrip.example';
+      const customerName = 'Client Co';
+      const customerEmail = 'pay@client.example';
+      const payerName = 'Percy Payer';
+      const payerEmail = 'percy@payer.example';
+
+      const created = await createInvoice({
+        amount: 88.25,
+        assetCode: 'USDC',
+        assetIssuer: USDC_ISSUER,
+        sellerName,
+        sellerEmail,
+        customerName,
+        customerEmail,
+        expiresInDays: 5,
+      });
+
+      assert.equal(created.sellerName, sellerName);
+      assert.equal(created.sellerEmail, sellerEmail);
+      assert.equal(created.customerName, customerName);
+      assert.equal(created.customerEmail, customerEmail);
+      assert.equal(created.assetCode, 'USDC');
+      assert.equal(created.assetIssuer, USDC_ISSUER);
+      assert.equal(created.status, 'PENDING');
+
+      const lifetimeHours = (new Date(created.expiresAt).getTime() - new Date(created.createdAt).getTime()) / (60 * 60 * 1000);
+      assert.ok(lifetimeHours >= 5 * 24 - 1, `5-day expiry window should be ~120h, got ${lifetimeHours}h`);
+
+      const got = await call(handlers().getInvoice, createReq({ params: { id: created.id } }));
+      assert.equal(got.statusCode, 200);
+      assert.equal(got.body.data.sellerName, sellerName);
+      assert.equal(got.body.data.assetIssuer, USDC_ISSUER);
+      assert.equal(got.body.data.customerEmail, customerEmail);
+
+      transaction = {
+        transaction: { memo: created.memo },
+        operations: [
+          {
+            type: 'payment',
+            from: PAYER,
+            to: SELLER_A,
+            amount: '88.2500000',
+            asset_type: 'credit_alphanum4',
+            asset_code: 'USDC',
+            asset_issuer: USDC_ISSUER,
+          },
+        ],
+      };
+
+      const verified = await call(
+        handlers().verifyPayment,
+        createReq({
+          params: { id: created.id },
+          body: { txHash: TX_HASH, payerName, payerEmail },
+        })
+      );
+
+      assert.equal(verified.statusCode, 200);
+      assert.equal(verified.body.data.payerName, payerName);
+      assert.equal(verified.body.data.payerEmail, payerEmail);
+      assert.equal(verified.body.data.payerPublicKey, PAYER);
+      assert.equal(verified.body.data.paymentTxHash, TX_HASH);
+      assert.ok(verified.body.data.paidAt, 'paidAt must be set after verify');
+      assert.equal(verified.body.data.status, 'PAID');
+
+      const listed = await call(
+        handlers().getInvoices,
+        createReq({ query: { sellerPublicKey: SELLER_A, status: 'PAID' } })
+      );
+      assert.equal(listed.statusCode, 200);
+      assert.equal(listed.body.data.length >= 1, true);
+      const paidListed = listed.body.data.find((inv: any) => inv.id === created.id);
+      assert.equal(paidListed?.payerName, payerName);
+      assert.equal(paidListed?.assetIssuer, USDC_ISSUER);
+      assert.equal(paidListed?.sellerEmail, sellerEmail);
     });
 
     it('creates an invoice scoped to the seller wallet', async () => {

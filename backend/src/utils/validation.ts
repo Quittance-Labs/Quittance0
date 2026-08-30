@@ -6,6 +6,10 @@ import {
 } from '../domain/invoice-expiry';
 import { NATIVE_ASSET_CODE, requiresIssuer } from './asset-helpers';
 
+// Schemas used identically by both servers. Zod validates the create+verify
+// payloads before they ever reach the InvoiceStorage layer, so the memory
+// and Postgres backends receive the same seller name/email, assetCode +
+// assetIssuer, customer name/email, expiresInDays and metadata fields.
 // Stellar public key validation
 export const stellarPublicKeySchema = z.string()
   .length(56)

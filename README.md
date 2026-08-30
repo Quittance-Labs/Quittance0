@@ -257,17 +257,25 @@ both return `400` when the seller key is missing.
 
 ```bash
 cd backend
-npm test                                                              # unit + scoping tests
+npm run typecheck                                                     # TypeScript compile check (no emit)
+npm test                                                              # unit + scoping + parity tests
 npm run test:isolated                                                 # standalone regression tests in tests/isolated
 DATABASE_URL=postgresql://user:password@localhost:5432/quittance_test npm test   # adds the Postgres integration test
 ```
 
 The integration test (`backend/tests/invoice-postgres.integration.test.ts`) is
 skipped unless `DATABASE_URL` is set. Point it at a disposable database — it
-applies the schema and writes rows.
+applies the schema, runs the seed twice to check idempotency, and writes rows
+covering create, list, status filter, pagination, verify (markAsPaid with all
+payer fields), expiry-time guard, cancel once-only, markExpiredInvoices lazy
+transition, and the PostgresInvoiceStorage adapter end to end.
 
 `npm test` also exercises the shared invoice handlers against both the in-memory
-and PostgreSQL storage adapters, so create/verify regressions surface without a live database.
+and PostgreSQL storage adapters, so create/verify/cancel/list/expiry/stats
+regressions surface without a live database. Every backend path uses the same
+`StoredInvoice` fields (seller metadata, asset issuer, expiry, payer info,
+metadata) — the handler suite is parameterised over both adapters, so field
+parity between memory and Postgres stays pinned by the same assertions.
 
 ---
 
