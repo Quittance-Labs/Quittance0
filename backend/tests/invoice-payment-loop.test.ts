@@ -135,7 +135,10 @@ describe('invoice payment loop', () => {
       res.end(JSON.stringify(body));
     });
 
-    await new Promise<void>((resolve) => horizon.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve, reject) => {
+      horizon.once('error', reject);
+      horizon.listen(0, '127.0.0.1', resolve);
+    });
     const horizonPort = (horizon.address() as AddressInfo).port;
 
     // Must be set before the app (and therefore config/stellar.ts) is imported,
@@ -145,8 +148,10 @@ describe('invoice payment loop', () => {
 
     ({ default: app } = await import('../src/server-mvp'));
 
-    api = app.listen(0, '127.0.0.1');
-    await new Promise<void>((resolve) => api.once('listening', () => resolve()));
+    api = await new Promise<http.Server>((resolve, reject) => {
+      const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
+      listener.once('error', reject);
+    });
     port = (api.address() as AddressInfo).port;
   });
 
