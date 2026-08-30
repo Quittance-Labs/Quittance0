@@ -6,6 +6,7 @@ import {
   isAllowed,
   setAllowed,
 } from '@stellar/freighter-api';
+import { detectFreighter } from './freighter-availability';
 
 // Network configuration
 const STELLAR_NETWORK = process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET';
@@ -22,16 +23,50 @@ export const NETWORK_PASSPHRASE =
 
 export const server = new StellarSdk.Horizon.Server(HORIZON_URL);
 
+export const getExplorerTransactionUrl = (txHash: string): string => {
+  const network = STELLAR_NETWORK === 'TESTNET' ? 'testnet' : 'public';
+  return `https://stellar.expert/explorer/${network}/tx/${encodeURIComponent(txHash)}`;
+};
+
+const getTrustlineMessage = (assetCode: string): string =>
+  `Your wallet does not have a ${assetCode} trustline on ${STELLAR_NETWORK.toLowerCase()}. Add the ${assetCode} trustline in Freighter, or ask the seller for an XLM invoice.`;
+
+const hasAssetTrustline = (
+  account: StellarSdk.Horizon.AccountResponse,
+  assetCode: string,
+  assetIssuer: string
+): boolean =>
+  account.balances.some(
+    (balance: any) =>
+      balance.asset_type !== 'native' &&
+      balance.asset_code === assetCode &&
+      balance.asset_issuer === assetIssuer
+  );
+
+const isMissingTrustlineError = (error: any): boolean => {
+  const operationCodes = error?.response?.data?.extras?.result_codes?.operations;
+  return (
+    operationCodes?.includes('op_no_trust') ||
+    error?.message?.toLowerCase().includes('op_no_trust') ||
+    error?.message?.toLowerCase().includes('no trustline')
+  );
+};
+
+export const describeStellarNetworkError = (error: any): string => {
+  if (error?.message?.includes('Not Found') || error?.response?.status === 404) {
+    return 'Account needs funding on the selected Stellar network.';
+  }
+  if (!error?.response || ['ERR_NETWORK', 'ECONNABORTED', 'ETIMEDOUT'].includes(error?.code)) {
+    return 'Stellar Horizon is temporarily unreachable. Your wallet can stay connected; retry shortly.';
+  }
+  return error?.message || 'Stellar network request failed.';
+};
+
 /**
- * Check if Freighter wallet is available and connected
+ * Check whether the Freighter extension API is available
  */
 export const checkWalletConnection = async (): Promise<boolean> => {
-  try {
-    return await isConnected();
-  } catch (error) {
-    console.error('Error checking wallet connection:', error);
-    return false;
-  }
+  return detectFreighter(isConnected);
 };
 
 /**
@@ -131,6 +166,14 @@ export const sendPayment = async (
         ? StellarSdk.Asset.native()
         : new StellarSdk.Asset(assetCode, assetIssuer!);
 
+    if (
+      assetCode !== 'XLM' &&
+      assetIssuer &&
+      !hasAssetTrustline(account, assetCode, assetIssuer)
+    ) {
+      throw new Error(getTrustlineMessage(assetCode));
+    }
+
     // Build transaction
     const transaction = new StellarSdk.TransactionBuilder(account, {
       fee: StellarSdk.BASE_FEE,
@@ -165,6 +208,9 @@ export const sendPayment = async (
     return result.hash;
   } catch (error: any) {
     console.error('Payment error:', error);
+    if (assetCode !== 'XLM' && isMissingTrustlineError(error)) {
+      throw new Error(getTrustlineMessage(assetCode));
+    }
     throw new Error(error.message || 'Payment failed');
   }
 };
@@ -254,5 +300,5 @@ export default {
   streamPayments,
   formatStellarAmount,
   isValidPublicKey,
+  describeStellarNetworkError,
 };
-

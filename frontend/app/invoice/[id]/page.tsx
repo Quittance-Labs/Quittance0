@@ -1,17 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { invoiceApi } from '@/lib/api';
+import { apiErrorMessage, invoiceApi, isApiUnavailableError } from '@/lib/api';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import PaymentStatus from '@/components/PaymentStatus';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import PaymentReceipt from '@/components/PaymentReceipt';
 import { formatAmount, formatDate, getTimeRemaining, getShareUrl } from '@/lib/utils';
-import { ArrowLeft, Share2, Loader2 } from 'lucide-react';
+import { ArrowLeft, Share2, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
+import ApiErrorState from '@/components/ApiErrorState';
+import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
 
 export default function InvoiceDetailPage() {
   const params = useParams();
@@ -22,27 +24,42 @@ export default function InvoiceDetailPage() {
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [userWallet, setUserWallet] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [lifecycleNow, setLifecycleNow] = useState(() => Date.now());
 
   useEffect(() => {
-    loadInvoice();
-  }, [id]);
+    const timer = window.setInterval(() => setLifecycleNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
-  const loadInvoice = async () => {
+  const loadInvoice = useCallback(async () => {
+    setLoadError(null);
     try {
-      const [invoiceResult, paymentResult] = await Promise.all([
+      const [invoiceResult, paymentResult] = await Promise.allSettled([
         invoiceApi.getById(id),
         invoiceApi.getPaymentInfo(id),
       ]);
 
-      setInvoice(invoiceResult.data);
-      setPaymentInfo(paymentResult.data);
+      if (invoiceResult.status === 'rejected') throw invoiceResult.reason;
+      setInvoice(invoiceResult.value.data);
+      if (paymentResult.status === 'fulfilled') {
+        setPaymentInfo(paymentResult.value.data);
+      } else {
+        setLoadError(apiErrorMessage(paymentResult.reason));
+      }
     } catch (error) {
-      toast.error('Failed to load invoice');
+      const message = apiErrorMessage(error, 'Failed to load invoice');
+      if (isApiUnavailableError(error)) setLoadError(message);
+      toast.error(message);
       console.error(error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    void loadInvoice();
+  }, [loadInvoice]);
 
   const handleShare = async () => {
     const url = getShareUrl(invoice.id);
@@ -63,6 +80,19 @@ export default function InvoiceDetailPage() {
     }
   };
 
+  const handleCancel = async () => {
+    if (!window.confirm('Cancel this invoice?')) return;
+    try {
+      await invoiceApi.cancel(id);
+      toast.success('Invoice cancelled');
+      await loadInvoice();
+    } catch (error) {
+      const message = apiErrorMessage(error, 'Failed to cancel invoice');
+      if (isApiUnavailableError(error)) setLoadError(message);
+      toast.error(message);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-logo-pattern relative flex items-center justify-center">
@@ -78,6 +108,15 @@ export default function InvoiceDetailPage() {
   }
 
   if (!invoice) {
+    if (loadError) {
+      return (
+        <div className="min-h-screen bg-logo-pattern flex items-center justify-center px-4">
+          <div className="max-w-lg w-full">
+            <ApiErrorState message={loadError} onRetry={() => void loadInvoice()} />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-logo-pattern relative flex items-center justify-center">
         <div className="orb orb-1"></div>
@@ -89,6 +128,9 @@ export default function InvoiceDetailPage() {
       </div>
     );
   }
+
+  const effectiveStatus = (effectiveInvoiceStatus(invoice, lifecycleNow) || invoice.status) as
+    'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
 
   return (
     <div className="min-h-screen bg-logo-pattern relative py-8 sm:py-12 px-4">
@@ -118,20 +160,36 @@ export default function InvoiceDetailPage() {
               ) : (
                 <UserProfile userWallet={userWallet} onDisconnect={() => setUserWallet(null)} />
               )}
-              {invoice.status === 'PENDING' && (
-                <button
-                  onClick={handleShare}
-                  className="btn btn-primary flex items-center gap-2"
-                >
-                  <Share2 className="w-5 h-5" />
-                  <span className="hidden sm:inline">Share</span>
-                </button>
+              {effectiveStatus === 'PENDING' && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleShare}
+                    className="btn btn-primary flex items-center gap-2"
+                  >
+                    <Share2 className="w-5 h-5" />
+                    <span className="hidden sm:inline">Share</span>
+                  </button>
+                  {userWallet && invoice.sellerPublicKey === userWallet && (
+                    <button
+                      onClick={handleCancel}
+                      className="btn btn-destructive flex items-center gap-2"
+                    >
+                      <X className="w-5 h-5" />
+                      <span className="hidden sm:inline">Cancel</span>
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
         </header>
 
         <div className="pt-20">
+          {loadError && (
+            <div className="mb-6">
+              <ApiErrorState message={loadError} onRetry={() => void loadInvoice()} compact />
+            </div>
+          )}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
             <div className="card">
               <h2 className="text-3xl font-bold text-gray-900 mb-8">Invoice Details</h2>
@@ -180,12 +238,19 @@ export default function InvoiceDetailPage() {
                   <p className="text-gray-900">{formatDate(invoice.createdAt)}</p>
                 </div>
 
-                {invoice.status === 'PENDING' && (
+                {effectiveStatus === 'PENDING' && (
                   <div className="border-b pb-4">
                     <p className="text-sm text-gray-600 mb-1">Expires In</p>
                     <p className="text-gray-900 font-semibold">
                       {getTimeRemaining(invoice.expiresAt)}
                     </p>
+                  </div>
+                )}
+
+                {effectiveStatus === 'EXPIRED' && (
+                  <div className="border-b pb-4">
+                    <p className="text-sm text-gray-600 mb-1">Expired At</p>
+                    <p className="text-red-700 font-semibold">{formatDate(invoice.expiresAt)}</p>
                   </div>
                 )}
 
@@ -199,15 +264,15 @@ export default function InvoiceDetailPage() {
             </div>
 
             <div className="space-y-6">
-              {invoice.status !== 'PAID' && (
-                <PaymentStatus status={invoice.status} txHash={invoice.paymentTxHash} />
+              {effectiveStatus !== 'PAID' && (
+                <PaymentStatus status={effectiveStatus} txHash={invoice.paymentTxHash} />
               )}
 
-              {invoice.status === 'PAID' && (
+              {effectiveStatus === 'PAID' && (
                 <PaymentReceipt invoice={invoice} />
               )}
 
-              {invoice.status === 'PENDING' && paymentInfo && (
+              {effectiveStatus === 'PENDING' && paymentInfo?.paymentAvailable !== false && (
                 <div className="card">
                   <h3 className="text-lg font-semibold mb-4 text-center">
                     Payment QR Code

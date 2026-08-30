@@ -1,6 +1,8 @@
 // Mock API - Backend olmadan UI test için
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const MIN_EXPIRY_DAYS = 1;
+const MAX_EXPIRY_DAYS = 30;
 
 // Mock invoice data
 const mockInvoices = [
@@ -58,9 +60,35 @@ const mockInvoices = [
   },
 ];
 
+function expirePendingInvoices(now = Date.now()) {
+  mockInvoices.forEach((invoice) => {
+    if (
+      invoice.status === 'PENDING' &&
+      Number.isFinite(new Date(invoice.expiresAt).getTime()) &&
+      new Date(invoice.expiresAt).getTime() <= now
+    ) {
+      invoice.status = 'EXPIRED';
+    }
+  });
+}
+
+function payableMockInvoice(invoice: any) {
+  expirePendingInvoices();
+  if (invoice?.status === 'EXPIRED') {
+    throw Object.assign(new Error('Invoice has expired and can no longer accept payment'), {
+      code: 'INVOICE_EXPIRED',
+    });
+  }
+  if (invoice?.status !== 'PENDING') throw new Error('Invoice is not pending');
+}
+
 export const mockInvoiceApi = {
   create: async (data: any) => {
     await delay(1000); // Simulate network delay
+    const expiresInDays = data.expiresInDays ?? 7;
+    if (!Number.isInteger(expiresInDays) || expiresInDays < MIN_EXPIRY_DAYS || expiresInDays > MAX_EXPIRY_DAYS) {
+      throw new Error('Invoice expiry must be an integer between 1 and 30 days');
+    }
     
     const newInvoice = {
       id: Math.random().toString(36).substr(2, 9),
@@ -69,7 +97,7 @@ export const mockInvoiceApi = {
       memo: `INV-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
       sellerPublicKey: 'GABC123EXAMPLE456789',
       createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + (data.expiresInDays || 7) * 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString(),
     };
 
     mockInvoices.unshift(newInvoice);
@@ -90,6 +118,7 @@ export const mockInvoiceApi = {
 
   getById: async (id: string) => {
     await delay(500);
+    expirePendingInvoices();
     const invoice = mockInvoices.find(inv => inv.id === id);
     
     if (!invoice) {
@@ -104,6 +133,7 @@ export const mockInvoiceApi = {
 
   getAll: async (params?: any) => {
     await delay(700);
+    expirePendingInvoices();
     let filtered = [...mockInvoices];
 
     if (params?.status && params.status !== 'ALL') {
@@ -123,6 +153,7 @@ export const mockInvoiceApi = {
 
   getPaymentInfo: async (id: string) => {
     await delay(500);
+    expirePendingInvoices();
     const invoice = mockInvoices.find(inv => inv.id === id);
     
     if (!invoice) {
@@ -136,8 +167,9 @@ export const mockInvoiceApi = {
       success: true,
       data: {
         paymentUrl,
-        qrCode,
-        stellarQrCode: qrCode,
+        paymentAvailable: invoice.status === 'PENDING',
+        qrCode: invoice.status === 'PENDING' ? qrCode : null,
+        stellarQrCode: invoice.status === 'PENDING' ? qrCode : null,
         invoice,
       },
     };
@@ -147,6 +179,7 @@ export const mockInvoiceApi = {
     await delay(500);
     const invoice = mockInvoices.find(inv => inv.id === id);
     
+    payableMockInvoice(invoice);
     if (invoice) {
       invoice.status = 'CANCELLED';
     }
@@ -161,6 +194,7 @@ export const mockInvoiceApi = {
     await delay(1000);
     const invoice = mockInvoices.find(inv => inv.id === id);
     
+    payableMockInvoice(invoice);
     if (invoice) {
       invoice.status = 'PAID';
       invoice.paymentTxHash = txHash;
@@ -175,16 +209,21 @@ export const mockInvoiceApi = {
 
   getStats: async () => {
     await delay(500);
-    
+    expirePendingInvoices();
+    const revenueByAsset = mockInvoices
+      .filter(invoice => invoice.status === 'PAID')
+      .reduce<Record<string, number>>((revenue, invoice) => {
+        revenue[invoice.assetCode] = (revenue[invoice.assetCode] || 0) + invoice.amount;
+        return revenue;
+      }, {});
+
     const stats = {
       total_invoices: mockInvoices.length,
       paid_invoices: mockInvoices.filter(inv => inv.status === 'PAID').length,
       pending_invoices: mockInvoices.filter(inv => inv.status === 'PENDING').length,
+      actionable_invoices: mockInvoices.filter(inv => inv.status === 'PENDING').length,
       expired_invoices: mockInvoices.filter(inv => inv.status === 'EXPIRED').length,
-      total_revenue: mockInvoices
-        .filter(inv => inv.status === 'PAID')
-        .reduce((sum, inv) => sum + inv.amount, 0),
-      asset_code: 'XLM',
+      revenue_by_asset: revenueByAsset,
     };
 
     return {
@@ -256,4 +295,3 @@ export const mockHealthCheck = async () => {
     service: 'Quittance API (Mock)',
   };
 };
-

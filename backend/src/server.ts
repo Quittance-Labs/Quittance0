@@ -3,46 +3,44 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import routes from './routes';
 import { pool } from './config/database';
-import { validateStellarConfig } from './config/stellar';
+import { validateStellarConfig, SELLER_PUBLIC_KEY } from './config/stellar';
 import paymentMonitorService from './services/payment-monitor.service';
+import { configuredFrontendOrigins, corsOptions } from './config/runtime';
+import postgresInvoiceStorage from './storage/postgres-invoice-storage';
 
-// Load environment variables
 dotenv.config();
 
 const app: Application = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true,
-}));
+app.use(cors(corsOptions()));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use((req: Request, res: Response, next: NextFunction) => {
-  console.log(`${req.method} ${req.path}`);
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
 
-// API routes
 app.use('/api', routes);
 
-// Root endpoint
 app.get('/', (req: Request, res: Response) => {
   res.json({
     name: 'Quittance API',
     version: '1.0.0',
     status: 'running',
+    mode: postgresInvoiceStorage.mode,
     documentation: '/api/health',
   });
 });
 
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error('Error:', err);
-  res.status(500).json({
+  console.error('Unhandled error:', err);
+  const code = (err as Error & { code?: string }).code;
+  res.status(code === 'CORS_ORIGIN_DENIED' ? 403 : 500).json({
     success: false,
+    code,
     error: err.message || 'Internal server error',
   });
 });
@@ -59,16 +57,37 @@ async function initialize() {
     console.log('Starting server...');
     await pool.query('SELECT NOW()');
     console.log('Database connected');
-    validateStellarConfig();
-    paymentMonitorService.start();
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-      console.log(`API: http://localhost:${PORT}/api`);
-    });
+
+    if (SELLER_PUBLIC_KEY) {
+      validateStellarConfig();
+      paymentMonitorService.start();
+    } else {
+      console.log('Wallet-scoped mode: no SELLER_PUBLIC_KEY, payment monitor disabled');
+    }
   } catch (error) {
-    console.error('Failed to start:', error);
+    console.error('Failed to initialize:', error);
     process.exit(1);
   }
+}
+
+export function startServer(port: number | string = PORT) {
+  return app.listen(port, async () => {
+    await initialize();
+    console.log('\n🚀 Quittance Backend (Postgres Mode)');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`✅ Server running on port ${port}`);
+    console.log(`📍 API: http://localhost:${port}/api`);
+    console.log(`🏥 Health: http://localhost:${port}/api/health`);
+    console.log(`💾 Storage: PostgreSQL`);
+    console.log(`💰 Dynamic Seller: Each user uses their own wallet!`);
+    console.log(`🌐 Frontends: ${configuredFrontendOrigins().join(', ') || 'not configured'}`);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+  });
+}
+
+const entryPoint = process.argv[1] ?? '';
+if (/server(\.[cm]?[jt]s)?$/.test(entryPoint)) {
+  startServer();
 }
 
 process.on('SIGTERM', async () => {
@@ -85,8 +104,4 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-// Start application
-initialize();
-
 export default app;
-

@@ -1,5 +1,15 @@
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { server, NETWORK_PASSPHRASE, getSellerKeypair } from '../config/stellar';
+import {
+  checkTxHash,
+  failure,
+  verifyHorizonPayment,
+} from './payment-verification';
+import type {
+  ExpectedPayment,
+  VerificationResult,
+  VerifiedPayment,
+} from './payment-verification';
 
 export interface PaymentRecord {
   id: string;
@@ -40,31 +50,37 @@ class StellarService {
   }
 
   /**
-   * Verify a payment transaction
+   * Verify a payment transaction against the shared verification contract
+   * (issue #224): memo, destination, amount, asset, and network.
+   *
+   * Returns a result rather than throwing so callers can surface the same
+   * rejection code and message as the invoice verify endpoints.
    */
-  async verifyPayment(txHash: string, expectedMemo: string, expectedAmount: string): Promise<boolean> {
-    try {
-      const transaction = await server.transactions().transaction(txHash).call();
-      
-      // Check memo
-      if (transaction.memo !== expectedMemo) {
-        console.log('Memo mismatch:', { expected: expectedMemo, actual: transaction.memo });
-        return false;
-      }
-
-      // Get operations
-      const operations = await server.operations().forTransaction(txHash).call();
-      
-      // Find payment operation
-      const paymentOp = operations.records.find(
-        (op: any) => op.type === 'payment' && op.amount === expectedAmount
-      );
-
-      return !!paymentOp;
-    } catch (error: any) {
-      console.error('Payment verification error:', error);
-      return false;
+  async verifyPayment(
+    txHash: string,
+    expected: ExpectedPayment,
+    network?: string
+  ): Promise<VerificationResult<VerifiedPayment>> {
+    const hashCheck = checkTxHash(txHash);
+    if (!hashCheck.ok) {
+      return hashCheck;
     }
+
+    let txDetails: { transaction: any; operations: any[] };
+    try {
+      txDetails = await this.getTransaction(hashCheck.value);
+    } catch (error: any) {
+      console.error('Payment verification lookup error:', error);
+      return failure('TRANSACTION_NOT_FOUND');
+    }
+
+    return verifyHorizonPayment({
+      txHash: hashCheck.value,
+      expected,
+      transaction: txDetails.transaction,
+      operations: txDetails.operations,
+      network,
+    });
   }
 
   /**

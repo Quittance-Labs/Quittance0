@@ -1,11 +1,23 @@
 import axios from 'axios';
 import { mockInvoiceApi, mockStellarApi, mockHealthCheck } from './mock-api';
+import {
+  ApiUnavailableError,
+  apiErrorMessage,
+  isApiUnavailableError,
+  resolveApiConfig,
+  toApiError,
+} from './api-runtime';
 
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+export const API_CONFIG = resolveApiConfig(
+  process.env.NEXT_PUBLIC_API_URL,
+  process.env.NODE_ENV
+);
+export const PAYMENT_STATUS_POLL_INTERVAL_MS = 3000;
 
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_CONFIG.baseUrl,
+  timeout: 12000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -14,8 +26,9 @@ const api = axios.create({
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
-    return Promise.reject(error);
+    const normalized = toApiError(error);
+    console.error('API Error:', normalized.code, normalized.message);
+    return Promise.reject(normalized);
   }
 );
 export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
@@ -26,7 +39,7 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     description?: string;
     customerName?: string;
     customerEmail?: string;
-    expiresInDays?: number;
+    expiresInDays: number;
     sellerPublicKey?: string;
     sellerName?: string;
     sellerEmail?: string;
@@ -40,11 +53,13 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     return response.data;
   },
 
-  getAll: async (params?: {
+  // Invoice history is scoped to the connected Freighter wallet, so the seller
+  // key is required for list and stats calls.
+  getAll: async (params: {
+    sellerPublicKey: string;
     status?: string;
     limit?: number;
     offset?: number;
-    sellerPublicKey?: string;
   }) => {
     const response = await api.get('/invoices', { params });
     return response.data;
@@ -61,16 +76,18 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
   },
 
   verify: async (id: string, txHash: string, payerInfo?: { payerName?: string; payerEmail?: string }) => {
-    const response = await api.post(`/invoices/${id}/verify`, { 
+    const response = await api.post(`/invoices/${id}/verify`, {
       txHash,
-      ...payerInfo 
+      // Lets the server reject a payment made on a different Stellar network.
+      network: process.env.NEXT_PUBLIC_STELLAR_NETWORK,
+      ...payerInfo
     });
     return response.data;
   },
 
-  getStats: async (sellerPublicKey?: string) => {
+  getStats: async (sellerPublicKey: string) => {
     const response = await api.get('/invoices/stats', {
-      params: sellerPublicKey ? { sellerPublicKey } : undefined,
+      params: { sellerPublicKey },
     });
     return response.data;
   },
@@ -109,9 +126,13 @@ export const stellarApi = USE_MOCK_API ? mockStellarApi : {
 
 // Health check
 export const healthCheck = USE_MOCK_API ? mockHealthCheck : async () => {
+  if (!API_CONFIG.configured) {
+    throw new ApiUnavailableError(API_CONFIG.error || undefined);
+  }
   const response = await api.get('/health');
   return response.data;
 };
 
-export default api;
+export { apiErrorMessage, isApiUnavailableError };
 
+export default api;

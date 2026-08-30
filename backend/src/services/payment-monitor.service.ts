@@ -2,6 +2,7 @@ import stellarService, { PaymentRecord } from './stellar.service';
 import invoiceService from './invoice.service';
 import { SELLER_PUBLIC_KEY } from '../config/stellar';
 import { pool } from '../config/database';
+import { checkInvoiceIsPayable } from './payment-verification';
 
 class PaymentMonitorService {
   private closeHandler: (() => void) | null = null;
@@ -73,15 +74,11 @@ class PaymentMonitorService {
         return;
       }
 
-      // Check if invoice is already paid
-      if (invoice.status === 'PAID') {
-        console.log('⚠️ Invoice already paid:', invoice.id);
-        return;
-      }
-
-      // Check if invoice is expired
-      if (invoice.status === 'EXPIRED') {
-        console.log('⚠️ Invoice is expired:', invoice.id);
+      // The lazy read persists expiration before the monitor can pay it. Use
+      // the same stable code/message returned by the verify endpoint.
+      const payable = checkInvoiceIsPayable(invoice.status);
+      if (!payable.ok) {
+        console.log(`⚠️ ${payable.code}: ${payable.error}`, invoice.id);
         return;
       }
 
@@ -198,6 +195,10 @@ class PaymentMonitorService {
    * Manual sync - fetch recent payments and process them
    */
   async manualSync(limit: number = 50) {
+    if (!SELLER_PUBLIC_KEY) {
+      throw new Error('Payment sync requires SELLER_PUBLIC_KEY to be configured');
+    }
+
     console.log('🔄 Starting manual payment sync...');
 
     try {
@@ -216,4 +217,3 @@ class PaymentMonitorService {
 }
 
 export default new PaymentMonitorService();
-

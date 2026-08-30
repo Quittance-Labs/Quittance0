@@ -132,6 +132,10 @@ export default function HomePage() {
             <p className="mt-3 text-[var(--muted)]">
               Payments go to your connected wallet. Client email is optional — only for sending the link.
             </p>
+            <p className="mt-2 text-xs text-[var(--muted)]">
+              API health is checked automatically. If the demo backend is waking up or offline,
+              your form stays intact and a retry control appears.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-start">

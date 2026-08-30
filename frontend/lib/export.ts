@@ -1,389 +1,21 @@
 import { format } from 'date-fns';
-import type { Transaction } from '@/components/TransactionHistory';
+import {
+  assertPaymentProofAvailable,
+  canExportPaymentProof,
+} from './payment-proof-policy.js';
 
-interface Invoice {
-  id: string;
-  amount: number;
-  assetCode: string;
-  assetIssuer?: string;
-  description?: string;
-  customerName?: string;
-  customerEmail?: string;
-  sellerName?: string;
-  sellerEmail?: string;
-  payerName?: string;
-  payerEmail?: string;
-  status: string;
-  createdAt: string;
-  expiresAt: string;
-  paidAt?: string;
-  memo: string;
-  sellerPublicKey: string;
-  payerPublicKey?: string;
-  paymentTxHash?: string;
-}
+export { assertPaymentProofAvailable, canExportPaymentProof };
 
-/**
- * Convert transactions to CSV format
- */
-export function generateCSV(transactions: Transaction[]): string {
-  const headers = [
-    'Date',
-    'Time',
-    'Type',
-    'Hash',
-    'From',
-    'To',
-    'Amount',
-    'Asset',
-    'Memo',
-    'Ledger',
-  ];
+const HTML_ESCAPE_CHARACTERS: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#039;',
+};
 
-  const rows = transactions.map((tx) => [
-    format(new Date(tx.createdAt), 'yyyy-MM-dd'),
-    format(new Date(tx.createdAt), 'HH:mm:ss'),
-    tx.type.toUpperCase(),
-    tx.hash,
-    tx.from,
-    tx.to,
-    tx.amount,
-    tx.assetCode,
-    tx.memo || '',
-    tx.ledger.toString(),
-  ]);
-
-  const csvContent = [
-    headers.join(','),
-    ...rows.map((row) => row.map((cell) => `"${cell}"`).join(',')),
-  ].join('\n');
-
-  return csvContent;
-}
-
-/**
- * Download CSV file
- */
-export function downloadCSV(transactions: Transaction[], filename?: string) {
-  const csv = generateCSV(transactions);
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-
-  const defaultFilename = `quittance-transactions-${format(new Date(), 'yyyy-MM-dd-HHmmss')}.csv`;
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename || defaultFilename);
-  link.style.visibility = 'hidden';
-
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
-
-/**
- * Generate PDF content (HTML that can be printed/saved as PDF)
- */
-export function generatePDFContent(
-  transactions: Transaction[],
-  publicKey: string
-): string {
-  const totalReceived = transactions
-    .filter((tx) => tx.type === 'received')
-    .reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
-
-  const totalSent = transactions
-    .filter((tx) => tx.type === 'sent')
-    .reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
-
-  const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET' ? 'Testnet' : 'Mainnet';
-
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Quittance Transaction History</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: 'Arial', sans-serif;
-      padding: 40px;
-      color: #1f2937;
-      background: white;
-    }
-    .header {
-      text-align: center;
-      margin-bottom: 40px;
-      padding-bottom: 20px;
-      border-bottom: 3px solid #4f46e5;
-    }
-    .logo {
-      font-size: 32px;
-      font-weight: bold;
-      color: #4f46e5;
-      margin-bottom: 10px;
-    }
-    .subtitle {
-      color: #6b7280;
-      font-size: 14px;
-    }
-    .info-section {
-      margin-bottom: 30px;
-      padding: 20px;
-      background: #f9fafb;
-      border-radius: 8px;
-    }
-    .info-row {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 10px;
-    }
-    .info-label {
-      font-weight: 600;
-      color: #6b7280;
-    }
-    .info-value {
-      font-family: monospace;
-      color: #1f2937;
-    }
-    .summary {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
-      margin-bottom: 30px;
-    }
-    .summary-card {
-      padding: 20px;
-      background: #f3f4f6;
-      border-radius: 8px;
-      text-align: center;
-    }
-    .summary-label {
-      font-size: 12px;
-      color: #6b7280;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 8px;
-    }
-    .summary-value {
-      font-size: 24px;
-      font-weight: bold;
-      color: #1f2937;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 30px;
-    }
-    th {
-      background: #4f46e5;
-      color: white;
-      padding: 12px 8px;
-      text-align: left;
-      font-weight: 600;
-      font-size: 12px;
-      text-transform: uppercase;
-    }
-    td {
-      padding: 12px 8px;
-      border-bottom: 1px solid #e5e7eb;
-      font-size: 12px;
-    }
-    tr:hover {
-      background: #f9fafb;
-    }
-    .type-badge {
-      display: inline-block;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-    .type-received {
-      background: #d1fae5;
-      color: #065f46;
-    }
-    .type-sent {
-      background: #dbeafe;
-      color: #1e40af;
-    }
-    .amount-received {
-      color: #059669;
-      font-weight: 600;
-    }
-    .amount-sent {
-      color: #1f2937;
-      font-weight: 600;
-    }
-    .footer {
-      text-align: center;
-      color: #6b7280;
-      font-size: 12px;
-      margin-top: 40px;
-      padding-top: 20px;
-      border-top: 1px solid #e5e7eb;
-    }
-    .address {
-      font-family: monospace;
-      font-size: 10px;
-      word-break: break-all;
-    }
-    @media print {
-      body {
-        padding: 20px;
-      }
-      .no-print {
-        display: none;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <div class="logo">💫 Quittance</div>
-    <div class="subtitle">Transaction History Report</div>
-  </div>
-
-  <div class="info-section">
-    <div class="info-row">
-      <span class="info-label">Account Address:</span>
-      <span class="info-value address">${publicKey}</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">Network:</span>
-      <span class="info-value">${network}</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">Report Date:</span>
-      <span class="info-value">${format(new Date(), 'PPpp')}</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">Total Transactions:</span>
-      <span class="info-value">${transactions.length}</span>
-    </div>
-  </div>
-
-  <div class="summary">
-    <div class="summary-card">
-      <div class="summary-label">Total Received</div>
-      <div class="summary-value amount-received">+${totalReceived.toFixed(2)} XLM</div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-label">Total Sent</div>
-      <div class="summary-value amount-sent">-${totalSent.toFixed(2)} XLM</div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-label">Net Balance</div>
-      <div class="summary-value">${(totalReceived - totalSent).toFixed(2)} XLM</div>
-    </div>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Date & Time</th>
-        <th>Type</th>
-        <th>From/To</th>
-        <th>Amount</th>
-        <th>Asset</th>
-        <th>Memo</th>
-        <th>Hash</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${transactions
-        .map(
-          (tx) => `
-        <tr>
-          <td>${format(new Date(tx.createdAt), 'MMM dd, yyyy HH:mm')}</td>
-          <td>
-            <span class="type-badge type-${tx.type}">
-              ${tx.type === 'received' ? '↓ Received' : '↑ Sent'}
-            </span>
-          </td>
-          <td class="address">
-            ${tx.type === 'received' ? tx.from : tx.to}
-          </td>
-          <td class="amount-${tx.type}">
-            ${tx.type === 'received' ? '+' : '-'}${parseFloat(tx.amount).toFixed(2)}
-          </td>
-          <td>${tx.assetCode}</td>
-          <td>${tx.memo || '-'}</td>
-          <td class="address">${tx.hash.substring(0, 16)}...</td>
-        </tr>
-      `
-        )
-        .join('')}
-    </tbody>
-  </table>
-
-  <div class="footer">
-    <p>Generated by Quittance - Stellar Payment Platform</p>
-    <p>This is an automatically generated report. All transactions are recorded on the Stellar blockchain.</p>
-  </div>
-
-  <div style="position: fixed; top: 10px; right: 10px; background: #06b6d4; color: white; padding: 15px; border-radius: 8px; z-index: 1000; max-width: 300px; font-family: Arial, sans-serif;">
-    <h3 style="margin: 0 0 10px 0; font-size: 14px;">PDF olarak kaydetmek için:</h3>
-    <ol style="margin: 0; padding-left: 20px; font-size: 12px;">
-      <li>Ctrl+P (Windows) veya Cmd+P (Mac)</li>
-      <li>"Hedef" → "PDF olarak kaydet"</li>
-      <li>"Yazdır" butonuna bas</li>
-    </ol>
-    <button onclick="window.print()" style="background: white; color: #06b6d4; border: none; padding: 8px 16px; border-radius: 4px; margin-top: 10px; cursor: pointer; font-weight: bold; font-size: 12px;">
-      PDF Olarak Kaydet
-    </button>
-  </div>
-
-</body>
-</html>
-  `;
-}
-
-/**
- * Download PDF directly
- */
-export function downloadPDF(transactions: Transaction[], publicKey: string, filename?: string) {
-  const pdfContent = generatePDFContent(transactions, publicKey);
-  
-  // Open in new window for PDF printing
-  const printWindow = window.open('', '_blank', 'width=800,height=600');
-  if (printWindow) {
-    printWindow.document.write(pdfContent);
-    printWindow.document.close();
-    
-    // Auto-trigger print dialog after content loads
-    printWindow.onload = () => {
-      setTimeout(() => {
-        printWindow.print();
-      }, 500);
-    };
-  }
-}
-
-/**
- * Download JSON format (for backup/data portability)
- */
-export function downloadJSON(transactions: Transaction[], filename?: string) {
-  const json = JSON.stringify(transactions, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const link = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-
-  const defaultFilename = `quittance-transactions-${format(new Date(), 'yyyy-MM-dd-HHmmss')}.json`;
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename || defaultFilename);
-  link.style.visibility = 'hidden';
-
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+export function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => HTML_ESCAPE_CHARACTERS[character]);
 }
 
 interface Invoice {
@@ -473,6 +105,7 @@ export function downloadInvoiceCSV(invoices: Invoice[], filename?: string) {
 }
 
 export function generateInvoicePDF(invoice: Invoice): string {
+  assertPaymentProofAvailable(invoice);
   const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET' ? 'Testnet' : 'Mainnet';
   const isPaid = invoice.status === 'PAID';
 
@@ -481,7 +114,7 @@ export function generateInvoicePDF(invoice: Invoice): string {
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Invoice ${invoice.id}</title>
+  <title>Invoice ${escapeHtml(invoice.id)}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { 
@@ -629,16 +262,16 @@ export function generateInvoicePDF(invoice: Invoice): string {
     <div class="logo">Quittance</div>
     <div class="invoice-title">
       <h1>INVOICE</h1>
-      <div class="invoice-number">#${invoice.id.substring(0, 8).toUpperCase()}</div>
-      <span class="status-badge status-${invoice.status.toLowerCase()}">${invoice.status}</span>
+      <div class="invoice-number">#${escapeHtml(invoice.id.substring(0, 8).toUpperCase())}</div>
+      <span class="status-badge status-${escapeHtml(invoice.status.toLowerCase())}">${escapeHtml(invoice.status)}</span>
     </div>
   </div>
 
   <div class="info-grid">
     <div class="info-section">
       <h3>Bill To</h3>
-      ${invoice.customerName ? `<div class="info-row"><div class="info-label">Customer Name</div><div class="info-value">${invoice.customerName}</div></div>` : ''}
-      ${invoice.customerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${invoice.customerEmail}</div></div>` : ''}
+      ${invoice.customerName ? `<div class="info-row"><div class="info-label">Customer Name</div><div class="info-value">${escapeHtml(invoice.customerName)}</div></div>` : ''}
+      ${invoice.customerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${escapeHtml(invoice.customerEmail)}</div></div>` : ''}
       ${!invoice.customerName && !invoice.customerEmail ? `<div class="info-value">N/A</div>` : ''}
     </div>
 
@@ -659,34 +292,34 @@ export function generateInvoicePDF(invoice: Invoice): string {
   ${invoice.sellerName || invoice.sellerEmail ? `
   <div class="info-section" style="margin-bottom: 20px;">
     <h3>Seller Information</h3>
-    ${invoice.sellerName ? `<div class="info-row"><div class="info-label">Name</div><div class="info-value">${invoice.sellerName}</div></div>` : ''}
-    ${invoice.sellerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${invoice.sellerEmail}</div></div>` : ''}
+    ${invoice.sellerName ? `<div class="info-row"><div class="info-label">Name</div><div class="info-value">${escapeHtml(invoice.sellerName)}</div></div>` : ''}
+    ${invoice.sellerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${escapeHtml(invoice.sellerEmail)}</div></div>` : ''}
   </div>` : ''}
 
   ${isPaid && (invoice.payerName || invoice.payerEmail) ? `
   <div class="info-section" style="margin-bottom: 20px;">
     <h3>Payer Information</h3>
-    ${invoice.payerName ? `<div class="info-row"><div class="info-label">Name</div><div class="info-value">${invoice.payerName}</div></div>` : ''}
-    ${invoice.payerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${invoice.payerEmail}</div></div>` : ''}
+    ${invoice.payerName ? `<div class="info-row"><div class="info-label">Name</div><div class="info-value">${escapeHtml(invoice.payerName)}</div></div>` : ''}
+    ${invoice.payerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${escapeHtml(invoice.payerEmail)}</div></div>` : ''}
   </div>` : ''}
 
   <div class="amount-section">
     <div class="amount-label">Amount ${isPaid ? 'Paid' : 'Due'}</div>
     <div class="amount-value">${invoice.amount}</div>
-    <div class="amount-asset">${invoice.assetCode}</div>
+    <div class="amount-asset">${escapeHtml(invoice.assetCode)}</div>
   </div>
 
-  ${invoice.description ? `<div class="info-section" style="margin-bottom: 20px;"><h3>Description</h3><p style="color: #1f2937; line-height: 1.6;">${invoice.description}</p></div>` : ''}
+  ${invoice.description ? `<div class="info-section" style="margin-bottom: 20px;"><h3>Description</h3><p style="color: #1f2937; line-height: 1.6;">${escapeHtml(invoice.description)}</p></div>` : ''}
 
   <table class="details-table">
-    <tr><td>Invoice ID</td><td style="font-family: monospace; font-size: 12px;">${invoice.id}</td></tr>
-    <tr><td>Memo</td><td style="font-family: monospace;">${invoice.memo}</td></tr>
-    <tr><td>Seller Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.sellerPublicKey}</td></tr>
+    <tr><td>Invoice ID</td><td style="font-family: monospace; font-size: 12px;">${escapeHtml(invoice.id)}</td></tr>
+    <tr><td>Memo</td><td style="font-family: monospace;">${escapeHtml(invoice.memo)}</td></tr>
+    <tr><td>Seller Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${escapeHtml(invoice.sellerPublicKey)}</td></tr>
     ${isPaid && invoice.paymentTxHash ? `
-    <tr><td>Transaction Hash</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.paymentTxHash}</td></tr>
-    <tr><td>Payer Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${invoice.payerPublicKey || 'N/A'}</td></tr>
-    ${invoice.payerName ? `<tr><td>Payer Name</td><td>${invoice.payerName}</td></tr>` : ''}
-    ${invoice.payerEmail ? `<tr><td>Payer Email</td><td>${invoice.payerEmail}</td></tr>` : ''}` : ''}
+    <tr><td>Transaction Hash</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${escapeHtml(invoice.paymentTxHash)}</td></tr>
+    <tr><td>Payer Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${escapeHtml(invoice.payerPublicKey || 'N/A')}</td></tr>
+    ${invoice.payerName ? `<tr><td>Payer Name</td><td>${escapeHtml(invoice.payerName)}</td></tr>` : ''}
+    ${invoice.payerEmail ? `<tr><td>Payer Email</td><td>${escapeHtml(invoice.payerEmail)}</td></tr>` : ''}` : ''}
     <tr><td>Network</td><td>${network}</td></tr>
   </table>
 
@@ -733,6 +366,7 @@ export function openInvoicePDF(invoice: Invoice) {
 }
 
 export function shareInvoiceByEmail(invoice: Invoice) {
+  assertPaymentProofAvailable(invoice);
   if (!invoice.customerEmail) {
     throw new Error('Client email is required to send this invoice');
   }
@@ -763,4 +397,3 @@ export function shareInvoiceByEmail(invoice: Invoice) {
   const mailtoLink = `mailto:${invoice.customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   window.location.href = mailtoLink;
 }
-

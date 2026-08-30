@@ -1,13 +1,16 @@
 'use client';
 
 import { CheckCircle, XCircle, Clock, Loader2 } from 'lucide-react';
+import { getExplorerTransactionUrl } from '@/lib/stellar';
 
 interface PaymentStatusProps {
   status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
   txHash?: string;
+  /** Removes the large card/icon treatment when embedded in payment details. */
+  compact?: boolean;
 }
 
-export default function PaymentStatus({ status, txHash }: PaymentStatusProps) {
+export default function PaymentStatus({ status, txHash, compact = false }: PaymentStatusProps) {
   const getStatusIcon = () => {
     switch (status) {
       case 'PAID':
@@ -32,7 +35,7 @@ export default function PaymentStatus({ status, txHash }: PaymentStatusProps) {
       case 'EXPIRED':
         return {
           title: 'Invoice Expired',
-          description: 'This invoice is no longer valid.',
+          description: 'The payment window ended. This record remains available for reference.',
           color: 'text-red-600',
         };
       case 'CANCELLED':
@@ -51,15 +54,10 @@ export default function PaymentStatus({ status, txHash }: PaymentStatusProps) {
   };
 
   const statusInfo = getStatusMessage();
-  const horizonUrl =
-    process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET'
-      ? 'https://stellar.expert/explorer/testnet'
-      : 'https://stellar.expert/explorer/public';
-
   return (
-    <div className="card text-center">
+    <div className={compact ? 'pay-status-compact text-center' : 'card text-center'}>
       <div className="flex flex-col items-center gap-4">
-        {getStatusIcon()}
+        {!compact && getStatusIcon()}
         
         <div>
           <h2 className={`text-2xl font-bold ${statusInfo.color}`}>
@@ -70,7 +68,7 @@ export default function PaymentStatus({ status, txHash }: PaymentStatusProps) {
 
         {txHash && (
           <a
-            href={`${horizonUrl}/tx/${txHash}`}
+            href={getExplorerTransactionUrl(txHash)}
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-outline mt-4"
@@ -82,4 +80,3 @@ export default function PaymentStatus({ status, txHash }: PaymentStatusProps) {
     </div>
   );
 }
-

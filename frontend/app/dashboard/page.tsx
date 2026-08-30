@@ -5,81 +5,98 @@ import { invoiceApi } from '@/lib/api';
 import InvoiceCard from '@/components/InvoiceCard';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
-import TransactionHistory from '@/components/TransactionHistory';
+import AssetLogo from '@/components/AssetLogo';
 import { useWalletStore } from '@/lib/store';
 import Link from 'next/link';
 import { Loader2, Plus, TrendingUp, DollarSign, FileText, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadInvoiceCSV } from '@/lib/export';
+import {
+  dashboardDataFor,
+  exportableInvoices,
+  hasAnyInvoices as hasAnyInvoicesIn,
+  revenueEntries,
+  searchInvoices,
+} from '@/lib/dashboard-history';
+import ApiErrorState from '@/components/ApiErrorState';
+import { apiErrorMessage } from '@/lib/api';
 
 export default function DashboardPage() {
   const { publicKey, connected } = useWalletStore();
-  const [invoices, setInvoices] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  // Loaded data is tagged with the wallet it belongs to, so a response for a
+  // previous seller can never be rendered under the current one.
+  const [loaded, setLoaded] = useState<{ owner: string | null; invoices: any[]; stats: any }>({
+    owner: null,
+    invoices: [],
+    stats: null,
+  });
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [filteredInvoices, setFilteredInvoices] = useState<any[]>([]);
-  const [viewMode, setViewMode] = useState<'invoices' | 'transactions'>('invoices');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [lifecycleNow, setLifecycleNow] = useState(() => Date.now());
+
+  const { invoices, stats } = dashboardDataFor(
+    loaded,
+    connected ? publicKey : null,
+    lifecycleNow
+  );
+  const filteredInvoices = searchInvoices(invoices, searchQuery);
+  const hasAnyInvoices = hasAnyInvoicesIn(stats);
+  const revenueByAsset = revenueEntries(stats);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setLifecycleNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!connected || !publicKey) {
-      setInvoices([]);
-      setStats(null);
+      setLoaded({ owner: null, invoices: [], stats: null });
       setLoading(false);
       return;
     }
-    loadData();
-  }, [filter, connected, publicKey]);
 
-  // Filter and search invoices
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setFilteredInvoices(invoices);
-      return;
-    }
+    let active = true;
+    setLoading(true);
+    setLoadError(null);
 
-    const query = searchQuery.toLowerCase();
-    const filtered = invoices.filter((invoice) => {
-      return (
-        invoice.id.toLowerCase().includes(query) ||
-        invoice.memo.toLowerCase().includes(query) ||
-        invoice.description?.toLowerCase().includes(query) ||
-        invoice.customerName?.toLowerCase().includes(query) ||
-        invoice.customerEmail?.toLowerCase().includes(query) ||
-        invoice.amount.toString().includes(query)
-      );
-    });
-    setFilteredInvoices(filtered);
-  }, [searchQuery, invoices]);
+    (async () => {
+      try {
+        const [invoicesResult, statsResult] = await Promise.all([
+          invoiceApi.getAll({
+            status: filter === 'all' ? undefined : filter.toUpperCase(),
+            limit: 50,
+            sellerPublicKey: publicKey,
+          }),
+          invoiceApi.getStats(publicKey),
+        ]);
 
-  const loadData = async () => {
-    if (!publicKey) return;
-    try {
-      setLoading(true);
-      const [invoicesResult, statsResult] = await Promise.all([
-        invoiceApi.getAll({
-          status: filter === 'all' ? undefined : filter.toUpperCase(),
-          limit: 50,
-          sellerPublicKey: publicKey,
-        }),
-        invoiceApi.getStats(publicKey),
-      ]);
-      setInvoices(invoicesResult.data);
-      setStats(statsResult.data[0] || {});
-    } catch (error) {
-      toast.error('Failed to load data');
-    } finally {
-      setLoading(false);
-    }
-  };
+        if (!active) return;
+        setLoaded({
+          owner: publicKey,
+          invoices: invoicesResult.data,
+          stats: statsResult.data[0] || {},
+        });
+      } catch (error) {
+        if (!active) return;
+        const message = apiErrorMessage(error, 'Failed to load dashboard data');
+        setLoadError(message);
+        toast.error(message);
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+
+    // Switching wallets or unmounting invalidates the request in flight.
+    return () => {
+      active = false;
+    };
+  }, [filter, connected, publicKey, reloadKey]);
 
   const handleExportCSV = () => {
-    if (filteredInvoices.length === 0) {
-      toast.error('No invoices to export');
-      return;
-    }
-    const paidInvoices = filteredInvoices.filter(inv => inv.status === 'PAID');
+    const paidInvoices = exportableInvoices(filteredInvoices);
     if (paidInvoices.length === 0) {
       toast.error('No paid invoices to export');
       return;
@@ -120,7 +137,8 @@ export default function DashboardPage() {
             <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Connect your wallet</h2>
             <p className="text-gray-600 mb-6">
-              Dashboard shows only invoices for your connected Freighter wallet.
+              The dashboard shows the Quittance invoices issued by your connected
+              Freighter wallet. It never reads the rest of your wallet activity.
             </p>
             <div className="flex justify-center">
               <WalletConnect />
@@ -128,41 +146,14 @@ export default function DashboardPage() {
           </div>
         ) : (
           <>
-        {connected && publicKey && (
-          <div className="bg-white rounded-lg border border-gray-200 mb-6 p-2 flex gap-2">
-            <button
-              onClick={() => setViewMode('invoices')}
-              className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-colors ${
-                viewMode === 'invoices'
-                  ? 'bg-cyan-500 text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              Invoices
-            </button>
-            <button
-              onClick={() => setViewMode('transactions')}
-              className={`flex-1 px-4 py-2 rounded-lg font-semibold transition-colors ${
-                viewMode === 'transactions'
-                  ? 'bg-cyan-500 text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              Transactions
-            </button>
-          </div>
-        )}
-
-        {connected && publicKey && viewMode === 'transactions' && (
-          <div className="space-y-6">
-            <TransactionHistory publicKey={publicKey} limit={50} />
-          </div>
-        )}
-
-        {viewMode === 'invoices' && (
-          <>
+        {/*
+          History is scoped to this seller's Quittance invoices. The dashboard
+          deliberately does not read the wallet's Horizon payment feed: that
+          would surface transfers unrelated to Quittance (issue #232).
+        */}
+        <>
             {stats && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
             <div className="card">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -207,15 +198,39 @@ export default function DashboardPage() {
 
             <div className="card">
               <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                  <FileText className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Expired</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {stats.expired_invoices || 0}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center">
                   <DollarSign className="w-6 h-6 text-cyan-600" />
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Revenue</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {parseFloat(stats.total_revenue || 0).toFixed(2)}
-                  </p>
-                  <p className="text-xs text-gray-500">{stats.asset_code || 'XLM'}</p>
+                  {revenueByAsset.length > 0 ? (
+                    <div className="space-y-1">
+                      {revenueByAsset.map(([assetCode, revenue]) => (
+                        <div key={assetCode} className="flex items-center gap-2">
+                          <p className="text-2xl font-bold text-gray-900">
+                            {Number(revenue).toFixed(2)}
+                          </p>
+                          <AssetLogo code={assetCode} size={20} />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-2xl font-bold text-gray-900">0.00</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -244,7 +259,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="bg-white rounded-lg border border-gray-200 mb-6 p-2 flex gap-2 flex-wrap">
-              {['all', 'pending', 'paid', 'expired'].map((status) => (
+              {['all', 'pending', 'paid', 'expired', 'cancelled'].map((status) => (
                 <button
                   key={status}
                   onClick={() => setFilter(status)}
@@ -259,7 +274,12 @@ export default function DashboardPage() {
               ))}
             </div>
 
-            {loading ? (
+            {loadError ? (
+              <ApiErrorState
+                message={loadError}
+                onRetry={() => setReloadKey((value) => value + 1)}
+              />
+            ) : loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-12 h-12 animate-spin text-cyan-500" />
               </div>
@@ -267,13 +287,38 @@ export default function DashboardPage() {
               <div className="card text-center py-12">
                 <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-gray-700 mb-2">
-                  {searchQuery ? 'No Matching Invoices' : 'No Invoices Found'}
+                  {searchQuery
+                    ? 'No Matching Invoices'
+                    : hasAnyInvoices
+                      ? `No ${filter === 'all' ? '' : `${filter} `}Invoices`
+                      : 'No Invoices Yet'}
                 </h3>
                 <p className="text-gray-600 mb-6">
-                  {searchQuery ? 'Try a different search term' : 'Create your first invoice to get started'}
+                  {searchQuery
+                    ? 'Try a different search term or clear your search.'
+                    : hasAnyInvoices
+                      ? 'Choose another status to see your other invoices.'
+                      : 'Create your first invoice and start accepting Stellar payments. Only Quittance invoices appear here.'}
                 </p>
-                {!searchQuery && (
-                  <Link href="/" className="btn btn-primary">
+                {searchQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="btn btn-primary"
+                  >
+                    Clear Search
+                  </button>
+                ) : hasAnyInvoices ? (
+                  <button
+                    type="button"
+                    onClick={() => setFilter('all')}
+                    className="btn btn-primary"
+                  >
+                    Show All Invoices
+                  </button>
+                ) : (
+                  <Link href="/" className="btn btn-primary inline-flex items-center gap-2">
+                    <Plus className="w-5 h-5" />
                     Create Invoice
                   </Link>
                 )}
@@ -287,13 +332,12 @@ export default function DashboardPage() {
                 )}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredInvoices.map((invoice) => (
-                    <InvoiceCard key={invoice.id} invoice={invoice} />
+                    <InvoiceCard key={invoice.id} invoice={invoice as any} />
                   ))}
                 </div>
               </>
             )}
           </>
-        )}
           </>
         )}
       </div>
@@ -302,4 +346,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

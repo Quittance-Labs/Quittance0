@@ -1,25 +1,24 @@
+// MVP in-memory backend. Mirrors server.ts exactly in HTTP surface, route
+// order, response envelopes and StoredInvoice shape — the only substantive
+// difference is the storage adapter passed to createInvoiceRouter. Both
+// servers export startServer(port?) with the same signature so the same
+// integration harness (see invoice-payment-loop.test.ts) can drive either.
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { createInvoiceSchema } from './utils/validation';
-import invoiceService from './services/invoice-memory.service';
-import { generatePaymentQR, generateStellarPaymentQR } from './utils/qrcode';
-import stellarService from './services/stellar.service';
+import { createInvoiceRouter } from './routes/invoice.routes';
+import memoryInvoiceStorage from './storage/memory-invoice-storage';
+import { configuredFrontendOrigins, corsOptions } from './config/runtime';
+import { healthHandler, readinessHandler } from './health';
 
 // Load environment variables
 dotenv.config();
 
 const app: Application = express();
-// Fixed route ordering: stats before ID route
 const PORT = process.env.PORT || 3001;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
-const ALLOW_SIMULATE = process.env.ALLOW_SIMULATE === 'true';
 
 // Middleware
-app.use(cors({
-  origin: FRONTEND_URL,
-  credentials: true,
-}));
+app.use(cors(corsOptions()));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -36,357 +35,19 @@ app.get('/', (req: Request, res: Response) => {
     name: 'Quittance API (MVP)',
     version: '1.0.0',
     status: 'running',
-    mode: 'in-memory',
+    mode: memoryInvoiceStorage.mode,
     documentation: '/api/health',
   });
 });
 
 // Health check
-app.get('/api/health', (req: Request, res: Response) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    service: 'Quittance API',
-    mode: 'MVP - In-Memory Storage (Dynamic Seller)',
-    message: 'Each user uses their own wallet for payments',
-  });
-});
+app.get('/api/health', healthHandler(memoryInvoiceStorage.mode));
+app.get('/api/ready', readinessHandler(memoryInvoiceStorage.mode));
 
-// Create invoice
-app.post('/api/invoices', async (req: Request, res: Response) => {
-  try {
-    const validatedData = createInvoiceSchema.parse(req.body);
-    const invoice = await invoiceService.createInvoice(validatedData);
+// Invoice routes — same handlers the Postgres server uses, backed by in-memory storage
+app.use('/api', createInvoiceRouter({ storage: memoryInvoiceStorage }));
 
-    const paymentUrl = `${FRONTEND_URL}/pay/${invoice.id}`;
-    const qrCodeDataUrl = await generatePaymentQR(paymentUrl);
-    const stellarQrCode = await generateStellarPaymentQR(
-      invoice.sellerPublicKey,
-      invoice.amount.toString(),
-      invoice.assetCode,
-      invoice.memo
-    );
-
-    res.status(201).json({
-      success: true,
-      data: {
-        invoice,
-        paymentUrl,
-        qrCode: qrCodeDataUrl,
-        stellarQrCode,
-      },
-    });
-  } catch (error: any) {
-    console.error('Create invoice error:', error);
-    res.status(400).json({
-      success: false,
-      error: error.message || 'Failed to create invoice',
-    });
-  }
-});
-
-// Get stats (scoped to seller)
-// NOTE: This route must be defined before the dynamic /api/invoices/:id route to avoid shadowing.
-app.get('/api/invoices/stats', async (req: Request, res: Response) => {
-  try {
-    const { sellerPublicKey } = req.query;
-
-    if (!sellerPublicKey) {
-      return res.status(400).json({
-        success: false,
-        error: 'sellerPublicKey query parameter is required',
-      });
-    }
-
-    const stats = await invoiceService.getInvoiceStats(sellerPublicKey as string);
-
-    res.json({
-      success: true,
-      data: stats,
-    });
-  } catch (error: any) {
-    console.error('Get stats error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to get statistics',
-    });
-  }
-});
-
-// Get invoice by ID
-app.get('/api/invoices/:id', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const invoice = await invoiceService.getInvoiceById(id);
-
-    if (!invoice) {
-      return res.status(404).json({
-        success: false,
-        error: 'Invoice not found',
-      });
-    }
-
-    res.json({
-      success: true,
-      data: invoice,
-    });
-  } catch (error: any) {
-    console.error('Get invoice error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to get invoice',
-    });
-  }
-});
-
-// Get all invoices (scoped by sellerPublicKey when provided)
-app.get('/api/invoices', async (req: Request, res: Response) => {
-  try {
-    const { status, limit = 50, offset = 0, sellerPublicKey } = req.query;
-
-    if (!sellerPublicKey) {
-      return res.status(400).json({
-        success: false,
-        error: 'sellerPublicKey query parameter is required',
-      });
-    }
-
-    const invoices = await invoiceService.getInvoicesBySeller(
-      sellerPublicKey as string,
-      status as string | undefined,
-      parseInt(limit as string),
-      parseInt(offset as string)
-    );
-
-    res.json({
-      success: true,
-      data: invoices,
-      pagination: {
-        limit: parseInt(limit as string),
-        offset: parseInt(offset as string),
-        total: invoices.length,
-      },
-    });
-  } catch (error: any) {
-    console.error('Get invoices error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to get invoices',
-    });
-  }
-});
-
-// Get payment info
-app.get('/api/invoices/:id/payment-info', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const invoice = await invoiceService.getInvoiceById(id);
-
-    if (!invoice) {
-      return res.status(404).json({
-        success: false,
-        error: 'Invoice not found',
-      });
-    }
-
-    const paymentUrl = `${FRONTEND_URL}/pay/${invoice.id}`;
-    const qrCodeDataUrl = await generatePaymentQR(paymentUrl);
-    const stellarQrCode = await generateStellarPaymentQR(
-      invoice.sellerPublicKey,
-      invoice.amount.toString(),
-      invoice.assetCode,
-      invoice.memo,
-      invoice.assetIssuer
-    );
-
-    res.json({
-      success: true,
-      data: {
-        paymentUrl,
-        qrCode: qrCodeDataUrl,
-        stellarQrCode,
-        invoice,
-      },
-    });
-  } catch (error: any) {
-    console.error('Get payment info error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to get payment info',
-    });
-  }
-});
-
-// Cancel invoice
-app.post('/api/invoices/:id/cancel', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const invoice = await invoiceService.cancelInvoice(id);
-
-    res.json({
-      success: true,
-      data: invoice,
-    });
-  } catch (error: any) {
-    console.error('Cancel invoice error:', error);
-    res.status(400).json({
-      success: false,
-      error: error.message || 'Failed to cancel invoice',
-    });
-  }
-});
-
-// Verify payment against Horizon (memo + amount + destination)
-app.post('/api/invoices/:id/verify', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { txHash } = req.body;
-
-    if (!txHash) {
-      return res.status(400).json({
-        success: false,
-        error: 'Transaction hash is required',
-      });
-    }
-
-    const invoice = await invoiceService.getInvoiceById(id);
-
-    if (!invoice) {
-      return res.status(404).json({
-        success: false,
-        error: 'Invoice not found',
-      });
-    }
-
-    if (invoice.status === 'PAID') {
-      return res.status(400).json({
-        success: false,
-        error: 'Invoice has already been paid',
-      });
-    }
-
-    if (invoice.status !== 'PENDING') {
-      return res.status(400).json({
-        success: false,
-        error: 'Invoice is not pending',
-      });
-    }
-
-    const txDetails = await stellarService.getTransaction(txHash);
-    const transaction = txDetails.transaction;
-    const paymentOp = txDetails.operations.find((op: any) => op.type === 'payment');
-
-    if (!paymentOp) {
-      return res.status(400).json({
-        success: false,
-        error: 'No payment operation found in transaction',
-      });
-    }
-
-    if (transaction.memo !== invoice.memo) {
-      return res.status(400).json({
-        success: false,
-        error: 'Memo mismatch',
-      });
-    }
-
-    if (paymentOp.to !== invoice.sellerPublicKey) {
-      return res.status(400).json({
-        success: false,
-        error: 'Payment destination mismatch',
-      });
-    }
-
-    if (parseFloat(paymentOp.amount).toFixed(7) !== Number(invoice.amount).toFixed(7)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Amount mismatch',
-      });
-    }
-
-    const opAsset =
-      paymentOp.asset_type === 'native' ? 'XLM' : paymentOp.asset_code;
-    if (opAsset !== invoice.assetCode) {
-      return res.status(400).json({
-        success: false,
-        error: 'Asset mismatch',
-      });
-    }
-
-    const updatedInvoice = await invoiceService.markAsPaid(
-      id,
-      txHash,
-      paymentOp.from
-    );
-
-    res.json({
-      success: true,
-      data: updatedInvoice,
-      message: 'Payment verified on Stellar',
-    });
-  } catch (error: any) {
-    console.error('Verify payment error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to verify payment',
-    });
-  }
-});
-
-// Simulate payment — only when ALLOW_SIMULATE=true (local testing)
-app.post('/api/invoices/:id/simulate-payment', async (req: Request, res: Response) => {
-  try {
-    if (!ALLOW_SIMULATE) {
-      return res.status(404).json({
-        success: false,
-        error: 'Endpoint not found',
-      });
-    }
-
-    const { id } = req.params;
-    const invoice = await invoiceService.getInvoiceById(id);
-
-    if (!invoice) {
-      return res.status(404).json({
-        success: false,
-        error: 'Invoice not found',
-      });
-    }
-
-    if (invoice.status === 'PAID') {
-      return res.status(400).json({
-        success: false,
-        error: 'This invoice has already been paid. Cannot accept duplicate payment.',
-      });
-    }
-
-    if (invoice.status !== 'PENDING') {
-      return res.status(400).json({
-        success: false,
-        error: 'Invoice is not pending',
-      });
-    }
-
-    const mockTxHash = `MOCK_TX_${Date.now().toString(36).toUpperCase()}_${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
-    const mockPayerKey = 'GXXXSIMULATEDPAYERXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
-
-    const updatedInvoice = await invoiceService.markAsPaid(id, mockTxHash, mockPayerKey);
-
-    res.json({
-      success: true,
-      data: updatedInvoice,
-      message: 'Payment simulated successfully',
-    });
-  } catch (error: any) {
-    console.error('Simulate payment error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to simulate payment',
-    });
-  }
-});
-
-// Mock Stellar endpoints (MVP için)
+// Mock Stellar endpoint (MVP only)
 app.get('/api/stellar/account', (req: Request, res: Response) => {
   const { publicKey } = req.query;
   res.json({
@@ -405,8 +66,10 @@ app.get('/api/stellar/account', (req: Request, res: Response) => {
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('Unhandled error:', err);
-  res.status(500).json({
+  const code = (err as Error & { code?: string }).code;
+  res.status(code === 'CORS_ORIGIN_DENIED' ? 403 : 500).json({
     success: false,
+    code,
     error: err.message || 'Internal server error',
   });
 });
@@ -419,18 +82,31 @@ app.use((req: Request, res: Response) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log('\n🚀 Quittance Backend (MVP Mode)');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log(`✅ Server running on port ${PORT}`);
-    console.log(`📍 API: http://localhost:${PORT}/api`);
-    console.log(`🏥 Health: http://localhost:${PORT}/api/health`);
+/**
+ * Starts the HTTP listener.
+ *
+ * Exported so integration tests can bind an ephemeral port instead of the
+ * configured one, and so importing this module never starts a server.
+ */
+export function startServer(port: number | string = PORT) {
+  return app.listen(port, () => {
+    console.log('\n🚀 Quittance Backend (MVP Mode)');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`✅ Server running on port ${port}`);
+    console.log(`📍 API: http://localhost:${port}/api`);
+    console.log(`🏥 Health: http://localhost:${port}/api/health`);
     console.log(`💾 Storage: In-Memory (No Database)`);
     console.log(`💰 Dynamic Seller: Each user uses their own wallet!`);
-    console.log(`🌐 Frontend: ${FRONTEND_URL}`);
+    console.log(`🌐 Frontends: ${configuredFrontendOrigins().join(', ') || 'not configured'}`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-});
+  });
+}
+
+// Only listen when this file is the process entry point. Importing it — which
+// the integration tests do — must not bind a port.
+const entryPoint = process.argv[1] ?? '';
+if (/server-mvp(\.[cm]?[jt]s)?$/.test(entryPoint)) {
+  startServer();
+}
 
 export default app;
-

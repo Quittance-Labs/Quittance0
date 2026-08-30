@@ -12,6 +12,7 @@ export function cn(...inputs: ClassValue[]) {
  */
 export function formatAmount(amount: number | string, decimals: number = 2): string {
   const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+  if (!Number.isFinite(num)) return (0).toFixed(decimals);
   return num.toLocaleString('en-US', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
@@ -125,4 +126,3 @@ export default {
   isValidEmail,
   formatCurrency,
 };
-

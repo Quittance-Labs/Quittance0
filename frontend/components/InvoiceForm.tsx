@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { invoiceApi } from '@/lib/api';
+import { apiErrorMessage, invoiceApi, isApiUnavailableError } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { STELLAR_ASSETS, getAssetByCode } from '@/lib/assets';
 import AssetLogo from './AssetLogo';
+import ApiErrorState from './ApiErrorState';
 
 interface InvoiceFormProps {
   onSuccess?: (invoice: any) => void;
@@ -17,8 +18,12 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   const [amount, setAmount] = useState('');
   const [assetCode, setAssetCode] = useState('XLM');
   const [description, setDescription] = useState('');
+  const [sellerName, setSellerName] = useState('');
+  const [sellerEmail, setSellerEmail] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [expiresInDays, setExpiresInDays] = useState(7);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,15 +43,23 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       return;
     }
 
+    if (sellerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sellerEmail)) {
+      toast.error('Enter a valid email for yourself');
+      return;
+    }
+
     setLoading(true);
+    setApiError(null);
     try {
       const selectedAsset = getAssetByCode(assetCode);
       const result = await invoiceApi.create({
         amount: parseFloat(amount),
         assetCode: assetCode,
         assetIssuer: selectedAsset?.issuer,
-        expiresInDays: 7,
+        expiresInDays,
         sellerPublicKey: userWallet,
+        sellerName: sellerName.trim() || undefined,
+        sellerEmail: sellerEmail.trim() || undefined,
         description: description || undefined,
         customerName: customerName.trim() || undefined,
         customerEmail: customerEmail.trim() || undefined,
@@ -57,10 +70,15 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       setAmount('');
       setAssetCode('XLM');
       setDescription('');
+      setSellerName('');
+      setSellerEmail('');
       setCustomerName('');
       setCustomerEmail('');
+      setExpiresInDays(7);
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to create invoice');
+      const message = apiErrorMessage(error, 'Failed to create invoice');
+      if (isApiUnavailableError(error)) setApiError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -68,6 +86,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {apiError && <ApiErrorState message={apiError} compact />}
       <div>
         <label className="label">Invoice Amount *</label>
         <div className="flex gap-3 flex-col sm:flex-row">
@@ -109,6 +128,51 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
           onChange={(e) => setDescription(e.target.value)}
           maxLength={500}
         />
+      </div>
+
+      <div>
+        <label className="label" htmlFor="invoice-expiry">Payment window</label>
+        <select
+          id="invoice-expiry"
+          className="input w-full text-sm"
+          value={expiresInDays}
+          onChange={(event) => setExpiresInDays(Number(event.target.value))}
+        >
+          {[1, 3, 7, 14, 30].map((days) => (
+            <option key={days} value={days}>
+              {days} day{days === 1 ? '' : 's'}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-gray-500 mt-1">
+          After this window the invoice stays in history but cannot be paid or verified.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="label">Your name (optional)</label>
+          <input
+            type="text"
+            className="input text-sm"
+            placeholder="Your name or business"
+            value={sellerName}
+            onChange={(e) => setSellerName(e.target.value)}
+            maxLength={255}
+          />
+        </div>
+
+        <div>
+          <label className="label">Your email (optional)</label>
+          <input
+            type="email"
+            className="input text-sm"
+            placeholder="you@example.com"
+            value={sellerEmail}
+            onChange={(e) => setSellerEmail(e.target.value)}
+            maxLength={255}
+          />
+        </div>
       </div>
 
       <div>

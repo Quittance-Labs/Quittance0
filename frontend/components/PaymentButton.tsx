@@ -5,6 +5,8 @@ import { sendPayment, checkWalletConnection, requestWalletAccess } from '@/lib/s
 import { toast } from 'sonner';
 import { Wallet, Loader2 } from 'lucide-react';
 import { invoiceApi } from '@/lib/api';
+import { showFreighterInstallPrompt } from '@/components/FreighterInstallPrompt';
+import { describeVerifyError, normalizePayerDetails } from '@/lib/payment-page-state';
 
 interface PaymentButtonProps {
   destination: string;
@@ -15,7 +17,12 @@ interface PaymentButtonProps {
   invoiceId?: string;
   payerName?: string;
   payerEmail?: string;
+  invoiceStatus?: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
+  /** Fired when the payer commits to paying, before the wallet is opened. */
+  onStart?: () => void;
   onSuccess?: (txHash: string) => void;
+  /** Fired when the attempt ends without a confirmed payment. */
+  onError?: (message: string) => void;
 }
 
 const PAY_TOAST_ID = 'payment-flow';
@@ -29,20 +36,48 @@ export default function PaymentButton({
   invoiceId,
   payerName,
   payerEmail,
+  invoiceStatus = 'PENDING',
+  onStart,
   onSuccess,
+  onError,
 }: PaymentButtonProps) {
   const [loading, setLoading] = useState(false);
 
   const handlePayment = async () => {
+    if (invoiceStatus !== 'PENDING') {
+      const message = invoiceStatus === 'EXPIRED'
+        ? 'This invoice has expired and cannot be paid'
+        : 'This invoice is not available for payment';
+      toast.error(message);
+      onError?.(message);
+      return;
+    }
+
+    // Payer details are validated by the shared state module, so the button,
+    // the page and the tests all agree on what a valid email is.
+    const payer = normalizePayerDetails({ payerName, payerEmail });
+    if (!payer.ok) {
+      toast.error(payer.error);
+      onError?.(payer.error);
+      return;
+    }
+
     setLoading(true);
+    onStart?.();
+
     try {
-      const connected = await checkWalletConnection();
-      if (!connected) {
-        const allowed = await requestWalletAccess();
-        if (!allowed) {
-          toast.error('Access denied');
-          return;
-        }
+      const freighterInstalled = await checkWalletConnection();
+      if (!freighterInstalled) {
+        showFreighterInstallPrompt();
+        onError?.('Freighter is not installed');
+        return;
+      }
+
+      const allowed = await requestWalletAccess();
+      if (!allowed) {
+        toast.error('Freighter access was denied');
+        onError?.('Freighter access was denied');
+        return;
       }
 
       toast.loading('Confirm in wallet...', { id: PAY_TOAST_ID });
@@ -51,19 +86,19 @@ export default function PaymentButton({
       if (invoiceId) {
         toast.loading('Verifying payment...', { id: PAY_TOAST_ID });
         try {
-          await invoiceApi.verify(invoiceId, txHash, {
-            payerName,
-            payerEmail,
-          });
+          await invoiceApi.verify(invoiceId, txHash, payer.value);
           toast.success('Payment verified', {
             id: PAY_TOAST_ID,
             description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
           });
         } catch (error) {
+          // The payment is on the ledger even though verification did not
+          // complete, so this is a warning and the flow still reports success.
           console.error('Verification failed:', error);
+          // Surface the shared rejection message rather than a generic warning.
           toast.warning('Payment sent but verification failed', {
             id: PAY_TOAST_ID,
-            description: 'Refresh the page or wait for status to update',
+            description: describeVerifyError(error, 'Refresh the page or wait for status to update'),
           });
         }
       } else {
@@ -75,10 +110,15 @@ export default function PaymentButton({
 
       onSuccess?.(txHash);
     } catch (error: any) {
-      toast.error('Payment failed', {
+      const missingTrustline =
+        assetCode !== 'XLM' && error.message?.toLowerCase().includes('trustline');
+      const title = missingTrustline ? `${assetCode} trustline required` : 'Payment failed';
+      toast.error(title, {
         id: PAY_TOAST_ID,
         description: error.message || 'Try again',
+        duration: missingTrustline ? 10000 : undefined,
       });
+      onError?.(title);
     } finally {
       setLoading(false);
     }
@@ -86,8 +126,11 @@ export default function PaymentButton({
 
   return (
     <button
+      type="button"
       onClick={handlePayment}
-      disabled={loading}
+      disabled={loading || !destination || !amount || invoiceStatus !== 'PENDING'}
+      aria-busy={loading}
+      data-payment-state={loading ? 'processing' : 'ready'}
       className="btn btn-primary w-full flex items-center justify-center gap-2 text-lg py-4"
     >
       {loading ? (
