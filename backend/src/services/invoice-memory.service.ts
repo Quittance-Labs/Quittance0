@@ -2,6 +2,7 @@
 import { generateInvoiceMemo } from '../utils/memo';
 import { CreateInvoiceInput } from '../utils/validation';
 import memoryStorage from '../storage/memory-storage';
+import { calculateInvoiceExpiry } from '../domain/invoice-expiry';
 
 class InvoiceMemoryService {
   /**
@@ -14,8 +15,7 @@ class InvoiceMemoryService {
     }
 
     const memo = generateInvoiceMemo();
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + (input.expiresInDays || 7));
+    const expiresAt = calculateInvoiceExpiry(input.expiresInDays);
 
     const invoice = memoryStorage.createInvoice({
       sellerPublicKey: input.sellerPublicKey, // Dinamik!
@@ -61,7 +61,7 @@ class InvoiceMemoryService {
     const invoice = memoryStorage.markAsPaid(invoiceId, txHash, payerPublicKey, payerInfo);
 
     if (!invoice) {
-      throw new Error('Invoice not found');
+      throw new Error('Invoice not found, expired, or already processed');
     }
 
     console.log('✅ Invoice marked as paid:', invoiceId);
@@ -102,8 +102,8 @@ class InvoiceMemoryService {
   /**
    * Mark expired invoices
    */
-  async markExpiredInvoices(): Promise<number> {
-    return memoryStorage.markExpiredInvoices();
+  async markExpiredInvoices(now?: Date): Promise<number> {
+    return memoryStorage.markExpiredInvoices(now);
   }
 
   /**

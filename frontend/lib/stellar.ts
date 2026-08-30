@@ -52,6 +52,16 @@ const isMissingTrustlineError = (error: any): boolean => {
   );
 };
 
+export const describeStellarNetworkError = (error: any): string => {
+  if (error?.message?.includes('Not Found') || error?.response?.status === 404) {
+    return 'Account needs funding on the selected Stellar network.';
+  }
+  if (!error?.response || ['ERR_NETWORK', 'ECONNABORTED', 'ETIMEDOUT'].includes(error?.code)) {
+    return 'Stellar Horizon is temporarily unreachable. Your wallet can stay connected; retry shortly.';
+  }
+  return error?.message || 'Stellar network request failed.';
+};
+
 /**
  * Check whether the Freighter extension API is available
  */
@@ -290,4 +300,5 @@ export default {
   streamPayments,
   formatStellarAmount,
   isValidPublicKey,
+  describeStellarNetworkError,
 };

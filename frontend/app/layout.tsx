@@ -3,6 +3,7 @@ import { Instrument_Serif } from 'next/font/google';
 import { GeistSans } from 'geist/font/sans';
 import { Toaster } from 'sonner';
 import './globals.css';
+import ApiStatusBanner from '@/components/ApiStatusBanner';
 
 const instrumentSerif = Instrument_Serif({
   weight: '400',
@@ -26,6 +27,7 @@ export default function RootLayout({
     <html lang="en" className={`${GeistSans.variable} ${instrumentSerif.variable}`}>
       <body className={`${GeistSans.className} antialiased`}>
         <Toaster position="top-right" richColors />
+        <ApiStatusBanner />
         {children}
       </body>
     </html>

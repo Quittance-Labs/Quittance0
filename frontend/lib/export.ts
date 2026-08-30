@@ -1,4 +1,10 @@
 import { format } from 'date-fns';
+import {
+  assertPaymentProofAvailable,
+  canExportPaymentProof,
+} from './payment-proof-policy.js';
+
+export { assertPaymentProofAvailable, canExportPaymentProof };
 
 const HTML_ESCAPE_CHARACTERS: Record<string, string> = {
   '&': '&amp;',
@@ -99,6 +105,7 @@ export function downloadInvoiceCSV(invoices: Invoice[], filename?: string) {
 }
 
 export function generateInvoicePDF(invoice: Invoice): string {
+  assertPaymentProofAvailable(invoice);
   const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET' ? 'Testnet' : 'Mainnet';
   const isPaid = invoice.status === 'PAID';
 
@@ -359,6 +366,7 @@ export function openInvoicePDF(invoice: Invoice) {
 }
 
 export function shareInvoiceByEmail(invoice: Invoice) {
+  assertPaymentProofAvailable(invoice);
   if (!invoice.customerEmail) {
     throw new Error('Client email is required to send this invoice');
   }

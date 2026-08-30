@@ -3,18 +3,13 @@ import stellarController from '../controllers/stellar.controller';
 import paymentMonitorService from '../services/payment-monitor.service';
 import postgresInvoiceStorage from '../storage/postgres-invoice-storage';
 import { createInvoiceRouter } from './invoice.routes';
+import { healthHandler, readinessHandler } from '../health';
 
 const router = Router();
 
 // Health check
-router.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    service: 'Quittance API',
-    storage: postgresInvoiceStorage.mode
-  });
-});
+router.get('/health', healthHandler(postgresInvoiceStorage.mode));
+router.get('/ready', readinessHandler(postgresInvoiceStorage.mode));
 
 // Invoice routes — same handlers the MVP server uses, backed by PostgreSQL
 router.use(createInvoiceRouter({ storage: postgresInvoiceStorage }));
@@ -44,4 +39,3 @@ router.post('/payment/sync', async (req, res) => {
 });
 
 export default router;
-

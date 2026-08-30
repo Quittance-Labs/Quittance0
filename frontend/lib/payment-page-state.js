@@ -34,15 +34,23 @@ const PAY_STATES = Object.freeze({
 });
 
 const TERMINAL_STATES = Object.freeze([PAY_STATES.PAID, PAY_STATES.EXPIRED]);
+const { effectiveInvoiceStatus, hasInvoiceExpired } = require('./invoice-lifecycle');
 
-const isExpiredInvoice = (status) => status === 'EXPIRED';
+const asInvoice = (statusOrInvoice) =>
+  statusOrInvoice && typeof statusOrInvoice === 'object'
+    ? statusOrInvoice
+    : { status: statusOrInvoice };
 
-const shouldShowPaymentControls = (status, paymentTxHash) => {
-  if (isExpiredInvoice(status)) {
+const isExpiredInvoice = (statusOrInvoice, now) =>
+  hasInvoiceExpired(asInvoice(statusOrInvoice), now);
+
+const shouldShowPaymentControls = (statusOrInvoice, paymentTxHash, now) => {
+  const invoice = asInvoice(statusOrInvoice);
+  if (isExpiredInvoice(invoice, now)) {
     return false;
   }
 
-  return status === 'PENDING' && !paymentTxHash;
+  return invoice.status === 'PENDING' && !(paymentTxHash ?? invoice.paymentTxHash);
 };
 
 /** Stable presentation flags shared by the route and component-level tests. */
@@ -58,7 +66,8 @@ function getPayPageView(invoice) {
 }
 
 /** Maps an invoice status onto the state it forces, or null if it forces none. */
-function stateForStatus(status) {
+function stateForStatus(statusOrInvoice, now) {
+  const status = effectiveInvoiceStatus(asInvoice(statusOrInvoice), now);
   if (status === 'PAID') return PAY_STATES.PAID;
   if (isExpiredInvoice(status)) return PAY_STATES.EXPIRED;
   return null;
@@ -66,7 +75,7 @@ function stateForStatus(status) {
 
 function initialPaymentState(invoice) {
   return {
-    status: invoice ? stateForStatus(invoice.status) ?? PAY_STATES.IDLE : PAY_STATES.IDLE,
+    status: invoice ? stateForStatus(invoice) ?? PAY_STATES.IDLE : PAY_STATES.IDLE,
     invoice: invoice ?? null,
     txHash: invoice?.paymentTxHash ?? null,
     error: null,
@@ -85,7 +94,7 @@ function paymentReducer(state, event) {
     case 'INVOICE_LOADED':
     case 'POLL_RESULT': {
       const invoice = event.invoice ?? null;
-      const forced = invoice ? stateForStatus(invoice.status) : null;
+      const forced = invoice ? stateForStatus(invoice) : null;
 
       if (forced) {
         return {
@@ -155,7 +164,7 @@ function paymentReducer(state, event) {
 function shouldPoll(state) {
   if (!state?.invoice) return false;
   if (TERMINAL_STATES.includes(state.status)) return false;
-  return state.invoice.status === 'PENDING';
+  return effectiveInvoiceStatus(state.invoice) === 'PENDING';
 }
 
 /** Email shape accepted for payer metadata. Mirrors the backend's own check. */

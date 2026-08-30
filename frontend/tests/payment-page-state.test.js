@@ -31,6 +31,15 @@ test('hides payment controls for an expired invoice', () => {
   assert.equal(shouldShowPaymentControls('EXPIRED'), false);
 });
 
+test('stale pending data fails closed after expiresAt', () => {
+  const stale = { status: 'PENDING', expiresAt: '2000-01-01T00:00:00.000Z' };
+  const now = '2026-08-30T12:00:00.000Z';
+
+  assert.equal(isExpiredInvoice(stale, now), true);
+  assert.equal(shouldShowPaymentControls(stale, undefined, now), false);
+  assert.equal(initialPaymentState(stale).status, PAY_STATES.EXPIRED);
+});
+
 test('keeps payment controls available for an unpaid pending invoice', () => {
   assert.equal(shouldShowPaymentControls('PENDING'), true);
   assert.equal(shouldShowPaymentControls('PENDING', 'existing-transaction'), false);
@@ -204,6 +213,11 @@ test('polling runs only while the answer is still unknown', () => {
   assert.equal(shouldPoll(idleOn(paid)), false);
   assert.equal(shouldPoll(idleOn(expired)), false);
   assert.equal(shouldPoll(idleOn(null)), false);
+});
+
+test('polling stops for a locally elapsed pending invoice', () => {
+  const stale = { status: 'PENDING', expiresAt: '2000-01-01T00:00:00.000Z' };
+  assert.equal(shouldPoll(idleOn(stale)), false);
 });
 
 test('polling stops the moment the invoice settles', () => {

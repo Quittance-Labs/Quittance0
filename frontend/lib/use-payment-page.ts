@@ -1,9 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { invoiceApi, PAYMENT_STATUS_POLL_INTERVAL_MS } from './api';
+import { apiErrorMessage, invoiceApi, isApiUnavailableError, PAYMENT_STATUS_POLL_INTERVAL_MS } from './api';
 import { checkTxHash } from './verification';
-import { PAY_STATES, describeVerifyError, initialPaymentState, normalizePayerDetails, paymentReducer, shouldPoll } from './payment-page-state';
+import {
+  PAY_STATES,
+  describeVerifyError,
+  initialPaymentState,
+  normalizePayerDetails,
+  paymentReducer,
+  shouldPoll,
+} from './payment-page-state';
 import type { PayPageInvoice, PayPagePaymentInfo } from '@/components/pay-page.types';
 import { toast } from 'sonner';
 
@@ -15,17 +22,33 @@ export function usePaymentPage(id: string) {
   const [txHash, setTxHash] = useState('');
   const [payerName, setPayerName] = useState('');
   const [payerEmail, setPayerEmail] = useState('');
+  const [loadError, setLoadError] = useState<string | null>(null);
   const generation = useRef(0);
 
   const load = useCallback(async () => {
     const request = generation.current;
+    setLoadError(null);
+
     try {
-      const [invoiceResult, infoResult] = await Promise.all([invoiceApi.getById(id), invoiceApi.getPaymentInfo(id)]);
+      const [invoiceResult, infoResult] = await Promise.allSettled([
+        invoiceApi.getById(id),
+        invoiceApi.getPaymentInfo(id),
+      ]);
+
       if (request !== generation.current) return;
-      dispatch({ type: 'INVOICE_LOADED', invoice: invoiceResult.data });
-      setPaymentInfo(infoResult.data);
-    } catch {
-      if (request === generation.current) toast.error('Failed to load invoice');
+      if (invoiceResult.status === 'rejected') throw invoiceResult.reason;
+
+      dispatch({ type: 'INVOICE_LOADED', invoice: invoiceResult.value.data });
+      if (infoResult.status === 'fulfilled') {
+        setPaymentInfo(infoResult.data);
+      } else {
+        setLoadError(apiErrorMessage(infoResult.reason));
+      }
+    } catch (error) {
+      if (request !== generation.current) return;
+      const message = apiErrorMessage(error, 'Failed to load invoice');
+      if (isApiUnavailableError(error)) setLoadError(message);
+      toast.error(message);
     } finally {
       if (request === generation.current) setLoading(false);
     }
@@ -38,7 +61,9 @@ export function usePaymentPage(id: string) {
     setTxHash('');
     dispatch({ type: 'INVOICE_LOADED', invoice: null });
     void load();
-    return () => { generation.current += 1; };
+    return () => {
+      generation.current += 1;
+    };
   }, [id, load]);
 
   useEffect(() => {
@@ -52,6 +77,7 @@ export function usePaymentPage(id: string) {
         if (result.data.status === 'PAID') toast.success('Payment confirmed!');
       } catch (error) {
         console.error('Invoice status polling failed:', error);
+        if (isApiUnavailableError(error)) setLoadError(apiErrorMessage(error));
       }
     }, paymentInfo?.statusPollingIntervalMs ?? PAYMENT_STATUS_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
@@ -73,10 +99,29 @@ export function usePaymentPage(id: string) {
     } catch (error) {
       if (request !== generation.current) return;
       const message = describeVerifyError(error);
+      if (isApiUnavailableError(error)) setLoadError(apiErrorMessage(error));
       dispatch({ type: 'VERIFY_FAILED', error: message });
       toast.error(message);
     }
   };
 
-  return { invoice: payment.invoice as PayPageInvoice | null, loading, paymentInfo, wallet, setWallet, txHash, setTxHash, payerName, setPayerName, payerEmail, setPayerEmail, verifying: payment.status === PAY_STATES.VERIFYING, monitoring: shouldPoll(payment), dispatch, verify, reload: load };
+  return {
+    invoice: payment.invoice as PayPageInvoice | null,
+    loading,
+    loadError,
+    paymentInfo,
+    wallet,
+    setWallet,
+    txHash,
+    setTxHash,
+    payerName,
+    setPayerName,
+    payerEmail,
+    setPayerEmail,
+    verifying: payment.status === PAY_STATES.VERIFYING,
+    monitoring: shouldPoll(payment),
+    dispatch,
+    verify,
+    reload: load,
+  };
 }

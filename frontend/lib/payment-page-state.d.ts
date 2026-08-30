@@ -2,6 +2,7 @@ export type PayStatus = 'idle' | 'paying' | 'verifying' | 'paid' | 'error' | 'ex
 
 export interface PayInvoice {
   status: string;
+  expiresAt?: string | Date;
   paymentTxHash?: string | null;
   [key: string]: unknown;
 }
@@ -44,11 +45,12 @@ export declare const PAY_STATES: {
 
 export declare const TERMINAL_STATES: readonly PayStatus[];
 
-export function isExpiredInvoice(status: string): boolean;
+export function isExpiredInvoice(statusOrInvoice: string | PayInvoice, now?: string | number | Date): boolean;
 
 export function shouldShowPaymentControls(
-  status: string,
-  paymentTxHash?: string | null
+  statusOrInvoice: string | PayInvoice,
+  paymentTxHash?: string | null,
+  now?: string | number | Date
 ): boolean;
 
 export function getPayPageView(invoice?: PayInvoice | null): {
@@ -59,7 +61,7 @@ export function getPayPageView(invoice?: PayInvoice | null): {
   showMonitor: boolean;
 };
 
-export function stateForStatus(status: string): PayStatus | null;
+export function stateForStatus(statusOrInvoice: string | PayInvoice, now?: string | number | Date): PayStatus | null;
 export function initialPaymentState(invoice?: PayInvoice | null): PaymentState;
 export function paymentReducer(state: PaymentState, event: PaymentEvent): PaymentState;
 export function shouldPoll(state: PaymentState): boolean;
