@@ -7,6 +7,8 @@
  * messages here identical to the backend module.
  */
 
+const { rejectionLabel: _rejectionLabel } = require('./verify-rejection-label.ts');
+
 const VERIFICATION_MESSAGES = {
   MISSING_TX_HASH: 'Transaction hash is required',
   INVALID_TX_HASH: 'Transaction hash must be 64 hexadecimal characters',
@@ -108,4 +110,5 @@ module.exports = {
   checkTxHash,
   checkPayerInfo,
   resolveVerificationError,
+  rejectionLabel: _rejectionLabel,
 };
