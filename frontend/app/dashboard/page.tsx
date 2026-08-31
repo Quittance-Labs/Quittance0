@@ -19,6 +19,8 @@ import {
   searchInvoices,
 } from '@/lib/dashboard-history';
 import ApiErrorState from '@/components/ApiErrorState';
+// Shared resolver so the dashboard banner and invoice cards map stable
+// verification codes to the same canonical message as the other pages.
 import { apiErrorMessage } from '@/lib/api';
 import { dashboardEmptyMessage } from '@/lib/dashboard-empty-copy';
 import { DASHBOARD_RESULTS_ID, MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';

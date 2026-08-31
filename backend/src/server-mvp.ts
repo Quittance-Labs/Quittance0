@@ -67,6 +67,8 @@ app.get('/api/stellar/account', (req: Request, res: Response) => {
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('Unhandled error:', err);
   const code = (err as Error & { code?: string }).code;
+  // Keep the shared failure envelope: `success:false` with an optional stable
+  // `code`, the same shape every route and the verify path already use.
   res.status(code === 'CORS_ORIGIN_DENIED' ? 403 : 500).json({
     success: false,
     code,

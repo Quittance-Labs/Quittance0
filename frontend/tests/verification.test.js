@@ -7,6 +7,7 @@ const {
   checkPayerInfo,
   resolveVerificationError,
   normalizeTransactionHash,
+  messageForCode,
 } = require('../lib/verification');
 
 const TX_HASH = 'a1b2c3d4'.repeat(8); // 64 hex characters
@@ -105,4 +106,10 @@ test('covers every rejection code with a message', () => {
     assert.equal(typeof VERIFICATION_MESSAGES[code], 'string');
     assert.ok(VERIFICATION_MESSAGES[code].length > 0);
   }
+});
+
+test('messageForCode maps a known code and returns nothing for an unknown one', () => {
+  assert.equal(messageForCode('ASSET_MISMATCH'), 'Asset mismatch');
+  assert.equal(messageForCode('SOMETHING_NEW'), undefined);
+  assert.equal(messageForCode(undefined), undefined);
 });

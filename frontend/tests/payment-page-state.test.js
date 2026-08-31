@@ -277,6 +277,32 @@ test('the backend message is preferred over the transport message', () => {
   assert.equal(describeVerifyError(error), 'Memo mismatch');
 });
 
+test('a stable verification code resolves to its canonical message', () => {
+  // The pay page surfaces verify rejections through describeVerifyError. A code
+  // in the failure envelope must render the canonical copy, not the raw text.
+  const { VERIFICATION_MESSAGES } = require('../lib/verification');
+
+  for (const code of Object.keys(VERIFICATION_MESSAGES)) {
+    const error = {
+      response: { data: { code, error: 'Server said no' } },
+    };
+
+    assert.equal(
+      describeVerifyError(error, 'Verification failed'),
+      VERIFICATION_MESSAGES[code],
+      `${code} did not resolve to its canonical pay-page message`
+    );
+  }
+});
+
+test('the canonical message wins even when the server text differs', () => {
+  const error = {
+    response: { data: { code: 'DESTINATION_MISMATCH', error: 'other wording' } },
+  };
+
+  assert.equal(describeVerifyError(error), 'Payment destination mismatch');
+});
+
 test('the transport message is used when the backend said nothing', () => {
   assert.equal(describeVerifyError({ message: 'Network Error' }), 'Network Error');
 });
