@@ -17,6 +17,7 @@ import ApiErrorState from '@/components/ApiErrorState';
 import { copyToClipboard, formatAmount } from '@/lib/utils';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { getPayPageView } from '@/lib/payment-page-state';
+import { memoPaymentHint } from '@/lib/pay-memo-hint';
 import { PAYMENT_STATUS_POLL_INTERVAL_MS } from '@/lib/api';
 import { usePaymentPage } from '@/lib/use-payment-page';
 import { MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';
@@ -124,6 +125,9 @@ export default function PaymentPage() {
             <div className="space-y-6">
               <PayAmountBlock invoice={invoice} />
               <PayMemoBlock invoice={invoice} onCopy={copy} />
+              <p className="text-xs text-gray-600">
+                {memoPaymentHint(invoice.memo)}
+              </p>
             </div>
             <div className="space-y-6">
               {view.showProof && (
