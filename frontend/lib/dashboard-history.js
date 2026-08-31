@@ -14,6 +14,7 @@
 /** Invoice statuses the dashboard can filter by, plus the catch-all. */
 const INVOICE_FILTERS = Object.freeze(['all', 'pending', 'paid', 'expired', 'cancelled']);
 const { applyExpiryLifecycle, isActionableInvoice } = require('./invoice-lifecycle');
+const { sortKeyForInvoice } = require('./history-sort-key.ts');
 
 /**
  * Whether an invoice belongs to the connected seller.
@@ -117,7 +118,9 @@ function dashboardDataFor(data, sellerPublicKey, now) {
   }
 
   const owned = scopeInvoicesToSeller(data.invoices, sellerPublicKey);
-  const invoices = applyExpiryLifecycle(owned, now);
+  const invoices = applyExpiryLifecycle(owned, now).sort(
+    (a, b) => sortKeyForInvoice(b) - sortKeyForInvoice(a)
+  );
 
   return {
     invoices,
