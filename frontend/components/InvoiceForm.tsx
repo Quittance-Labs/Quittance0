@@ -5,6 +5,7 @@ import { apiErrorMessage, invoiceApi, isApiUnavailableError } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { STELLAR_ASSETS, getAssetByCode } from '@/lib/assets';
+import { validateInvoiceMemoPrefix } from '@/lib/invoice-memo-prefix-validator';
 import AssetLogo from './AssetLogo';
 import ApiErrorState from './ApiErrorState';
 
@@ -18,6 +19,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   const [amount, setAmount] = useState('');
   const [assetCode, setAssetCode] = useState('XLM');
   const [description, setDescription] = useState('');
+  const [memo, setMemo] = useState('');
   const [sellerName, setSellerName] = useState('');
   const [sellerEmail, setSellerEmail] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -48,6 +50,14 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       return;
     }
 
+    if (memo.trim()) {
+      const memoValidation = validateInvoiceMemoPrefix(memo);
+      if (!memoValidation.valid) {
+        toast.error(memoValidation.error ?? 'Enter a valid memo');
+        return;
+      }
+    }
+
     setLoading(true);
     setApiError(null);
     try {
@@ -61,6 +71,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
         sellerName: sellerName.trim() || undefined,
         sellerEmail: sellerEmail.trim() || undefined,
         description: description || undefined,
+        memo: memo.trim() || undefined,
         customerName: customerName.trim() || undefined,
         customerEmail: customerEmail.trim() || undefined,
       });
@@ -70,6 +81,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       setAmount('');
       setAssetCode('XLM');
       setDescription('');
+      setMemo('');
       setSellerName('');
       setSellerEmail('');
       setCustomerName('');
@@ -148,6 +160,26 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
         </div>
         <p id="invoice-amount-hint" className="field-hint">
           The amount your client pays, in the selected asset.
+        </p>
+      </div>
+
+      <div>
+        <label htmlFor="invoice-memo" className="label">
+          Memo
+        </label>
+        <input
+          id="invoice-memo"
+          name="memo"
+          type="text"
+          className="input text-sm"
+          placeholder="Q0-..."
+          value={memo}
+          onChange={(e) => setMemo(e.target.value)}
+          maxLength={28}
+          aria-describedby="invoice-memo-hint"
+        />
+        <p id="invoice-memo-hint" className="field-hint">
+          Optional memo to help match this payment. Must start with Q0- when provided.
         </p>
       </div>
 
