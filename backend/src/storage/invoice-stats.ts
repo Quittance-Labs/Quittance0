@@ -4,6 +4,8 @@
 // backend passes raw invoices, the Postgres backend maps a COUNT/SUM row to
 // this shape.  Keeps sellerPublicKey, amount, assetCode, status in the same
 // casing as StoredInvoice to avoid silent rename bugs.
+import { isPendingInvoice } from '../utils/stats-pending-filter';
+
 export interface StatsInvoice {
   sellerPublicKey: string;
   amount: number;
@@ -41,7 +43,7 @@ export function calculateInvoiceStats(
       revenueByAsset[invoice.assetCode] = currentRevenue + invoice.amount;
     });
 
-  const pendingInvoices = invoices.filter(invoice => invoice.status === 'PENDING').length;
+  const pendingInvoices = invoices.filter(isPendingInvoice).length;
 
   return {
     total_invoices: invoices.length,
