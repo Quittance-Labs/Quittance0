@@ -20,6 +20,8 @@ export interface InvoiceStats {
   revenue_by_asset: Record<string, number>;
 }
 
+import { isPendingInvoice } from '../utils/stats-pending-filter';
+
 export function calculateInvoiceStats(
   allInvoices: StatsInvoice[],
   sellerPublicKey: string
@@ -41,7 +43,7 @@ export function calculateInvoiceStats(
       revenueByAsset[invoice.assetCode] = currentRevenue + invoice.amount;
     });
 
-  const pendingInvoices = invoices.filter(invoice => invoice.status === 'PENDING').length;
+  const pendingInvoices = invoices.filter(isPendingInvoice).length;
 
   return {
     total_invoices: invoices.length,
