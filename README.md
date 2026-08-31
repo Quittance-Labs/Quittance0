@@ -273,7 +273,6 @@ and PostgreSQL storage adapters, so create/verify regressions surface without a 
 | `NEXT_PUBLIC_STELLAR_NETWORK` | `TESTNET` |
 | `NEXT_PUBLIC_HORIZON_URL` | `https://horizon-testnet.stellar.org` |
 | `NEXT_PUBLIC_APP_URL` | `https://YOUR-APP.vercel.app` |
-| `NEXT_PUBLIC_USE_MOCK` | `false` |
 
 5. Deploy. After the API is live (Phase D2), point `NEXT_PUBLIC_API_URL` at it and set the backend `FRONTEND_URL` to this Vercel URL.
 
