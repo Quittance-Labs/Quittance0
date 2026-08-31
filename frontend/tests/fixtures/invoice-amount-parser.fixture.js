@@ -1,0 +1,16 @@
+export const invoiceAmountParserFixture = [
+  { name: 'parses integer string', input: '100', expected: 100 },
+  { name: 'parses decimal string', input: '99.99', expected: 99.99 },
+  { name: 'parses number input', input: 42.5, expected: 42.5 },
+  { name: 'strips commas', input: '1,000.50', expected: 1000.5 },
+  { name: 'strips spaces', input: '  123.45  ', expected: 123.45 },
+  { name: 'rejects empty string', input: '', expected: null },
+  { name: 'rejects null', input: null, expected: null },
+  { name: 'rejects undefined', input: undefined, expected: null },
+  { name: 'rejects negative', input: '-10', expected: null },
+  { name: 'rejects multiple decimals', input: '1.2.3', expected: null },
+  { name: 'rejects non-numeric', input: 'abc', expected: null },
+  { name: 'rejects too many decimals', input: '1.12345678', expected: null },
+  { name: 'accepts seven decimals', input: '1.1234567', expected: 1.1234567 },
+  { name: 'rejects amount above max', input: '1000000000', expected: null },
+];
