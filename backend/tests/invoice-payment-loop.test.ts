@@ -218,6 +218,7 @@ describe('invoice payment loop', () => {
     });
 
     assert.equal(verified.status, 400);
+    assert.equal(verified.body.code, 'MEMO_MISMATCH');
     assert.match(verified.body.error, /memo/i);
 
     const fetched = await jsonRequest(port, 'GET', `/api/invoices/${invoice.id}`);
@@ -233,6 +234,7 @@ describe('invoice payment loop', () => {
     });
 
     assert.equal(verified.status, 400);
+    assert.equal(verified.body.code, 'DESTINATION_MISMATCH');
     assert.match(verified.body.error, /destination/i);
   });
 
@@ -245,6 +247,7 @@ describe('invoice payment loop', () => {
     });
 
     assert.equal(verified.status, 400);
+    assert.equal(verified.body.code, 'AMOUNT_MISMATCH');
     assert.match(verified.body.error, /amount/i);
   });
 
@@ -261,6 +264,7 @@ describe('invoice payment loop', () => {
     });
 
     assert.equal(verified.status, 400);
+    assert.equal(verified.body.code, 'ASSET_MISMATCH');
     assert.match(verified.body.error, /asset/i);
   });
 
@@ -278,6 +282,7 @@ describe('invoice payment loop', () => {
     });
 
     assert.equal(second.status, 400);
+    assert.equal(second.body.code, 'INVOICE_ALREADY_PAID');
     assert.match(second.body.error, /already been paid/i);
   });
 
@@ -287,6 +292,7 @@ describe('invoice payment loop', () => {
     const verified = await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, {});
 
     assert.equal(verified.status, 400);
+    assert.equal(verified.body.code, 'MISSING_TX_HASH');
     assert.match(verified.body.error, /hash is required/i);
   });
 
@@ -302,6 +308,7 @@ describe('invoice payment loop', () => {
     });
 
     assert.equal(verified.status, 400);
+    assert.equal(verified.body.code, 'INVALID_PAYER_EMAIL');
     assert.match(verified.body.error, /email is invalid/i);
   });
 

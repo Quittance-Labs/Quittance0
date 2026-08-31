@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   VERIFICATION_MESSAGES,
+  VERIFICATION_CODES,
+  messageForCode,
   STROOP_PRECISION,
   amountsMatch,
   checkInvoiceIsPayable,
@@ -409,5 +411,14 @@ describe('shared contract', () => {
     const clientVerification = require('../../frontend/lib/verification.js');
 
     assert.deepEqual(clientVerification.VERIFICATION_MESSAGES, VERIFICATION_MESSAGES);
+  });
+
+  it('every rejection code resolves to a non-empty message', () => {
+    assert.deepEqual(Object.keys(VERIFICATION_MESSAGES), VERIFICATION_CODES);
+    for (const code of VERIFICATION_CODES) {
+      assert.equal(typeof VERIFICATION_MESSAGES[code], 'string');
+      assert.ok(VERIFICATION_MESSAGES[code].length > 0, `${code} has no message`);
+      assert.equal(messageForCode(code), VERIFICATION_MESSAGES[code]);
+    }
   });
 });
