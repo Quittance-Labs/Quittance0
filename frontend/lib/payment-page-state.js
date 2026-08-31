@@ -35,6 +35,7 @@ const PAY_STATES = Object.freeze({
 
 const TERMINAL_STATES = Object.freeze([PAY_STATES.PAID, PAY_STATES.EXPIRED]);
 const { effectiveInvoiceStatus, hasInvoiceExpired } = require('./invoice-lifecycle');
+const { isTerminalPayState } = require('./pay-terminal-guard.ts');
 
 const asInvoice = (statusOrInvoice) =>
   statusOrInvoice && typeof statusOrInvoice === 'object'
@@ -46,7 +47,7 @@ const isExpiredInvoice = (statusOrInvoice, now) =>
 
 const shouldShowPaymentControls = (statusOrInvoice, paymentTxHash, now) => {
   const invoice = asInvoice(statusOrInvoice);
-  if (isExpiredInvoice(invoice, now)) {
+  if (isExpiredInvoice(invoice, now) || isTerminalPayState(invoice.status)) {
     return false;
   }
 
