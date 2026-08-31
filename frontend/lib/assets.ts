@@ -1,4 +1,6 @@
 // Stellar Asset Configuration
+import { decimalsForAsset } from './asset-decimals';
+
 export interface StellarAsset {
   code: string;
   name: string;
@@ -37,7 +39,12 @@ export const STELLAR_ASSETS: StellarAsset[] = [
 
 // Get asset by code
 export const getAssetByCode = (code: string): StellarAsset | undefined => {
-  return STELLAR_ASSETS.find(asset => asset.code === code);
+  const asset = STELLAR_ASSETS.find(asset => asset.code === code);
+  if (asset && asset.decimals !== decimalsForAsset(asset.code)) {
+    // Keep decimals consistent with the canonical lookup table.
+    return { ...asset, decimals: decimalsForAsset(asset.code) };
+  }
+  return asset;
 };
 
 // Format asset display name
