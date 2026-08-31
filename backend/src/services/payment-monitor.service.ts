@@ -3,10 +3,12 @@ import invoiceService from './invoice.service';
 import { SELLER_PUBLIC_KEY } from '../config/stellar';
 import { pool } from '../config/database';
 import { checkInvoiceIsPayable } from './payment-verification';
+import { monitorBackoffMs } from '../utils/monitor-retry-backoff';
 
 class PaymentMonitorService {
   private closeHandler: (() => void) | null = null;
   private isRunning: boolean = false;
+  private failureCount: number = 0;
 
   /**
    * Start monitoring payments for the seller account
@@ -31,6 +33,7 @@ class PaymentMonitorService {
     this.startExpirationCheck();
 
     console.log('✅ Payment monitor started successfully');
+    this.failureCount = 0;
   }
 
   /**
@@ -167,15 +170,17 @@ class PaymentMonitorService {
    */
   private handleError(error: Error) {
     console.error('❌ Payment stream error:', error);
+    this.failureCount += 1;
+    const delayMs = monitorBackoffMs(this.failureCount);
     
-    // Attempt to restart after delay
+    // Attempt to restart after capped exponential backoff
     setTimeout(() => {
       if (this.isRunning) {
         console.log('🔄 Attempting to restart payment stream...');
         this.stop();
         this.start();
       }
-    }, 5000);
+    }, delayMs);
   }
 
   /**
