@@ -1,37 +1,39 @@
 // Client-facing rejection label map for verification codes.
 //
-// Maps a `VerificationCode` (from the shared backend/frontend contract)
-// into a short, human-readable English label suitable for UI badges, toast
-// titles, screen-reader announcements, and dashboard error summaries.
+// Maps a verification code (from the shared backend/frontend contract) into
+// a short, human-readable English label suitable for UI badges, toast titles,
+// screen-reader announcements, and dashboard error summaries.
 //
-// Labels are kept distinct from the longer `VERIFICATION_MESSAGES` strings
-// so badge-width layouts are not destroyed by the server's paragraph text.
-// The code list must stay in sync with `backend/src/services/payment-
-// verification.ts` and `frontend/lib/verification.js`. Unknown codes
-// fall back to a single generic label so callers never hand the UI a raw
-// `undefined`.
-
-type VerificationCodeLabel =
-  | 'MISSING_TX_HASH'
-  | 'INVALID_TX_HASH'
-  | 'INVALID_PAYER_NAME'
-  | 'INVALID_PAYER_EMAIL'
-  | 'PAYER_INFO_TOO_LONG'
-  | 'INVOICE_ALREADY_PAID'
-  | 'INVOICE_EXPIRED'
-  | 'INVOICE_NOT_PENDING'
-  | 'TRANSACTION_NOT_FOUND'
-  | 'NO_PAYMENT_OPERATION'
-  | 'MEMO_MISMATCH'
-  | 'DESTINATION_MISMATCH'
-  | 'AMOUNT_MISMATCH'
-  | 'ASSET_MISMATCH'
-  | 'NETWORK_MISMATCH'
-  | 'UNKNOWN_VERIFICATION_ERROR';
+// Labels are kept distinct from the longer VERIFICATION_MESSAGES strings so
+// badge-width layouts are not destroyed by the server's paragraph text. The
+// code list must stay in sync with backend/src/services/payment-verification.ts
+// and frontend/lib/verification.js.  Unknown codes fall back to a single
+// generic label so callers never hand the UI a raw undefined.
+//
+// NOTE: despite the .ts extension this file intentionally contains ONLY plain
+// JavaScript (type information lives in JSDoc comments).  CI runs on Node 20
+// which ships without any built-in TypeScript loader or type-stripping; any
+// TS-only keyword (type/export type/as/colon annotations) would crash the
+// module load with SyntaxError.  The type alias below is a JSDoc @typedef so
+// editors still surface it while Node's loader ignores it as a comment.
+//
+// @typedef {'MISSING_TX_HASH' | 'INVALID_TX_HASH' | 'INVALID_PAYER_NAME' |
+//   'INVALID_PAYER_EMAIL' | 'PAYER_INFO_TOO_LONG' | 'INVOICE_ALREADY_PAID' |
+//   'INVOICE_EXPIRED' | 'INVOICE_NOT_PENDING' | 'TRANSACTION_NOT_FOUND' |
+//   'NO_PAYMENT_OPERATION' | 'MEMO_MISMATCH' | 'DESTINATION_MISMATCH' |
+//   'AMOUNT_MISMATCH' | 'ASSET_MISMATCH' | 'NETWORK_MISMATCH' |
+//   'UNKNOWN_VERIFICATION_ERROR'} VerificationCodeLabel
 
 const UNKNOWN_LABEL = 'Unknown verification error';
 
-export const REJECTION_LABELS: Record<VerificationCodeLabel, string> = {
+/**
+ * Short label text for each verification code.  Keys are the
+ * `VerificationCodeLabel` union strings listed in the JSDoc above; values
+ * are the short English strings rendered into UI chips and toast headers.
+ *
+ * @type {Record<string, string>}
+ */
+const REJECTION_LABELS = {
   MISSING_TX_HASH: 'Transaction hash required',
   INVALID_TX_HASH: 'Invalid transaction hash',
   INVALID_PAYER_NAME: 'Invalid payer name',
@@ -53,32 +55,30 @@ export const REJECTION_LABELS: Record<VerificationCodeLabel, string> = {
 /**
  * Convert a verification failure code into a short UI-friendly label.
  *
- * @param code   A verification code as returned by either the server or the
- *               client-side preflight (`checkTxHash`, `checkPayerInfo`,
- *               `failure(...)`). Accepts strings of unknown shape so callers
- *               can pass a raw `data.code` from an axios error without a
- *               cast; anything unrecognized yields a generic label.
- *
- * @param fallback   Optional label returned instead of the generic default
- *                   when the code is unknown, null/undefined, or empty.
- *
- * @returns   A short English string. Never returns `undefined` / empty:
- *            missing input returns the fallback or the generic label.
+ * @param {string | null | undefined} code   A verification code as returned
+ *   by either the server or the client-side preflight (checkTxHash,
+ *   checkPayerInfo, failure(...)).  Accepts strings of unknown shape so
+ *   callers can pass a raw data.code from an axios error without a cast;
+ *   anything unrecognized yields a generic label.
+ * @param {string} [fallback]   Optional label returned instead of the
+ *   generic default when the code is unknown, null/undefined, or empty.
+ * @returns {string}   A short English string.  Never returns undefined or
+ *   empty: missing input returns the fallback or the generic label.
  */
-export function rejectionLabel(
-  code: string | null | undefined,
-  fallback?: string
-): string {
+function rejectionLabel(code, fallback) {
   if (!code || typeof code !== 'string') {
-    return fallback ?? UNKNOWN_LABEL;
+    return typeof fallback === 'string' ? fallback : UNKNOWN_LABEL;
   }
 
-  const key = code as keyof typeof REJECTION_LABELS;
   if (Object.prototype.hasOwnProperty.call(REJECTION_LABELS, code)) {
-    return REJECTION_LABELS[key];
+    return REJECTION_LABELS[code];
   }
 
-  return fallback ?? UNKNOWN_LABEL;
+  return typeof fallback === 'string' ? fallback : UNKNOWN_LABEL;
 }
 
-export default rejectionLabel;
+module.exports = {
+  REJECTION_LABELS,
+  rejectionLabel,
+  default: rejectionLabel,
+};
