@@ -3,8 +3,8 @@
 import { toast } from 'sonner';
 import {
   FREIGHTER_INSTALL_URL,
-  FREIGHTER_REQUIRED_MESSAGE,
 } from '@/lib/freighter-availability';
+import { freighterInstallMessage } from '@/lib/freighter-prompt-copy';
 
 const FREIGHTER_TOAST_ID = 'freighter-not-installed';
 
@@ -13,7 +13,7 @@ export const showFreighterInstallPrompt = () => {
     id: FREIGHTER_TOAST_ID,
     description: (
       <span>
-        {FREIGHTER_REQUIRED_MESSAGE}{' '}
+        {freighterInstallMessage()}{' '}
         {/*
           The link is the only way out of this toast, and it opens a new tab.
           Saying so in the accessible name means a screen-reader user is not
