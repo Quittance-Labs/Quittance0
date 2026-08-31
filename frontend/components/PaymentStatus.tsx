@@ -3,6 +3,7 @@
 import { CheckCircle, XCircle, Clock } from 'lucide-react';
 import { getExplorerTransactionUrl } from '@/lib/stellar';
 import { statusText } from '@/lib/a11y';
+import { statusLabel } from '@/lib/invoice-status-label';
 
 interface PaymentStatusProps {
   status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
@@ -36,17 +37,17 @@ export default function PaymentStatus({ status, txHash, compact = false }: Payme
   const getStatusMessage = () => {
     switch (status) {
       case 'PAID':
-        return { title: 'Payment Successful!', color: 'text-green-700' };
+        return { title: statusLabel(status), color: 'text-green-700' };
       case 'EXPIRED':
         return {
-          title: 'Invoice Expired',
+          title: statusLabel(status),
           description: 'The payment window ended. This record remains available for reference.',
           color: 'text-red-700',
         };
       case 'CANCELLED':
-        return { title: 'Invoice Cancelled', color: 'text-gray-700' };
+        return { title: statusLabel(status), color: 'text-gray-700' };
       default:
-        return { title: 'Waiting for Payment', color: 'text-yellow-800' };
+        return { title: statusLabel(status), color: 'text-yellow-800' };
     }
   };
 
