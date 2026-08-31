@@ -7,6 +7,7 @@ import { Wallet, Loader2 } from 'lucide-react';
 import { invoiceApi } from '@/lib/api';
 import { showFreighterInstallPrompt } from '@/components/FreighterInstallPrompt';
 import { describeVerifyError, normalizePayerDetails } from '@/lib/payment-page-state';
+import { shortenTxHash } from '@/lib/short-tx-hash';
 
 interface PaymentButtonProps {
   destination: string;
@@ -89,7 +90,7 @@ export default function PaymentButton({
           await invoiceApi.verify(invoiceId, txHash, payer.value);
           toast.success('Payment verified', {
             id: PAY_TOAST_ID,
-            description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
+            description: `TX: ${shortenTxHash(txHash, 8, 8) ?? txHash}`,
           });
         } catch (error) {
           // The payment is on the ledger even though verification did not
@@ -104,7 +105,7 @@ export default function PaymentButton({
       } else {
         toast.success('Payment successful', {
           id: PAY_TOAST_ID,
-          description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
+          description: `TX: ${shortenTxHash(txHash, 8, 8) ?? txHash}`,
         });
       }
 
