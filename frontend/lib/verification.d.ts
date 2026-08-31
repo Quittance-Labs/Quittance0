@@ -35,6 +35,8 @@ export interface PayerInfo {
 
 export const VERIFICATION_MESSAGES: Record<VerificationCode, string>;
 
+export function messageForCode(code: unknown): string | undefined;
+
 export function failure(code: VerificationCode): VerificationFailure;
 
 export function isValidTxHash(txHash: unknown): boolean;
