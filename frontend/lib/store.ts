@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { walletStorageKey } from './wallet-storage-key';
 
 interface WalletState {
   publicKey: string | null;
@@ -23,7 +24,9 @@ export const useWalletStore = create<WalletState>()(
         set({ publicKey: null, balance: '0', connected: false }),
     }),
     {
-      name: 'wallet-storage', // localStorage key
+      name: walletStorageKey(
+        process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET' ? 'testnet' : 'public'
+      ), // localStorage key
       partialize: (state) => ({ 
         publicKey: state.publicKey, 
         balance: state.balance, 
