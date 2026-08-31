@@ -7,6 +7,7 @@ import {
   resolveApiConfig,
   toApiError,
 } from './api-runtime';
+import { mapApiError } from './api-error-message';
 
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
 export const API_CONFIG = resolveApiConfig(
@@ -45,13 +46,14 @@ api.interceptors.response.use(
  * which does the same for the verify endpoint.
  */
 export function describeApiError(error: any, fallback = 'Something went wrong.'): string {
+  const mapped = mapApiError(error);
+  if (mapped !== 'Something went wrong. Please try again.') {
+    return mapped;
+  }
+
   const serverMessage = error?.response?.data?.error;
   if (typeof serverMessage === 'string' && serverMessage.trim()) {
     return serverMessage;
-  }
-
-  if (error?.response?.status === 404) {
-    return 'Not found.';
   }
 
   const transportMessage = error?.message;
