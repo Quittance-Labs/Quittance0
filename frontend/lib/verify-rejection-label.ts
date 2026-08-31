@@ -28,12 +28,15 @@ const UNKNOWN_LABEL = 'Unknown verification error';
 
 /**
  * Short label text for each verification code.  Keys are the
- * `VerificationCodeLabel` union strings listed in the JSDoc above; values
- * are the short English strings rendered into UI chips and toast headers.
+ * `VerificationCodeLabel` union strings and values are the short English
+ * strings rendered into UI chips and toast headers.
  *
- * @type {Record<string, string>}
+ * Widened to `Record<string, string>` explicitly so TypeScript allows
+ * string indexing via a runtime code string without the "no index
+ * signature" error.  The explicit type annotation overrides the narrower
+ * literal-key record inference that would otherwise apply.
  */
-const REJECTION_LABELS = {
+const REJECTION_LABELS: Record<string, string> = {
   MISSING_TX_HASH: 'Transaction hash required',
   INVALID_TX_HASH: 'Invalid transaction hash',
   INVALID_PAYER_NAME: 'Invalid payer name',
@@ -55,17 +58,13 @@ const REJECTION_LABELS = {
 /**
  * Convert a verification failure code into a short UI-friendly label.
  *
- * @param {string | null | undefined} code   A verification code as returned
- *   by either the server or the client-side preflight (checkTxHash,
- *   checkPayerInfo, failure(...)).  Accepts strings of unknown shape so
- *   callers can pass a raw data.code from an axios error without a cast;
- *   anything unrecognized yields a generic label.
- * @param {string} [fallback]   Optional label returned instead of the
- *   generic default when the code is unknown, null/undefined, or empty.
- * @returns {string}   A short English string.  Never returns undefined or
- *   empty: missing input returns the fallback or the generic label.
+ * @param code      Verification code (from server or client-side preflight).
+ *                  Accepts strings of unknown shape; anything unrecognized
+ *                  yields the generic label.
+ * @param fallback  Optional label returned instead of the generic default
+ *                  when the code is unknown, missing, or empty.
  */
-function rejectionLabel(code, fallback) {
+function rejectionLabel(code: string | null | undefined, fallback?: string): string {
   if (!code || typeof code !== 'string') {
     return typeof fallback === 'string' ? fallback : UNKNOWN_LABEL;
   }
