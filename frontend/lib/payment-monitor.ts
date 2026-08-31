@@ -5,6 +5,7 @@
 
 import { server } from './stellar';
 import { toast } from 'sonner';
+import { monitorIntervalMs } from './monitor-interval';
 
 export interface PaymentNotification {
   id: string;
@@ -33,6 +34,7 @@ export const paymentMonitorLabels = Object.freeze({
 class PaymentMonitor {
   private activeStreams: Map<string, () => void> = new Map();
   private callbacks: Map<string, PaymentCallback[]> = new Map();
+  private reconnectAttempts: Map<string, number> = new Map();
 
   /**
    * Start monitoring payments for a wallet address
@@ -99,12 +101,14 @@ class PaymentMonitor {
               description: 'Reconnecting...',
             });
 
-            // Try to reconnect after 5 seconds
+            // Try to reconnect with capped exponential backoff.
+            const delayMs = monitorIntervalMs(this.reconnectAttempts.get(publicKey) ?? 0);
+            this.reconnectAttempts.set(publicKey, (this.reconnectAttempts.get(publicKey) ?? 0) + 1);
             setTimeout(() => {
               console.log('🔄 Reconnecting payment stream...');
               this.stopMonitoring(publicKey);
               this.startMonitoring(publicKey, onPayment);
-            }, 5000);
+            }, delayMs);
           },
         });
 
@@ -129,6 +133,7 @@ class PaymentMonitor {
       closeHandler();
       this.activeStreams.delete(publicKey);
       this.callbacks.delete(publicKey);
+      this.reconnectAttempts.delete(publicKey);
       console.log(`⏹️  Stopped payment monitoring for: ${publicKey}`);
     }
   }
@@ -143,6 +148,7 @@ class PaymentMonitor {
     });
     this.activeStreams.clear();
     this.callbacks.clear();
+    this.reconnectAttempts.clear();
   }
 
   /**
