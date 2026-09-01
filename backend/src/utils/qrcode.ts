@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { formatQrPaymentPayload } from './qr-payment-payload';
 
 /**
  * Generate QR code for payment URL
@@ -32,16 +33,13 @@ export const generateStellarPaymentQR = async (
   memo?: string,
   assetIssuer?: string
 ): Promise<string> => {
-  let stellarUri = `web+stellar:pay?destination=${destination}&amount=${amount}`;
-  
-  // Add asset information
-  if (assetCode !== 'XLM' && assetIssuer) {
-    stellarUri += `&asset_code=${assetCode}&asset_issuer=${assetIssuer}`;
-  }
-  
-  if (memo) {
-    stellarUri += `&memo=${encodeURIComponent(memo)}&memo_type=MEMO_TEXT`;
-  }
+  const stellarUri = formatQrPaymentPayload({
+    destination,
+    amount,
+    assetCode,
+    memo,
+    assetIssuer,
+  });
 
   return await QRCode.toDataURL(stellarUri, {
     errorCorrectionLevel: 'H',
