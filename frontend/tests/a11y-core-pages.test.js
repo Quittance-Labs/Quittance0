@@ -280,7 +280,7 @@ test('a status badge exposes a text equivalent for its colour', async () => {
 });
 
 test('the unavailable email button stays focusable and says why', async () => {
-  const invoice = invoiceFixture({ status: 'PAID', customerEmail: undefined });
+  const invoice = invoiceFixture({ status: 'PAID', customerEmail: undefined, payerEmail: undefined });
   const { container, unmount } = await render(
     React.createElement(bundle.PaymentReceipt, { invoice })
   );

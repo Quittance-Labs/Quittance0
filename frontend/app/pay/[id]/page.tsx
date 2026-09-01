@@ -15,7 +15,7 @@ import PaymentButton from '@/components/PaymentButton';
 import WalletConnect from '@/components/WalletConnect';
 import ApiErrorState from '@/components/ApiErrorState';
 import { copyToClipboard, formatAmount } from '@/lib/utils';
-import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
+import { openInvoicePDF, shareInvoiceByEmail, emailPaymentProof } from '@/lib/export';
 import { getPayPageView } from '@/lib/payment-page-state';
 import { PAYMENT_STATUS_POLL_INTERVAL_MS } from '@/lib/api';
 import { usePaymentPage } from '@/lib/use-payment-page';
@@ -83,8 +83,16 @@ export default function PaymentPage() {
     toast.success('Opening payment proof');
   };
   const email = () => {
-    if (!invoice.customerEmail) return toast.error('No client email on this invoice');
-    shareInvoiceByEmail(invoice);
+    try {
+      if (invoice.status === 'PAID') {
+        emailPaymentProof(invoice);
+      } else {
+        shareInvoiceByEmail(invoice);
+      }
+      toast.success('Opening email client');
+    } catch (err: any) {
+      toast.error(err?.message || 'No recipient email on this invoice');
+    }
   };
 
   const amountLabel = describeAmount(formatAmount(invoice.amount, 7), invoice.assetCode);
