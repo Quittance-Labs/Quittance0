@@ -1,4 +1,5 @@
 import { generateInvoiceMemo } from '../utils/memo';
+import { generatePublicInvoiceId } from '../utils/memory-public-id';
 import { CreateInvoiceInput } from '../utils/validation';
 import memoryStorage, { MemoryStorage } from '../storage/memory-storage';
 import { calculateInvoiceExpiry } from '../domain/invoice-expiry';
@@ -14,10 +15,12 @@ export class InvoiceMemoryService {
       throw new Error('Seller public key is required');
     }
 
+    const id = generatePublicInvoiceId();
     const memo = generateInvoiceMemo();
     const expiresAt = calculateInvoiceExpiry(input.expiresInDays);
 
     const invoice = this.storage.createInvoice({
+      id,
       sellerPublicKey: input.sellerPublicKey,
       sellerName: input.sellerName,
       sellerEmail: input.sellerEmail,
