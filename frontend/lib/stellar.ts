@@ -5,13 +5,15 @@ import {
   signTransaction,
   isAllowed,
   setAllowed,
+  getNetwork,
+  getNetworkDetails,
 } from '@stellar/freighter-api';
 import { detectFreighter } from './freighter-availability';
 import { networkDisplayName } from './network-display-name';
 
 // Network configuration
-const STELLAR_NETWORK = process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET';
-const HORIZON_URL =
+export const STELLAR_NETWORK = process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET';
+export const HORIZON_URL =
   process.env.NEXT_PUBLIC_HORIZON_URL ||
   (STELLAR_NETWORK === 'TESTNET'
     ? 'https://horizon-testnet.stellar.org'
@@ -96,6 +98,116 @@ export const getUserPublicKey = async (): Promise<string | null> => {
     console.error('Error getting public key:', error);
     return null;
   }
+};
+
+/**
+ * Query current network and passphrase from Freighter
+ */
+export const getFreighterNetwork = async (): Promise<{
+  network: string;
+  networkPassphrase: string;
+  networkUrl?: string;
+} | null> => {
+  try {
+    const connected = await checkWalletConnection();
+    if (!connected) return null;
+
+    const [netResult, detailsResult] = await Promise.allSettled([
+      getNetwork(),
+      getNetworkDetails(),
+    ]);
+
+    const networkName = netResult.status === 'fulfilled' ? netResult.value : null;
+    const details = detailsResult.status === 'fulfilled' ? detailsResult.value : null;
+
+    const rawNetwork = networkName || details?.network || null;
+    let passphrase = details?.networkPassphrase || null;
+
+    if (!passphrase && rawNetwork) {
+      const upper = rawNetwork.toUpperCase();
+      if (upper === 'PUBLIC' || upper === 'MAINNET') {
+        passphrase = StellarSdk.Networks.PUBLIC;
+      } else if (upper === 'TESTNET') {
+        passphrase = StellarSdk.Networks.TESTNET;
+      }
+    }
+
+    if (!rawNetwork && !passphrase) return null;
+
+    return {
+      network: rawNetwork || (passphrase === StellarSdk.Networks.PUBLIC ? 'PUBLIC' : 'TESTNET'),
+      networkPassphrase: passphrase || (rawNetwork?.toUpperCase() === 'PUBLIC' ? StellarSdk.Networks.PUBLIC : StellarSdk.Networks.TESTNET),
+      networkUrl: details?.networkUrl,
+    };
+  } catch (error) {
+    console.error('Error getting Freighter network:', error);
+    return null;
+  }
+};
+
+/**
+ * Check if the given network or passphrase matches our expected network
+ */
+export const isWrongNetwork = (
+  currentNetworkOrPassphrase: string | null | undefined,
+  expectedNetwork: string = STELLAR_NETWORK
+): boolean => {
+  if (!currentNetworkOrPassphrase) return false;
+  const current = currentNetworkOrPassphrase.trim();
+  const expected = expectedNetwork.toUpperCase();
+  const expectedPassphrase =
+    expected === 'TESTNET' ? StellarSdk.Networks.TESTNET : StellarSdk.Networks.PUBLIC;
+
+  if (
+    current.toUpperCase() === expected ||
+    current === expectedPassphrase
+  ) {
+    return false;
+  }
+
+  // Check if current is matching known counterpart
+  if (expected === 'TESTNET' && current.toLowerCase().includes('test sdf network')) {
+    return false;
+  }
+  if (expected === 'PUBLIC' && current.toLowerCase().includes('public global stellar network')) {
+    return false;
+  }
+
+  return true;
+};
+
+/**
+ * Watch Freighter network changes on an interval
+ */
+export const watchFreighterNetwork = (
+  callback: (details: { network: string; networkPassphrase: string; isWrongNetwork: boolean } | null) => void,
+  intervalMs = 2500
+): (() => void) => {
+  let active = true;
+
+  const poll = async () => {
+    if (!active) return;
+    try {
+      const details = await getFreighterNetwork();
+      if (!active) return;
+      if (details) {
+        const wrong = isWrongNetwork(details.networkPassphrase || details.network);
+        callback({ ...details, isWrongNetwork: wrong });
+      } else {
+        callback(null);
+      }
+    } catch {
+      if (active) callback(null);
+    }
+  };
+
+  void poll();
+  const intervalId = setInterval(poll, intervalMs);
+
+  return () => {
+    active = false;
+    clearInterval(intervalId);
+  };
 };
 
 /**
@@ -289,12 +401,18 @@ export const isValidPublicKey = (publicKey: string): boolean => {
   }
 };
 
-export default {
+const stellarService = {
   server,
+  STELLAR_NETWORK,
+  HORIZON_URL,
   NETWORK_PASSPHRASE,
+  NETWORK_DISPLAY_NAME,
   checkWalletConnection,
   requestWalletAccess,
   getUserPublicKey,
+  getFreighterNetwork,
+  isWrongNetwork,
+  watchFreighterNetwork,
   loadAccount,
   getAccountBalance,
   sendPayment,
@@ -305,3 +423,5 @@ export default {
   isValidPublicKey,
   describeStellarNetworkError,
 };
+
+export default stellarService;

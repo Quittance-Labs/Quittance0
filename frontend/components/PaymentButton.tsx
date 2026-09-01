@@ -1,11 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { sendPayment, checkWalletConnection, requestWalletAccess } from '@/lib/stellar';
+import {
+  sendPayment,
+  checkWalletConnection,
+  requestWalletAccess,
+  getFreighterNetwork,
+  isWrongNetwork,
+  NETWORK_DISPLAY_NAME,
+} from '@/lib/stellar';
 import { toast } from 'sonner';
 import { Wallet, Loader2 } from 'lucide-react';
 import { invoiceApi } from '@/lib/api';
-import { showFreighterInstallPrompt } from '@/components/FreighterInstallPrompt';
+import { showFreighterInstallPrompt, showFreighterWrongNetworkPrompt } from '@/components/FreighterInstallPrompt';
 import { describeVerifyError, normalizePayerDetails } from '@/lib/payment-page-state';
 
 interface PaymentButtonProps {
@@ -77,6 +84,16 @@ export default function PaymentButton({
       if (!allowed) {
         toast.error('Freighter access was denied');
         onError?.('Freighter access was denied');
+        return;
+      }
+
+      const netDetails = await getFreighterNetwork();
+      const wrong = isWrongNetwork(netDetails?.networkPassphrase || netDetails?.network);
+      if (wrong) {
+        showFreighterWrongNetworkPrompt(NETWORK_DISPLAY_NAME);
+        const wrongMsg = `Wallet is connected to the wrong network. Please switch to ${NETWORK_DISPLAY_NAME} in Freighter.`;
+        toast.error(wrongMsg);
+        onError?.(wrongMsg);
         return;
       }
 

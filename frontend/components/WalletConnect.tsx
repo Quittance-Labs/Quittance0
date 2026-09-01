@@ -1,19 +1,22 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   checkWalletConnection, 
   requestWalletAccess, 
   getUserPublicKey,
   getAccountBalance,
   describeStellarNetworkError,
+  getFreighterNetwork,
+  isWrongNetwork as checkIsWrongNetwork,
+  NETWORK_DISPLAY_NAME,
 } from '@/lib/stellar';
 import { useWalletStore } from '@/lib/store';
 import { paymentMonitor } from '@/lib/payment-monitor';
-import { Wallet, LogOut, Loader2, ExternalLink, Bell, BellOff } from 'lucide-react';
+import { Wallet, LogOut, Loader2, ExternalLink, Bell, BellOff, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatAddress } from '@/lib/utils';
-import { showFreighterInstallPrompt } from '@/components/FreighterInstallPrompt';
+import { showFreighterInstallPrompt, showFreighterWrongNetworkPrompt } from '@/components/FreighterInstallPrompt';
 
 interface WalletConnectProps {
   onConnect?: (publicKey: string) => void;
@@ -22,11 +25,42 @@ interface WalletConnectProps {
 export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
   const [loading, setLoading] = useState(false);
   const [monitoringActive, setMonitoringActive] = useState(false);
-  const { publicKey, balance, connected, setWallet, updateBalance, disconnect } = useWalletStore();
+  const {
+    publicKey,
+    balance,
+    connected,
+    isWrongNetwork,
+    network,
+    networkPassphrase,
+    setWallet,
+    setNetwork,
+    setIsWrongNetwork,
+    disconnect,
+  } = useWalletStore();
+
+  const loadBalance = useCallback(async (key: string, netName?: string | null, netPass?: string | null) => {
+    try {
+      const balances = await getAccountBalance(key);
+      const xlmBalance = balances.find(b => b.assetCode === 'XLM');
+      const balanceStr = xlmBalance ? parseFloat(xlmBalance.balance).toFixed(2) : '0.00';
+      setWallet(key, balanceStr, netName, netPass);
+    } catch (error: any) {
+      if (error.message?.includes('Not Found') || error.response?.status === 404) {
+        setWallet(key, '0.00', netName, netPass);
+        toast.warning('Account needs funding');
+      } else {
+        // Wallet identity is still usable even if Horizon balance lookup is down.
+        setWallet(key, '—', netName, netPass);
+        toast.warning('Wallet connected; balance unavailable', {
+          description: describeStellarNetworkError(error),
+        });
+      }
+    }
+  }, [setWallet]);
 
   useEffect(() => {
     if (connected && publicKey && !paymentMonitor.isMonitoring(publicKey)) {
-      paymentMonitor.startMonitoring(publicKey, () => loadBalance(publicKey));
+      paymentMonitor.startMonitoring(publicKey, () => loadBalance(publicKey, network, networkPassphrase));
       setMonitoringActive(true);
     }
 
@@ -35,27 +69,7 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
         paymentMonitor.stopMonitoring(publicKey);
       }
     };
-  }, [connected, publicKey]);
-
-  const loadBalance = async (key: string) => {
-    try {
-      const balances = await getAccountBalance(key);
-      const xlmBalance = balances.find(b => b.assetCode === 'XLM');
-      const balanceStr = xlmBalance ? parseFloat(xlmBalance.balance).toFixed(2) : '0.00';
-      setWallet(key, balanceStr);
-    } catch (error: any) {
-      if (error.message?.includes('Not Found') || error.response?.status === 404) {
-        setWallet(key, '0.00');
-        toast.warning('Account needs funding');
-      } else {
-        // Wallet identity is still usable even if Horizon balance lookup is down.
-        setWallet(key, '—');
-        toast.warning('Wallet connected; balance unavailable', {
-          description: describeStellarNetworkError(error),
-        });
-      }
-    }
-  };
+  }, [connected, publicKey, network, networkPassphrase, loadBalance]);
 
   const handleConnect = async () => {
     setLoading(true);
@@ -70,8 +84,21 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
       if (allowed) {
         const key = await getUserPublicKey();
         if (key) {
-          await loadBalance(key);
-          toast.success('Wallet connected');
+          const netDetails = await getFreighterNetwork();
+          const netName = netDetails?.network || null;
+          const netPass = netDetails?.networkPassphrase || null;
+          const wrong = checkIsWrongNetwork(netPass || netName);
+
+          setNetwork(netName, netPass);
+          setIsWrongNetwork(wrong);
+
+          await loadBalance(key, netName, netPass);
+
+          if (wrong) {
+            showFreighterWrongNetworkPrompt(NETWORK_DISPLAY_NAME);
+          } else {
+            toast.success('Wallet connected');
+          }
           onConnect?.(key);
         } else {
           toast.error('Could not read your Freighter account');
@@ -103,14 +130,14 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
       setMonitoringActive(false);
       toast.info('Monitoring paused');
     } else {
-      paymentMonitor.startMonitoring(publicKey, () => loadBalance(publicKey));
+      paymentMonitor.startMonitoring(publicKey, () => loadBalance(publicKey, network, networkPassphrase));
       setMonitoringActive(true);
     }
   };
 
   const openExplorer = () => {
-    const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET' ? 'testnet' : 'public';
-    window.open(`https://stellar.expert/explorer/${network}/account/${publicKey}`, '_blank');
+    const net = process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET' ? 'testnet' : 'public';
+    window.open(`https://stellar.expert/explorer/${net}/account/${publicKey}`, '_blank');
   };
 
   if (connected && publicKey) {
@@ -124,6 +151,23 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
 
     return (
       <div className="flex items-center gap-2" role="group" aria-label="Connected wallet">
+        {/* Wrong Network Indicator */}
+        {isWrongNetwork ? (
+          <button
+            onClick={() => showFreighterWrongNetworkPrompt(NETWORK_DISPLAY_NAME)}
+            type="button"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-full transition-colors"
+            aria-label={`Warning: Wrong Stellar network connected. Please switch to ${NETWORK_DISPLAY_NAME} in Freighter`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" aria-hidden="true" />
+            <span>Wrong Network</span>
+          </button>
+        ) : (
+          <span className="hidden sm:inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-[var(--teal)] bg-[var(--teal)]/10 rounded-full">
+            {NETWORK_DISPLAY_NAME}
+          </span>
+        )}
+
         {/* Balance */}
         <div className="hidden md:flex flex-col items-end mr-2">
           <span className="text-xs text-gray-600 font-medium" aria-hidden="true">
