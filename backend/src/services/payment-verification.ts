@@ -54,6 +54,16 @@ export const VERIFICATION_MESSAGES: Record<VerificationCode, string> = {
   NETWORK_MISMATCH: 'Transaction is on a different Stellar network',
 };
 
+/** The stable set of rejection codes, in declaration order. */
+export const VERIFICATION_CODES: VerificationCode[] = Object.keys(
+  VERIFICATION_MESSAGES
+) as VerificationCode[];
+
+/** The canonical user-facing message for a rejection code. */
+export function messageForCode(code: VerificationCode): string {
+  return VERIFICATION_MESSAGES[code];
+}
+
 export interface VerificationFailure {
   ok: false;
   code: VerificationCode;
@@ -279,6 +289,8 @@ export { formatAssetIdentity, resolveInvoiceAsset, resolvePaymentAsset };
 
 export default {
   VERIFICATION_MESSAGES,
+  VERIFICATION_CODES,
+  messageForCode,
   failure,
   isValidTxHash,
   checkTxHash,

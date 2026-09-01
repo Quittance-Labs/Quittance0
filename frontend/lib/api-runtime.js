@@ -2,6 +2,12 @@ const LOCAL_API_URL = 'http://localhost:3001/api';
 const UNCONFIGURED_API_URL = 'https://configuration.invalid/api';
 const OFFLINE_MESSAGE = 'Quittance API is unreachable. Check your connection and try again.';
 
+// Reuses the canonical verification message table so a rejection code from the
+// API always renders the same English copy the pay page shows. Without this the
+// dashboard and invoice banners could surface whatever string the server sent,
+// which drifts from the canonical wording.
+const { messageForCode } = require('./verification');
+
 class ApiUnavailableError extends Error {
   constructor(message = OFFLINE_MESSAGE, cause) {
     super(message, { cause });
@@ -68,8 +74,11 @@ function toApiError(error) {
 
   if (networkFailure) return new ApiUnavailableError(OFFLINE_MESSAGE, error);
 
+  // A stable verification code wins: it maps to the canonical message shared
+  // with the pay page, so every banner reads the same rejection copy.
+  const canonical = messageForCode(responseData?.code);
   return new ApiRequestError(
-    responseData?.error || error?.message || 'Quittance API request failed.',
+    canonical || responseData?.error || error?.message || 'Quittance API request failed.',
     {
       cause: error,
       code: responseData?.code,

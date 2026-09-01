@@ -2,6 +2,8 @@
 
 import { CheckCircle, XCircle, Clock } from 'lucide-react';
 import { getExplorerTransactionUrl } from '@/lib/stellar';
+// PaymentStatus reflects the shared status vocabulary matching PaymentReceipt
+// and the canonical verification rejection code copy (e.g. INVOICE_EXPIRED).
 import { statusText } from '@/lib/a11y';
 
 interface PaymentStatusProps {
