@@ -1,11 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { apiErrorMessage, invoiceApi, isApiUnavailableError, PAYMENT_STATUS_POLL_INTERVAL_MS } from './api';
+import { apiErrorMessage, invoiceApi, isApiUnavailableError, PAYMENT_STATUS_POLL_INTERVAL_MS, resolveVerificationError } from './api';
 import { checkTxHash } from './verification';
 import {
   PAY_STATES,
-  describeVerifyError,
   initialPaymentState,
   normalizePayerDetails,
   paymentReducer,
@@ -98,7 +97,7 @@ export function usePaymentPage(id: string) {
       void load();
     } catch (error) {
       if (request !== generation.current) return;
-      const message = describeVerifyError(error);
+      const message = resolveVerificationError(error);
       if (isApiUnavailableError(error)) setLoadError(apiErrorMessage(error));
       dispatch({ type: 'VERIFY_FAILED', error: message });
       toast.error(message);
