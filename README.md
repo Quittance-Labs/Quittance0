@@ -101,7 +101,12 @@ invoices to `EXPIRED` before get, list, stats, verify, cancel, or monitor work.
 Expired invoices remain visible in seller history, but they are excluded from
 pending/actionable counts and cannot expose QR, pay, verify, or payment-proof
 controls. The client also projects stale pending data through `expiresAt` so a
-page fails closed while it waits for the next authoritative server response.
+### Multi-Asset (XLM & USDC) Support
+
+Quittance supports multi-asset invoicing across native XLM and credit assets such as USDC on Stellar:
+- **Native XLM**: No issuer required, verified directly with native payment operations.
+- **Credit Assets (e.g. USDC)**: Verified with `asset_type`, `asset_code`, and pinned `asset_issuer`.
+- **Trustline UX**: The pay flow inspects trustline status and provides actionable guidance (`op_no_trust` handling) if the buyer wallet needs to add a trustline.
 
 ---
 

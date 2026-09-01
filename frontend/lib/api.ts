@@ -74,7 +74,11 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     sellerName?: string;
     sellerEmail?: string;
   }) => {
-    const response = await api.post('/invoices', data);
+    const normalizedAssetCode = data.assetCode ? data.assetCode.toUpperCase() : 'XLM';
+    const response = await api.post('/invoices', {
+      ...data,
+      assetCode: normalizedAssetCode,
+    });
     return response.data;
   },
 

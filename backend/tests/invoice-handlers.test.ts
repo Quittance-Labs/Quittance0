@@ -352,6 +352,16 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       assert.equal(res.body.data.paymentAvailable, true);
     });
 
+    it('normalizes lowercase assetCode to uppercase on creation', async () => {
+      const res = await call(
+        handlers().createInvoice,
+        createReq({ body: invoiceBody({ assetCode: 'xlm' }) })
+      );
+
+      assert.equal(res.statusCode, 201);
+      assert.equal(res.body.data.invoice.assetCode, 'XLM');
+    });
+
     it('accepts seller-selected expiry only within the 1-30 day contract', async () => {
       const invoice = await createInvoice({ expiresInDays: 30 });
       const lifetime = new Date(invoice.expiresAt).getTime() - new Date(invoice.createdAt).getTime();

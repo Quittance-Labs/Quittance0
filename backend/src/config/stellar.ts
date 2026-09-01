@@ -20,6 +20,11 @@ export const NETWORK_PASSPHRASE =
     ? StellarSdk.Networks.TESTNET 
     : StellarSdk.Networks.PUBLIC;
 
+export const STELLAR_EXPLORER_BASE =
+  STELLAR_NETWORK === 'TESTNET'
+    ? 'https://stellar.expert/explorer/testnet'
+    : 'https://stellar.expert/explorer/public';
+
 /**
  * The SDK refuses a plaintext Horizon URL unless `allowHttp` is set.
  *

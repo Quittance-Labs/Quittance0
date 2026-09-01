@@ -80,9 +80,9 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
             {/* The heading already names the asset — the logo would repeat it. */}
-            <AssetLogo code={invoice.assetCode} size={24} showName={false} decorative />
+            <AssetLogo code={invoice.assetCode || 'XLM'} size={24} showName={false} decorative />
             <h3 id={headingId} className="text-lg font-bold text-gray-900">
-              {formatAmount(invoice.amount)} <span className="text-cyan-700">{invoice.assetCode}</span>
+              {formatAmount(invoice.amount)} <span className="text-cyan-700">{invoice.assetCode || 'XLM'}</span>
               <span className="sr-only"> invoice</span>
             </h3>
           </div>

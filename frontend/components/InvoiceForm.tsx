@@ -147,7 +147,9 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
           </div>
         </div>
         <p id="invoice-amount-hint" className="field-hint">
-          The amount your client pays, in the selected asset.
+          {assetCode === 'USDC'
+            ? 'The amount your client pays in USDC (requires a USDC trustline on Stellar).'
+            : 'The amount your client pays, in the selected asset.'}
         </p>
       </div>
 

@@ -120,7 +120,8 @@ export function isValidEmail(email: string): boolean {
  * Format currency
  */
 export function formatCurrency(amount: number, currency: string = 'XLM'): string {
-  return `${formatAmount(amount, 7)} ${currency}`;
+  const code = (currency || 'XLM').toUpperCase();
+  return `${formatAmount(amount, 7)} ${code}`;
 }
 
 export default {

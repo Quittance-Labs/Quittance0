@@ -163,18 +163,20 @@ export const sendPayment = async (
       throw error;
     }
 
+    const normalizedAssetCode = (assetCode || 'XLM').toUpperCase();
+
     // Create asset
     const asset =
-      assetCode === 'XLM'
+      normalizedAssetCode === 'XLM'
         ? StellarSdk.Asset.native()
-        : new StellarSdk.Asset(assetCode, assetIssuer!);
+        : new StellarSdk.Asset(normalizedAssetCode, assetIssuer!);
 
     if (
-      assetCode !== 'XLM' &&
+      normalizedAssetCode !== 'XLM' &&
       assetIssuer &&
-      !hasAssetTrustline(account, assetCode, assetIssuer)
+      !hasAssetTrustline(account, normalizedAssetCode, assetIssuer)
     ) {
-      throw new Error(getTrustlineMessage(assetCode));
+      throw new Error(getTrustlineMessage(normalizedAssetCode));
     }
 
     // Build transaction

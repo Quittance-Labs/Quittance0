@@ -7,6 +7,7 @@ import { statusText } from '@/lib/a11y';
 interface PaymentStatusProps {
   status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
   txHash?: string;
+  assetCode?: string;
   /** Removes the large card/icon treatment when embedded in payment details. */
   compact?: boolean;
 }
