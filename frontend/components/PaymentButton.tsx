@@ -47,6 +47,8 @@ export default function PaymentButton({
     if (invoiceStatus !== 'PENDING') {
       const message = invoiceStatus === 'EXPIRED'
         ? 'This invoice has expired and cannot be paid'
+        : invoiceStatus === 'CANCELLED'
+        ? 'This invoice was cancelled by the seller and cannot be paid'
         : 'This invoice is not available for payment';
       toast.error(message);
       onError?.(message);

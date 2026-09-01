@@ -27,6 +27,7 @@ export default function PaymentReceipt({ invoice }: PaymentReceiptProps) {
     shareInvoiceByEmail(invoice as any);
   };
 
+  // Generates and downloads a plain text payment receipt for the verified invoice
   const handleDownload = () => {
     const receiptText = `
 ═══════════════════════════════════════

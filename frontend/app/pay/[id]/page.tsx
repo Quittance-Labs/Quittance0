@@ -107,12 +107,18 @@ export default function PaymentPage() {
             </div>
           )}
           <div className="text-center mb-10 sm:mb-12">
-            <p className="pay-page-kicker">{view.expired ? 'Expired Invoice' : 'Secure Payment'}</p>
+            <p className="pay-page-kicker">
+              {view.expired ? 'Expired Invoice' : view.cancelled ? 'Cancelled Invoice' : 'Secure Payment'}
+            </p>
             <h1 className="text-4xl sm:text-5xl font-bold text-[var(--ink)] mb-3">
-              {view.expired ? 'Invoice Expired' : 'Complete Payment'}
+              {view.expired ? 'Invoice Expired' : view.cancelled ? 'Invoice Cancelled' : 'Complete Payment'}
             </h1>
             <p className="text-xl text-[var(--muted)]">
-              {view.expired ? 'Payment is no longer available' : 'Pay with your Stellar wallet'}
+              {view.expired
+                ? 'Payment is no longer available'
+                : view.cancelled
+                ? 'This invoice was cancelled by the seller'
+                : 'Pay with your Stellar wallet'}
             </p>
           </div>
 
@@ -139,6 +145,19 @@ export default function PaymentPage() {
                   <h3 className="text-2xl font-bold text-red-700 mb-2">Payment Expired</h3>
                   <p className="text-gray-700">
                     {statusText('EXPIRED').description}
+                  </p>
+                </div>
+              )}
+              {view.cancelled && (
+                <div className="card text-center py-8">
+                  <div className="inline-flex items-center justify-center w-20 h-20 bg-gray-100 rounded-full mb-4">
+                    <svg className="w-12 h-12 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                  <h3 className="text-2xl font-bold text-gray-700 mb-2">Invoice Cancelled</h3>
+                  <p className="text-gray-700">
+                    {statusText('CANCELLED').description}
                   </p>
                 </div>
               )}

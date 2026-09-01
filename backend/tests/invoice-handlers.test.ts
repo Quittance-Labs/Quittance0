@@ -569,6 +569,40 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       assert.equal(again.body.success, false);
     });
 
+    it('cancels a pending invoice when sellerPublicKey matches', async () => {
+      const invoice = await createInvoice();
+
+      const cancelled = await call(
+        handlers().cancelInvoice,
+        createReq({ params: { id: invoice.id }, body: { sellerPublicKey: SELLER_A } })
+      );
+      assert.equal(cancelled.statusCode, 200);
+      assert.equal(cancelled.body.data.status, 'CANCELLED');
+    });
+
+    it('rejects cancellation when sellerPublicKey does not match (403)', async () => {
+      const invoice = await createInvoice();
+
+      const res = await call(
+        handlers().cancelInvoice,
+        createReq({ params: { id: invoice.id }, body: { sellerPublicKey: SELLER_B } })
+      );
+      assert.equal(res.statusCode, 403);
+      assert.equal(res.body.success, false);
+      assert.match(res.body.error, /unauthorized/i);
+    });
+
+    it('rejects invalid sellerPublicKey format on cancel (400)', async () => {
+      const invoice = await createInvoice();
+
+      const res = await call(
+        handlers().cancelInvoice,
+        createReq({ params: { id: invoice.id }, body: { sellerPublicKey: 'not-a-valid-stellar-key' } })
+      );
+      assert.equal(res.statusCode, 400);
+      assert.equal(res.body.success, false);
+    });
+
     it('reports wallet-scoped stats', async () => {
       const invoice = await createInvoice();
       await createInvoice({ sellerPublicKey: SELLER_B, amount: 10 });

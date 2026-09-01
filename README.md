@@ -103,6 +103,13 @@ pending/actionable counts and cannot expose QR, pay, verify, or payment-proof
 controls. The client also projects stale pending data through `expiresAt` so a
 page fails closed while it waits for the next authoritative server response.
 
+### Seller invoice management & cancellation
+
+Sellers manage their invoices from the dashboard and detail views:
+- **Cancel Pending Invoices**: Sellers can cancel any pending invoice before payment or expiration. Cancellation is strictly gated on wallet ownership: `POST /api/invoices/:id/cancel` verifies the request against the invoice's `sellerPublicKey` (returning `403 Forbidden` on a mismatch).
+- **Copy Pay & Share Links**: Direct quick-copy actions with toast feedback for pay URLs and invoice IDs across dashboard cards and detail pages.
+- **Proof & Receipt Navigation**: One-click jump to verified PDF payment proof and transaction details for all `PAID` invoices.
+
 ---
 
 ## Stack

@@ -53,6 +53,7 @@ test('keeps payment controls available for an unpaid pending invoice', () => {
 test('paid, pending, and expired components are mutually exclusive', () => {
   assert.deepEqual(getPayPageView(pending), {
     expired: false,
+    cancelled: false,
     paid: false,
     showPaymentControls: true,
     showProof: false,

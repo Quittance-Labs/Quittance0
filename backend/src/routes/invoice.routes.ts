@@ -11,7 +11,7 @@ import { createInvoiceHandlers, InvoiceHandlerOptions } from './invoice.handlers
  *   GET    /invoices
  *   GET    /invoices/:id
  *   GET    /invoices/:id/payment-info
- *   POST   /invoices/:id/cancel
+ *   POST   /invoices/:id/cancel (seller authorized)
  *   POST   /invoices/:id/verify
  *   POST   /invoices/:id/simulate-payment
  * If a route is added here, wire it into the same shared handlers so parity

@@ -55,6 +55,7 @@ export function shouldShowPaymentControls(
 
 export function getPayPageView(invoice?: PayInvoice | null): {
   expired: boolean;
+  cancelled: boolean;
   paid: boolean;
   showPaymentControls: boolean;
   showProof: boolean;

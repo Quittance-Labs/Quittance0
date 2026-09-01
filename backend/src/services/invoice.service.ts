@@ -199,8 +199,19 @@ export class InvoiceService {
   /**
    * Cancel an invoice
    */
-  async cancelInvoice(invoiceId: string): Promise<Invoice> {
+  async cancelInvoice(invoiceId: string, sellerPublicKey?: string): Promise<Invoice> {
     await this.markExpiredInvoices();
+
+    if (sellerPublicKey) {
+      const existing = await this.db.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
+      if (existing.rows.length === 0 || existing.rows[0].status !== 'PENDING') {
+        throw new Error('Invoice not found or already processed');
+      }
+      if (existing.rows[0].seller_public_key !== sellerPublicKey) {
+        throw new Error('Unauthorized: only the seller can cancel this invoice');
+      }
+    }
+
     const query = `
       UPDATE invoices 
       SET status = 'CANCELLED'
