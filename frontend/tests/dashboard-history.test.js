@@ -142,6 +142,22 @@ test('search is case-insensitive and tolerates missing optional fields', () => {
   assert.doesNotThrow(() => invoiceSearchText(invoice()));
 });
 
+test('search matches customer, seller, and payer fields', () => {
+  const invoices = [
+    invoice({ id: 'a', customerEmail: 'client@example.com' }),
+    invoice({ id: 'b', sellerName: 'Satoshi Consulting' }),
+    invoice({ id: 'c', sellerEmail: 'sat@quittance.io' }),
+    invoice({ id: 'd', payerName: 'Bob Payer' }),
+    invoice({ id: 'e', payerEmail: 'bob@stellar.org' }),
+  ];
+
+  assert.deepEqual(searchInvoices(invoices, 'client@example.com').map((i) => i.id), ['a']);
+  assert.deepEqual(searchInvoices(invoices, 'Satoshi').map((i) => i.id), ['b']);
+  assert.deepEqual(searchInvoices(invoices, 'sat@quittance.io').map((i) => i.id), ['c']);
+  assert.deepEqual(searchInvoices(invoices, 'Bob Payer').map((i) => i.id), ['d']);
+  assert.deepEqual(searchInvoices(invoices, 'bob@stellar.org').map((i) => i.id), ['e']);
+});
+
 test('search never reads wallet activity', () => {
   // Only invoice fields are searchable; a Horizon-style field is ignored.
   const invoices = [invoice({ id: 'a', transactionHash: 'deadbeef' })];

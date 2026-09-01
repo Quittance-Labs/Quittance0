@@ -4,7 +4,8 @@ import { formatAmount, formatDate } from '@/lib/utils';
 import { describeAmount } from '@/lib/a11y';
 import { Check, Download, ExternalLink, FileText, Mail } from 'lucide-react';
 import AssetLogo from './AssetLogo';
-import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
+import { openInvoicePDF, emailPaymentProof } from '@/lib/export';
+import { canSendProofEmail, getProofMailtoRecipient } from '@/lib/mailto-delivery';
 import { toast } from 'sonner';
 import type { PayPageInvoice } from './pay-page.types';
 import { getExplorerTransactionUrl } from '@/lib/stellar';
@@ -20,11 +21,12 @@ export default function PaymentReceipt({ invoice }: PaymentReceiptProps) {
   };
 
   const handleEmailProof = () => {
-    if (!invoice.customerEmail) {
-      toast.error('No client email on this invoice');
-      return;
+    try {
+      emailPaymentProof(invoice as any);
+      toast.success('Opening email client');
+    } catch (err: any) {
+      toast.error(err?.message || 'No recipient email on this invoice');
     }
-    shareInvoiceByEmail(invoice as any);
   };
 
   const handleDownload = () => {
@@ -79,7 +81,8 @@ Stellar Blockchain Payment System
   };
 
   const amountLabel = describeAmount(formatAmount(invoice.amount, 7), invoice.assetCode);
-  const canEmail = Boolean(invoice.customerEmail);
+  const canEmail = canSendProofEmail(invoice as any);
+  const proofRecipient = getProofMailtoRecipient(invoice as any);
   const emailReasonId = 'receipt-email-reason';
 
   return (
@@ -235,6 +238,7 @@ Stellar Blockchain Payment System
           onClick={canEmail ? handleEmailProof : undefined}
           aria-disabled={!canEmail}
           aria-describedby={canEmail ? undefined : emailReasonId}
+          aria-label={canEmail && proofRecipient ? `Email payment proof to ${proofRecipient}` : 'Email Proof'}
           className="btn btn-secondary w-full flex items-center justify-center gap-2"
         >
           <Mail className="w-5 h-5" aria-hidden="true" />

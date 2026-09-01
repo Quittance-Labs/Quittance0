@@ -8,7 +8,8 @@ import { Clock, ExternalLink, Copy, Check, Mail, Download } from 'lucide-react';
 import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import AssetLogo from './AssetLogo';
-import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
+import { openInvoicePDF, shareInvoiceByEmail, emailPaymentProof } from '@/lib/export';
+import { canSendProofEmail } from '@/lib/mailto-delivery';
 import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
 import { describeAmount, statusBadgeLabel, statusText } from '@/lib/a11y';
 
@@ -59,14 +60,19 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
     toast.success('Opening payment proof');
   };
 
-  const handleEmailShare = () => {
-    shareInvoiceByEmail(invoice as any);
+  const handleEmailProof = () => {
+    try {
+      emailPaymentProof(invoice as any);
+      toast.success('Opening email client');
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not open email client');
+    }
   };
 
   // Ids are scoped to the invoice: the dashboard renders many of these cards.
   const headingId = `invoice-${invoice.id}-heading`;
   const emailReasonId = `invoice-${invoice.id}-email-reason`;
-  const canEmail = Boolean(invoice.customerEmail);
+  const canEmail = canSendProofEmail(invoice as any);
   const amountLabel = describeAmount(formatAmount(invoice.amount), invoice.assetCode);
 
   return (
@@ -138,21 +144,35 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
           View
         </Link>
         {status === 'PENDING' && (
-          <button
-            onClick={handleCopyLink}
-            className="btn btn-secondary flex items-center justify-center gap-2 px-3"
-            aria-label={
-              linkCopied
-                ? `Payment link for the ${amountLabel} invoice copied`
-                : `Copy payment link for the ${amountLabel} invoice`
-            }
-          >
-            {linkCopied ? (
-              <Check className="w-4 h-4 text-green-700" aria-hidden="true" />
-            ) : (
-              <Copy className="w-4 h-4" aria-hidden="true" />
+          <>
+            <button
+              onClick={handleCopyLink}
+              className="btn btn-secondary flex items-center justify-center gap-2 px-3"
+              aria-label={
+                linkCopied
+                  ? `Payment link for the ${amountLabel} invoice copied`
+                  : `Copy payment link for the ${amountLabel} invoice`
+              }
+            >
+              {linkCopied ? (
+                <Check className="w-4 h-4 text-green-700" aria-hidden="true" />
+              ) : (
+                <Copy className="w-4 h-4" aria-hidden="true" />
+              )}
+            </button>
+            {invoice.customerEmail && (
+              <button
+                onClick={() => {
+                  shareInvoiceByEmail(invoice as any);
+                  toast.success('Opening email client');
+                }}
+                className="btn btn-outline flex items-center justify-center gap-2 px-3"
+                aria-label={`Email invoice to ${invoice.customerEmail}`}
+              >
+                <Mail className="w-4 h-4" aria-hidden="true" />
+              </button>
             )}
-          </button>
+          </>
         )}
         {status === 'PAID' && (
           <button
@@ -167,7 +187,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
         {status === 'PAID' && (
           <>
             <button
-              onClick={canEmail ? handleEmailShare : undefined}
+              onClick={canEmail ? handleEmailProof : undefined}
               aria-disabled={!canEmail}
               aria-describedby={canEmail ? undefined : emailReasonId}
               aria-label={`Email payment proof for the ${amountLabel} invoice`}
@@ -177,7 +197,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
             </button>
             {!canEmail && (
               <span id={emailReasonId} className="sr-only">
-                Unavailable: this invoice has no client email.
+                Unavailable: this invoice has no client or payer email.
               </span>
             )}
           </>
