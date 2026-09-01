@@ -100,7 +100,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
       stellarQrCode: await generateStellarPaymentQR(
         invoice.sellerPublicKey,
         invoice.amount.toString(),
-        invoice.assetCode,
+        invoice.assetCode || 'XLM',
         invoice.memo,
         invoice.assetIssuer
       ),

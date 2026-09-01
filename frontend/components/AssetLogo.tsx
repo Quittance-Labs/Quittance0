@@ -26,10 +26,15 @@ export default function AssetLogo({
   className = '',
   decorative = false,
 }: AssetLogoProps) {
-  const asset = getAssetByCode(code);
+  const normalizedCode = code ? code.toUpperCase() : 'XLM';
+  const asset = getAssetByCode(normalizedCode);
 
   if (!asset) {
-    return <span className={className}>{code}</span>;
+    return (
+      <span className={className} {...(decorative ? { 'aria-hidden': true } : {})}>
+        {normalizedCode}
+      </span>
+    );
   }
 
   return (

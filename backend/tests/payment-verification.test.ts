@@ -254,6 +254,30 @@ describe('verifyHorizonPayment — rejections', () => {
     assert.equal(codeOf(result), 'ASSET_MISMATCH');
   });
 
+  it('settles a valid USDC credit payment with matching issuer and amount', () => {
+    const result = verifyHorizonPayment(
+      input({
+        expected: expected({ assetCode: 'USDC', assetIssuer: USDC_ISSUER, amount: 50 }),
+        operations: [
+          paymentOp({
+            asset_type: 'credit_alphanum4',
+            asset_code: 'USDC',
+            asset_issuer: USDC_ISSUER,
+            amount: '50.0000000',
+          }),
+        ],
+      }),
+    );
+
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.value.from, PAYER);
+      assert.equal(result.value.amount, '50.0000000');
+      assert.equal(result.value.assetCode, 'USDC');
+      assert.equal(result.value.assetIssuer, USDC_ISSUER);
+    }
+  });
+
   it('rejects a transaction with no payment operation', () => {
     assert.equal(
       codeOf(verifyHorizonPayment(input({ operations: [{ type: 'create_account' }] }))),

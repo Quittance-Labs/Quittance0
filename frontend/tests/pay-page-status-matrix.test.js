@@ -92,6 +92,17 @@ test('component visibility is derived consistently for every invoice status', ()
   assert.equal(matrix.CANCELLED.showPaymentControls, false);
 });
 
+test('pay page view handles multi-asset invoices (XLM, USDC) correctly', () => {
+  const usdcInvoice = {
+    status: 'PENDING',
+    assetCode: 'USDC',
+    amount: 50,
+  };
+  const view = getPayPageView(usdcInvoice);
+  assert.equal(view.showPaymentControls, true);
+  assert.equal(view.expired, false);
+});
+
 /*
  * Text equivalents (issue #289).
  *

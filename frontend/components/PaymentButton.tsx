@@ -111,11 +111,16 @@ export default function PaymentButton({
       onSuccess?.(txHash);
     } catch (error: any) {
       const missingTrustline =
-        assetCode !== 'XLM' && error.message?.toLowerCase().includes('trustline');
+        assetCode !== 'XLM' && (
+          error.message?.toLowerCase().includes('trustline') ||
+          error.message?.toLowerCase().includes('op_no_trust')
+        );
       const title = missingTrustline ? `${assetCode} trustline required` : 'Payment failed';
       toast.error(title, {
         id: PAY_TOAST_ID,
-        description: error.message || 'Try again',
+        description: missingTrustline
+          ? `Please add a trustline for ${assetCode} in your wallet before paying.`
+          : (error.message || 'Try again'),
         duration: missingTrustline ? 10000 : undefined,
       });
       onError?.(title);

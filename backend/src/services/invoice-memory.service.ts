@@ -22,7 +22,7 @@ export class InvoiceMemoryService {
       sellerName: input.sellerName,
       sellerEmail: input.sellerEmail,
       amount: input.amount,
-      assetCode: input.assetCode || 'XLM',
+      assetCode: (input.assetCode || 'XLM').toUpperCase(),
       assetIssuer: input.assetIssuer,
       memo,
       description: input.description,

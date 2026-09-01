@@ -78,7 +78,8 @@ Stellar Blockchain Payment System
     URL.revokeObjectURL(url);
   };
 
-  const amountLabel = describeAmount(formatAmount(invoice.amount, 7), invoice.assetCode);
+  const activeAssetCode = invoice.assetCode || 'XLM';
+  const amountLabel = describeAmount(formatAmount(invoice.amount, 7), activeAssetCode);
   const canEmail = Boolean(invoice.customerEmail);
   const emailReasonId = 'receipt-email-reason';
 

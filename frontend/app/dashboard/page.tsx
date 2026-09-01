@@ -254,7 +254,7 @@ export default function DashboardPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-2xl font-bold text-gray-900">0.00</p>
+                    <p className="text-2xl font-bold text-gray-900">0.00 <span className="text-sm font-normal text-gray-500">XLM</span></p>
                   )}
                 </div>
               </div>

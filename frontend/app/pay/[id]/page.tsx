@@ -120,6 +120,15 @@ export default function PaymentPage() {
             <PaymentResultPanel state={page.payment} />
           </div>
 
+          {invoice.assetCode && invoice.assetCode !== 'XLM' && view.showPaymentControls && (
+            <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900 flex items-start gap-3">
+              <div>
+                <span className="font-semibold block mb-0.5">{invoice.assetCode} Trustline Notice</span>
+                <span>Please ensure your Stellar wallet has established a trustline for {invoice.assetCode} before submitting payment.</span>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
             <div className="space-y-6">
               <PayAmountBlock invoice={invoice} />

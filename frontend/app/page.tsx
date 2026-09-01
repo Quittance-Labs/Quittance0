@@ -93,7 +93,7 @@ export default function HomePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
           >
-            Invoice on Stellar. Get paid. Keep the proof.
+            Invoice on Stellar in XLM or USDC. Get paid. Keep the proof.
           </motion.p>
 
           <motion.div

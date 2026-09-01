@@ -26,7 +26,7 @@ export const stellarPublicKeySchema = z.string()
 export const createInvoiceSchema = z
   .object({
     amount: z.number().positive().max(1000000000),
-    assetCode: z.string().default('XLM').optional(),
+    assetCode: z.string().default('XLM').transform((val) => val.toUpperCase()).optional(),
     assetIssuer: stellarPublicKeySchema.optional(),
     description: z.string().max(500).optional(),
     customerName: z.string().max(255).optional(),
