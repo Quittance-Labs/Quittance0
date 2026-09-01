@@ -77,6 +77,16 @@ function historicalInvoices(invoices, now) {
   return applyExpiryLifecycle(invoices, now).filter((invoice) => !isActionableInvoice(invoice, now));
 }
 
+/** Whether an invoice is currently in a state that the seller can cancel. */
+function isInvoiceCancellable(invoice, sellerPublicKey, now) {
+  if (!invoice) return false;
+  if (sellerPublicKey && invoice.sellerPublicKey && invoice.sellerPublicKey !== sellerPublicKey) {
+    return false;
+  }
+  const actionable = isActionableInvoice(invoice, now);
+  return actionable && invoice.status === 'PENDING';
+}
+
 /** The empty dashboard, used on disconnect and on every wallet switch. */
 function emptyDashboardData() {
   return { invoices: [], stats: null };
@@ -146,6 +156,7 @@ module.exports = {
   exportableInvoices,
   actionableInvoices,
   historicalInvoices,
+  isInvoiceCancellable,
   emptyDashboardData,
   dashboardDataFor,
   reconcileExpiryStats,

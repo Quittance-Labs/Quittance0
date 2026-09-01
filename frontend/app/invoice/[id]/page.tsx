@@ -13,6 +13,7 @@ import { formatAmount, formatDate, getTimeRemaining } from '@/lib/utils';
 import { MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';
 import { ArrowLeft, Share2, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { useWalletStore } from '@/lib/store';
 import ApiErrorState from '@/components/ApiErrorState';
 import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
 import { invoiceSharePath } from '@/lib/invoice-share-path';
@@ -21,6 +22,7 @@ export default function InvoiceDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+  const { publicKey: storePublicKey, connected } = useWalletStore();
 
   const [invoice, setInvoice] = useState<any>(null);
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
@@ -85,10 +87,12 @@ export default function InvoiceDetailPage() {
     }
   };
 
+  const activeWallet = userWallet || (connected ? storePublicKey : null);
+
   const handleCancel = async () => {
     if (!window.confirm('Cancel this invoice?')) return;
     try {
-      await invoiceApi.cancel(id);
+      await invoiceApi.cancel(id, activeWallet || invoice?.sellerPublicKey);
       toast.success('Invoice cancelled');
       await loadInvoice();
       /*
@@ -200,7 +204,7 @@ export default function InvoiceDetailPage() {
                   <Share2 className="w-5 h-5" aria-hidden="true" />
                   <span className="hidden sm:inline">Share</span>
                 </button>
-                {userWallet && invoice.sellerPublicKey === userWallet && (
+                {activeWallet && invoice.sellerPublicKey === activeWallet && (
                   <button
                     onClick={handleCancel}
                     className="btn btn-destructive flex items-center gap-2"

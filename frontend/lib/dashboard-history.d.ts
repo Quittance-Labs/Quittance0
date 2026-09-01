@@ -65,6 +65,12 @@ export function historicalInvoices(
   now?: string | number | Date
 ): DashboardInvoice[];
 
+export function isInvoiceCancellable(
+  invoice: DashboardInvoice | null | undefined,
+  sellerPublicKey?: string | null,
+  now?: string | number | Date
+): boolean;
+
 export function emptyDashboardData(): DashboardData;
 
 export function dashboardDataFor(

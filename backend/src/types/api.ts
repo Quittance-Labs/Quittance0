@@ -26,6 +26,10 @@ export interface ApiFailure {
   code?: VerificationCode;
 }
 
+export interface CancelInvoiceInput {
+  sellerPublicKey?: string;
+}
+
 export type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
 
 export function apiSuccess<T>(

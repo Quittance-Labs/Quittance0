@@ -100,8 +100,8 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     return response.data;
   },
 
-  cancel: async (id: string) => {
-    const response = await api.post(`/invoices/${id}/cancel`);
+  cancel: async (id: string, sellerPublicKey?: string) => {
+    const response = await api.post(`/invoices/${id}/cancel`, { sellerPublicKey });
     return response.data;
   },
 

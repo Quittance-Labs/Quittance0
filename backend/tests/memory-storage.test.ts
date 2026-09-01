@@ -182,11 +182,27 @@ describe('MemoryStorage parity with Postgres invoice columns', () => {
       memo: 'INV-CANCEL',
     });
 
-    const cancelled = store.updateInvoice(pending.id, { status: 'CANCELLED' });
+    const cancelled = store.cancelInvoice(pending.id, sellerA);
     assert.equal(cancelled?.status, 'CANCELLED');
 
-    const alreadyCancelled = store.updateInvoice(pending.id, { status: 'CANCELLED' });
-    assert.equal(alreadyCancelled?.status, 'CANCELLED');
+    const alreadyCancelled = store.cancelInvoice(pending.id, sellerA);
+    assert.equal(alreadyCancelled, undefined);
+  });
+
+  it('cancelInvoice throws unauthorized when sellerPublicKey does not match', () => {
+    const pending = store.createInvoice({
+      sellerPublicKey: sellerA,
+      amount: 12,
+      memo: 'INV-CANCEL-AUTH',
+    });
+
+    assert.throws(
+      () => store.cancelInvoice(pending.id, sellerB),
+      /Unauthorized: only the seller can cancel this invoice/
+    );
+
+    const reget = store.getInvoiceById(pending.id);
+    assert.equal(reget?.status, 'PENDING');
   });
 
   it('getAllInvoices + getStats return seller-scoped rows with parity data', () => {

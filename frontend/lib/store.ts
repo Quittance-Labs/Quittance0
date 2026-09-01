@@ -33,3 +33,12 @@ export const useWalletStore = create<WalletState>()(
   )
 );
 
+/**
+ * Checks whether the given connected wallet matches the invoice's seller public key.
+ */
+export function isWalletSeller(walletPublicKey?: string | null, sellerPublicKey?: string | null): boolean {
+  if (!sellerPublicKey) return true;
+  if (!walletPublicKey) return false;
+  return walletPublicKey.trim() === sellerPublicKey.trim();
+}
+

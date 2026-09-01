@@ -64,11 +64,18 @@ export const paymentSchema = z.object({
   amount: z.number().positive(),
 });
 
+// Invoice cancellation schema
+export const cancelInvoiceSchema = z.object({
+  sellerPublicKey: stellarPublicKeySchema.optional(),
+});
+
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
 export type PaymentInput = z.infer<typeof paymentSchema>;
+export type CancelInvoiceInput = z.infer<typeof cancelInvoiceSchema>;
 
 export default {
   createInvoiceSchema,
   paymentSchema,
+  cancelInvoiceSchema,
   stellarPublicKeySchema,
 };

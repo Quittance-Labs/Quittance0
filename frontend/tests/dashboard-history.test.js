@@ -218,3 +218,21 @@ test('hasAnyInvoices reads the seller-scoped total', () => {
   assert.equal(hasAnyInvoices({ total_invoices: 0 }), false);
   assert.equal(hasAnyInvoices(null), false);
 });
+
+// ----------------------------------------------------------------- cancelled
+
+test('INVOICE_FILTERS includes cancelled status', () => {
+  const { INVOICE_FILTERS } = require('../lib/dashboard-history');
+  assert.ok(INVOICE_FILTERS.includes('cancelled'));
+});
+
+test('cancelled invoices are retained in historical invoices', () => {
+  const now = '2026-08-30T12:00:00.000Z';
+  const invoices = [
+    invoice({ id: 'live', expiresAt: '2026-08-31T12:00:00.000Z' }),
+    invoice({ id: 'cancelled', status: 'CANCELLED' }),
+  ];
+
+  assert.deepEqual(actionableInvoices(invoices, now).map((i) => i.id), ['live']);
+  assert.deepEqual(historicalInvoices(invoices, now).map((i) => i.id), ['cancelled']);
+});

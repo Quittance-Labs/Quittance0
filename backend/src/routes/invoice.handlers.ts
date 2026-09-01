@@ -6,7 +6,7 @@
 // both adapters with the same assertions to guarantee field parity.
 import { Request, Response } from 'express';
 import stellarService from '../services/stellar.service';
-import { createInvoiceSchema } from '../utils/validation';
+import { cancelInvoiceSchema, createInvoiceSchema, stellarPublicKeySchema } from '../utils/validation';
 import { generatePaymentQR, generateStellarPaymentQR } from '../utils/qrcode';
 import { sendFailure, sendSuccess, sendVerificationFailure } from '../types/api';
 import type { InvoiceStorage, StoredInvoice } from '../storage/invoice-storage';
@@ -189,11 +189,29 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
     async cancelInvoice(req: Request, res: Response) {
       try {
-        const invoice = await storage.cancelInvoice(req.params.id);
+        let sellerPublicKey: string | undefined;
+
+        if (req.body && typeof req.body === 'object' && 'sellerPublicKey' in req.body) {
+          const parsed = cancelInvoiceSchema.safeParse(req.body);
+          if (!parsed.success) {
+            return sendFailure(res, 400, 'Invalid Stellar public key format');
+          }
+          sellerPublicKey = parsed.data.sellerPublicKey;
+        } else if (req.query.sellerPublicKey) {
+          const parsed = stellarPublicKeySchema.safeParse(req.query.sellerPublicKey);
+          if (!parsed.success) {
+            return sendFailure(res, 400, 'Invalid Stellar public key format');
+          }
+          sellerPublicKey = parsed.data;
+        }
+
+        const invoice = await storage.cancelInvoice(req.params.id, sellerPublicKey);
         sendSuccess(res, 200, invoice);
       } catch (error: any) {
         logError('Cancel invoice error:', error);
-        sendFailure(res, 400, error.message || 'Failed to cancel invoice');
+        const message = error.message || 'Failed to cancel invoice';
+        const isUnauthorized = message.toLowerCase().includes('unauthorized');
+        sendFailure(res, isUnauthorized ? 403 : 400, message);
       }
     },
 

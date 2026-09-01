@@ -44,7 +44,11 @@ export default function PaymentStatus({ status, txHash, compact = false }: Payme
           color: 'text-red-700',
         };
       case 'CANCELLED':
-        return { title: 'Invoice Cancelled', color: 'text-gray-700' };
+        return {
+          title: 'Invoice Cancelled',
+          description: 'This invoice was cancelled by the seller. No payment can be accepted.',
+          color: 'text-gray-700',
+        };
       default:
         return { title: 'Waiting for Payment', color: 'text-yellow-800' };
     }

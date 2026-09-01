@@ -356,4 +356,18 @@ describe('InvoiceService (Postgres) seller scoping', () => {
       /Invoice not found or already processed/
     );
   });
+
+  it('cancelInvoice permits cancellation when sellerPublicKey matches and rejects when mismatched', async () => {
+    const db = new FakeInvoiceDb();
+    const service = new InvoiceService(db);
+    const pending = await service.createInvoice(input(SELLER_A, { amount: 1 }));
+
+    await assert.rejects(
+      () => service.cancelInvoice(pending.id, SELLER_B),
+      /Unauthorized: only the seller can cancel this invoice/
+    );
+
+    const cancelled = await service.cancelInvoice(pending.id, SELLER_A);
+    assert.equal(cancelled.status, 'CANCELLED');
+  });
 });

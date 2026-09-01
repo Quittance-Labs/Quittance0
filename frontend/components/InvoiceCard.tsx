@@ -4,13 +4,14 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { formatAmount, formatDate, getStatusColor } from '@/lib/utils';
 import { expirySummary } from '@/lib/card-expiry-summary';
-import { Clock, ExternalLink, Copy, Check, Mail, Download } from 'lucide-react';
+import { Clock, ExternalLink, Copy, Check, Mail, Download, X, Hash } from 'lucide-react';
 import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import AssetLogo from './AssetLogo';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
 import { describeAmount, statusBadgeLabel, statusText } from '@/lib/a11y';
+import { invoiceApi } from '@/lib/api';
 
 interface Invoice {
   id: string;
@@ -35,13 +36,17 @@ interface Invoice {
 
 interface InvoiceCardProps {
   invoice: Invoice;
+  userWallet?: string | null;
+  onCancel?: (id: string) => void;
 }
 
-export default function InvoiceCard({ invoice }: InvoiceCardProps) {
+export default function InvoiceCard({ invoice, userWallet, onCancel }: InvoiceCardProps) {
   const [linkCopied, setLinkCopied] = useState(false);
+  const [idCopied, setIdCopied] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const status = effectiveInvoiceStatus(invoice) || invoice.status;
   const statusColor = getStatusColor(status);
-  const paymentUrl = `${window.location.origin}/pay/${invoice.id}`;
+  const paymentUrl = typeof window !== 'undefined' ? `${window.location.origin}/pay/${invoice.id}` : `/pay/${invoice.id}`;
 
   const handleCopyLink = async () => {
     const success = await copyToClipboard(paymentUrl);
@@ -54,6 +59,32 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
     }
   };
 
+  const handleCopyId = async () => {
+    const success = await copyToClipboard(invoice.id);
+    if (success) {
+      setIdCopied(true);
+      toast.success('Invoice ID copied');
+      setTimeout(() => setIdCopied(false), 2000);
+    } else {
+      toast.error('Could not copy invoice ID');
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!window.confirm('Cancel this invoice?')) return;
+    setCancelling(true);
+    try {
+      await invoiceApi.cancel(invoice.id, userWallet || invoice.sellerPublicKey);
+      toast.success('Invoice cancelled');
+      onCancel?.(invoice.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to cancel invoice';
+      toast.error(message);
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const handleDownloadPDF = () => {
     openInvoicePDF(invoice as any);
     toast.success('Opening payment proof');
@@ -62,6 +93,8 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
   const handleEmailShare = () => {
     shareInvoiceByEmail(invoice as any);
   };
+
+  const isSeller = !invoice.sellerPublicKey || !userWallet || invoice.sellerPublicKey === userWallet;
 
   // Ids are scoped to the invoice: the dashboard renders many of these cards.
   const headingId = `invoice-${invoice.id}-heading`;
@@ -123,7 +156,7 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
         )}
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         {/*
           "View", "Download Proof" and the icon-only buttons repeat verbatim on
           every card, so each accessible name carries the amount that identifies
@@ -131,37 +164,68 @@ export default function InvoiceCard({ invoice }: InvoiceCardProps) {
         */}
         <Link
           href={`/invoice/${invoice.id}`}
-          className="btn btn-outline flex-1 flex items-center justify-center gap-2 text-sm"
+          className="btn btn-outline flex-1 flex items-center justify-center gap-2 text-sm min-w-[80px]"
           aria-label={`View ${amountLabel} invoice`}
         >
           <ExternalLink className="w-4 h-4" aria-hidden="true" />
           View
         </Link>
         {status === 'PENDING' && (
-          <button
-            onClick={handleCopyLink}
-            className="btn btn-secondary flex items-center justify-center gap-2 px-3"
-            aria-label={
-              linkCopied
-                ? `Payment link for the ${amountLabel} invoice copied`
-                : `Copy payment link for the ${amountLabel} invoice`
-            }
-          >
-            {linkCopied ? (
-              <Check className="w-4 h-4 text-green-700" aria-hidden="true" />
-            ) : (
-              <Copy className="w-4 h-4" aria-hidden="true" />
+          <>
+            <button
+              onClick={handleCopyLink}
+              className="btn btn-secondary flex items-center justify-center gap-2 px-3"
+              aria-label={
+                linkCopied
+                  ? `Payment link for the ${amountLabel} invoice copied`
+                  : `Copy payment link for the ${amountLabel} invoice`
+              }
+              title="Copy Pay Link"
+            >
+              {linkCopied ? (
+                <Check className="w-4 h-4 text-green-700" aria-hidden="true" />
+              ) : (
+                <Copy className="w-4 h-4" aria-hidden="true" />
+              )}
+            </button>
+            <button
+              onClick={handleCopyId}
+              className="btn btn-secondary flex items-center justify-center gap-2 px-3"
+              aria-label={
+                idCopied
+                  ? `Invoice ID for the ${amountLabel} invoice copied`
+                  : `Copy invoice ID for the ${amountLabel} invoice`
+              }
+              title="Copy Invoice ID"
+            >
+              {idCopied ? (
+                <Check className="w-4 h-4 text-green-700" aria-hidden="true" />
+              ) : (
+                <Hash className="w-4 h-4" aria-hidden="true" />
+              )}
+            </button>
+            {isSeller && (
+              <button
+                onClick={handleCancel}
+                disabled={cancelling}
+                className="btn btn-destructive flex items-center justify-center gap-2 px-3 text-sm"
+                aria-label={`Cancel the ${amountLabel} invoice`}
+                title="Cancel Invoice"
+              >
+                <X className="w-4 h-4" aria-hidden="true" />
+                <span className="sr-only sm:not-sr-only sm:inline">Cancel</span>
+              </button>
             )}
-          </button>
+          </>
         )}
         {status === 'PAID' && (
           <button
             onClick={handleDownloadPDF}
-            className="btn btn-primary flex-1 flex items-center justify-center gap-2 text-sm"
+            className="btn btn-primary flex-1 flex items-center justify-center gap-2 text-sm min-w-[120px]"
             aria-label={`Download payment proof for the ${amountLabel} invoice`}
           >
             <Download className="w-4 h-4" aria-hidden="true" />
-            Download Proof
+            Proof
           </button>
         )}
         {status === 'PAID' && (

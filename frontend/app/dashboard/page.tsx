@@ -97,6 +97,26 @@ export default function DashboardPage() {
     };
   }, [filter, connected, publicKey, reloadKey]);
 
+  const handleInvoiceCancelled = (cancelledId: string) => {
+    setLoaded((prev) => {
+      if (!prev.invoices) return prev;
+      const updatedInvoices = prev.invoices.map((inv) =>
+        inv.id === cancelledId ? { ...inv, status: 'CANCELLED' } : inv
+      );
+      return {
+        ...prev,
+        invoices: updatedInvoices,
+        stats: prev.stats
+          ? {
+              ...prev.stats,
+              pending_invoices: Math.max(0, Number(prev.stats.pending_invoices || 0) - 1),
+            }
+          : prev.stats,
+      };
+    });
+    setReloadKey((k) => k + 1);
+  };
+
   const handleExportCSV = () => {
     const paidInvoices = exportableInvoices(filteredInvoices);
     if (paidInvoices.length === 0) {
@@ -401,7 +421,11 @@ export default function DashboardPage() {
                 <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 list-none p-0">
                   {filteredInvoices.map((invoice) => (
                     <li key={invoice.id}>
-                      <InvoiceCard invoice={invoice as any} />
+                      <InvoiceCard
+                        invoice={invoice as any}
+                        userWallet={publicKey}
+                        onCancel={handleInvoiceCancelled}
+                      />
                     </li>
                   ))}
                 </ul>

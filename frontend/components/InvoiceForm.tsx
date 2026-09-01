@@ -52,6 +52,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
     setApiError(null);
     try {
       const selectedAsset = getAssetByCode(assetCode);
+      // Creates a pending invoice owned by the connected seller wallet
       const result = await invoiceApi.create({
         amount: parseFloat(amount),
         assetCode: assetCode,

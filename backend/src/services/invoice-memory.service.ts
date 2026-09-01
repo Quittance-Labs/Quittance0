@@ -76,11 +76,15 @@ export class InvoiceMemoryService {
     return invoices.slice(offset, offset + limit);
   }
 
-  async cancelInvoice(invoiceId: string): Promise<StoredInvoice> {
+  async cancelInvoice(invoiceId: string, sellerPublicKey?: string): Promise<StoredInvoice> {
     const invoice = this.storage.getInvoiceById(invoiceId);
 
     if (!invoice || invoice.status !== 'PENDING') {
       throw new Error('Invoice not found or already processed');
+    }
+
+    if (sellerPublicKey && invoice.sellerPublicKey !== sellerPublicKey) {
+      throw new Error('Unauthorized: only the seller can cancel this invoice');
     }
 
     const updated = this.storage.updateInvoice(invoiceId, { status: 'CANCELLED' });

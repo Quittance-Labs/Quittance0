@@ -58,6 +58,7 @@ function getPayPageView(invoice) {
   const status = invoice?.status;
   return {
     expired: isExpiredInvoice(status),
+    cancelled: status === 'CANCELLED',
     paid: status === 'PAID',
     showPaymentControls: shouldShowPaymentControls(status, invoice?.paymentTxHash),
     showProof: status === 'PAID' && Boolean(invoice?.paymentTxHash),
