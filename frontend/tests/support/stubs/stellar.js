@@ -15,4 +15,28 @@ export const getExplorerTransactionUrl = (txHash) =>
   `https://stellar.expert/explorer/testnet/tx/${txHash}`;
 export const describeStellarNetworkError = (error) =>
   error?.message || 'Stellar network error';
-export default {};
+export const getFreighterNetwork = async () => ({ network: 'TESTNET', networkUrl: '', networkPassphrase: '' });
+export const isWrongNetwork = () => false;
+export const watchFreighterNetwork = () => () => {};
+export const STELLAR_NETWORK = 'TESTNET';
+export const STELLAR_PASSPHRASE = 'Test SDF Network ; September 2015';
+export const NETWORK_DISPLAY_NAME = 'Testnet';
+
+const stellarExports = {
+  server,
+  checkWalletConnection,
+  requestWalletAccess,
+  getUserPublicKey,
+  getAccountBalance,
+  sendPayment,
+  getExplorerTransactionUrl,
+  describeStellarNetworkError,
+  getFreighterNetwork,
+  isWrongNetwork,
+  watchFreighterNetwork,
+  STELLAR_NETWORK,
+  STELLAR_PASSPHRASE,
+  NETWORK_DISPLAY_NAME,
+};
+
+export default stellarExports;

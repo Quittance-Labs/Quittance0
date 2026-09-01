@@ -4,9 +4,11 @@ import { toast } from 'sonner';
 import {
   FREIGHTER_INSTALL_URL,
   FREIGHTER_REQUIRED_MESSAGE,
+  FREIGHTER_WRONG_NETWORK_MESSAGE,
 } from '@/lib/freighter-availability';
 
 const FREIGHTER_TOAST_ID = 'freighter-not-installed';
+const FREIGHTER_NETWORK_TOAST_ID = 'freighter-wrong-network';
 
 export const showFreighterInstallPrompt = () => {
   toast.error('Freighter wallet not found', {
@@ -33,5 +35,13 @@ export const showFreighterInstallPrompt = () => {
     // Ten seconds is short for a message carrying the only actionable link in
     // the flow, so the toast stays until it is dismissed.
     duration: Infinity,
+  });
+};
+
+export const showFreighterWrongNetworkPrompt = (targetNetwork = 'Testnet') => {
+  toast.error('Wrong Stellar network', {
+    id: FREIGHTER_NETWORK_TOAST_ID,
+    description: FREIGHTER_WRONG_NETWORK_MESSAGE(targetNetwork),
+    duration: 8000,
   });
 };

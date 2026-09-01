@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { User, LogOut, Wallet, ChevronDown } from 'lucide-react';
 import { useWalletStore } from '@/lib/store';
+import { NETWORK_DISPLAY_NAME } from '@/lib/stellar';
 
 interface UserProfileProps {
   userWallet: string | null;
@@ -14,7 +15,7 @@ export default function UserProfile({ userWallet, onDisconnect }: UserProfilePro
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const { disconnect } = useWalletStore();
+  const { disconnect, isWrongNetwork } = useWalletStore();
   const menuId = 'user-profile-menu';
 
   useEffect(() => {
@@ -104,7 +105,18 @@ export default function UserProfile({ userWallet, onDisconnect }: UserProfilePro
           className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-200 py-2 z-50"
         >
           <div className="px-4 py-3 border-b border-gray-100">
-            <p className="text-sm font-semibold text-gray-900">Connected wallet</p>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-gray-900">Connected wallet</p>
+              {isWrongNetwork ? (
+                <span className="inline-flex items-center px-2 py-0.5 text-[10px] font-semibold text-amber-800 bg-amber-100 border border-amber-300 rounded-full">
+                  Wrong Network
+                </span>
+              ) : (
+                <span className="inline-flex items-center px-2 py-0.5 text-[10px] font-medium text-[var(--teal)] bg-[var(--teal)]/10 rounded-full">
+                  {NETWORK_DISPLAY_NAME}
+                </span>
+              )}
+            </div>
             {/* text-gray-400 on white is 2.6:1 — below AA for this address. */}
             <p className="text-xs text-gray-600 font-mono break-all mt-1">{userWallet}</p>
           </div>

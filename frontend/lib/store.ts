@@ -1,12 +1,22 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-interface WalletState {
+export interface WalletState {
   publicKey: string | null;
   balance: string;
   connected: boolean;
-  setWallet: (publicKey: string, balance: string) => void;
+  network: string | null;
+  networkPassphrase: string | null;
+  isWrongNetwork: boolean;
+  setWallet: (
+    publicKey: string,
+    balance: string,
+    network?: string | null,
+    networkPassphrase?: string | null
+  ) => void;
   updateBalance: (balance: string) => void;
+  setNetwork: (network: string | null, networkPassphrase?: string | null) => void;
+  setIsWrongNetwork: (isWrong: boolean) => void;
   disconnect: () => void;
 }
 
@@ -16,18 +26,39 @@ export const useWalletStore = create<WalletState>()(
       publicKey: null,
       balance: '0',
       connected: false,
-      setWallet: (publicKey, balance) =>
-        set({ publicKey, balance, connected: true }),
+      network: null,
+      networkPassphrase: null,
+      isWrongNetwork: false,
+      setWallet: (publicKey, balance, network = null, networkPassphrase = null) =>
+        set({
+          publicKey,
+          balance,
+          connected: true,
+          network,
+          networkPassphrase,
+        }),
       updateBalance: (balance) => set({ balance }),
+      setNetwork: (network, networkPassphrase = null) =>
+        set({ network, networkPassphrase }),
+      setIsWrongNetwork: (isWrongNetwork) => set({ isWrongNetwork }),
       disconnect: () =>
-        set({ publicKey: null, balance: '0', connected: false }),
+        set({
+          publicKey: null,
+          balance: '0',
+          connected: false,
+          network: null,
+          networkPassphrase: null,
+          isWrongNetwork: false,
+        }),
     }),
     {
       name: 'wallet-storage', // localStorage key
       partialize: (state) => ({ 
         publicKey: state.publicKey, 
         balance: state.balance, 
-        connected: state.connected 
+        connected: state.connected,
+        network: state.network,
+        networkPassphrase: state.networkPassphrase,
       }),
     }
   )

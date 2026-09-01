@@ -8,7 +8,7 @@ import UserProfile from '@/components/UserProfile';
 import AssetLogo from '@/components/AssetLogo';
 import { useWalletStore } from '@/lib/store';
 import Link from 'next/link';
-import { Loader2, Plus, TrendingUp, DollarSign, FileText, Download } from 'lucide-react';
+import { Loader2, Plus, TrendingUp, DollarSign, FileText, Download, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadInvoiceCSV } from '@/lib/export';
 import {
@@ -22,9 +22,10 @@ import ApiErrorState from '@/components/ApiErrorState';
 import { apiErrorMessage } from '@/lib/api';
 import { dashboardEmptyMessage } from '@/lib/dashboard-empty-copy';
 import { DASHBOARD_RESULTS_ID, MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';
+import { NETWORK_DISPLAY_NAME } from '@/lib/stellar';
 
 export default function DashboardPage() {
-  const { publicKey, connected } = useWalletStore();
+  const { publicKey, connected, isWrongNetwork } = useWalletStore();
   // Loaded data is tagged with the wallet it belongs to, so a response for a
   // previous seller can never be rendered under the current one.
   const [loaded, setLoaded] = useState<{ owner: string | null; invoices: any[]; stats: any }>({
@@ -156,6 +157,20 @@ export default function DashboardPage() {
       <main id={MAIN_CONTENT_ID} tabIndex={-1} className="pt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 relative z-10">
         <h1 className="sr-only">Invoice dashboard</h1>
+        {connected && isWrongNetwork && (
+          <div
+            role="alert"
+            className="mb-6 p-4 bg-amber-50 border border-amber-300 rounded-xl flex items-center gap-3 text-sm text-amber-900"
+          >
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" aria-hidden="true" />
+            <div>
+              <p className="font-semibold">Wrong Stellar Network</p>
+              <p className="mt-0.5 text-xs text-amber-800">
+                Your wallet is connected to a different network. Please switch to {NETWORK_DISPLAY_NAME} in Freighter for accurate invoice tracking.
+              </p>
+            </div>
+          </div>
+        )}
         {!connected || !publicKey ? (
           <div className="card text-center py-16 max-w-lg mx-auto">
             <FileText className="w-16 h-16 text-gray-500 mx-auto mb-4" aria-hidden="true" />
