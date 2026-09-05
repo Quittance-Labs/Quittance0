@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { hasInvoiceMemoPrefix } from './memo-prefix-check';
 
 /**
  * Generate a unique memo for invoice
@@ -14,6 +15,9 @@ export const generateInvoiceMemo = (): string => {
  * Validate memo format
  */
 export const isValidMemo = (memo: string): boolean => {
+  if (!hasInvoiceMemoPrefix(memo)) {
+    return false;
+  }
   return /^INV-[A-Z0-9]+-[A-Z0-9]+$/.test(memo);
 };
 
