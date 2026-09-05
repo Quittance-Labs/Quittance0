@@ -19,6 +19,7 @@ import {
   verifyHorizonPayment,
 } from '../services/payment-verification';
 import { simulationAllowed } from '../config/runtime';
+import { createRequestId, formatRequestLog } from '../utils/request-correlation-id';
 
 /** Kept explicit so clients can tune polling without duplicating backend policy. */
 export const PAYMENT_STATUS_POLL_INTERVAL_MS = 3000;
@@ -109,6 +110,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
   return {
     async createInvoice(req: Request, res: Response) {
+      const requestId = (req.headers?.['x-request-id'] as string) || createRequestId();
       try {
         const validatedData = createInvoiceSchema.parse(req.body);
         const invoice = await storage.createInvoice(validatedData);
@@ -123,7 +125,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           stellarQrCode: payment.stellarQrCode,
         });
       } catch (error: any) {
-        logError('Create invoice error:', error);
+        logError(formatRequestLog(requestId, 'Create invoice error:'), error);
         sendFailure(res, 400, error.message || 'Failed to create invoice');
       }
     },
