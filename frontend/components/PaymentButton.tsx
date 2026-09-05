@@ -1,12 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { sendPayment, checkWalletConnection, requestWalletAccess } from '@/lib/stellar';
+import { EXPECTED_WALLET_NETWORK, sendPayment } from '@/lib/stellar';
 import { toast } from 'sonner';
 import { Wallet, Loader2 } from 'lucide-react';
 import { invoiceApi } from '@/lib/api';
 import { showFreighterInstallPrompt } from '@/components/FreighterInstallPrompt';
 import { describeVerifyError, normalizePayerDetails } from '@/lib/payment-page-state';
+import { useWalletStore } from '@/lib/store';
+import { walletGate } from '@/lib/freighter-availability';
 
 interface PaymentButtonProps {
   destination: string;
@@ -42,8 +44,19 @@ export default function PaymentButton({
   onError,
 }: PaymentButtonProps) {
   const [loading, setLoading] = useState(false);
+  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
+  const gate = walletGate(
+    { freighterAvailable, connected, publicKey, network },
+    EXPECTED_WALLET_NETWORK
+  );
 
   const handlePayment = async () => {
+    if (!gate.ready) {
+      showFreighterInstallPrompt(gate);
+      onError?.(gate.message);
+      return;
+    }
+
     if (invoiceStatus !== 'PENDING') {
       const message = invoiceStatus === 'EXPIRED'
         ? 'This invoice has expired and cannot be paid'
@@ -66,20 +79,6 @@ export default function PaymentButton({
     onStart?.();
 
     try {
-      const freighterInstalled = await checkWalletConnection();
-      if (!freighterInstalled) {
-        showFreighterInstallPrompt();
-        onError?.('Freighter is not installed');
-        return;
-      }
-
-      const allowed = await requestWalletAccess();
-      if (!allowed) {
-        toast.error('Freighter access was denied');
-        onError?.('Freighter access was denied');
-        return;
-      }
-
       toast.loading('Confirm in wallet...', { id: PAY_TOAST_ID });
       const txHash = await sendPayment(destination, amount, memo, assetCode, assetIssuer);
 
@@ -139,12 +138,15 @@ export default function PaymentButton({
       type="button"
       onClick={handlePayment}
       disabled={loading || !destination || !amount || invoiceStatus !== 'PENDING'}
+      aria-disabled={!gate.ready}
       aria-busy={loading}
-      data-payment-state={loading ? 'processing' : 'ready'}
+      data-payment-state={loading ? 'processing' : gate.status}
       aria-label={
         loading
           ? `Processing payment of ${amount} ${assetCode}`
-          : `Pay ${amount} ${assetCode} with Freighter`
+          : gate.ready
+            ? `Pay ${amount} ${assetCode} with Freighter`
+            : gate.message
       }
       className="btn btn-primary w-full flex items-center justify-center gap-2 text-lg py-4"
     >

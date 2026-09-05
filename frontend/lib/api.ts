@@ -73,6 +73,7 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
     sellerPublicKey?: string;
     sellerName?: string;
     sellerEmail?: string;
+    network?: string;
   }) => {
     const response = await api.post('/invoices', data);
     return response.data;
@@ -108,7 +109,7 @@ export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
   verify: async (id: string, txHash: string, payerInfo?: { payerName?: string; payerEmail?: string }) => {
     const response = await api.post(`/invoices/${id}/verify`, {
       txHash,
-      // Lets the server reject a payment made on a different Stellar network.
+      // Lets the server reject a payment submitted from the wrong wallet network.
       network: process.env.NEXT_PUBLIC_STELLAR_NETWORK,
       ...payerInfo
     });

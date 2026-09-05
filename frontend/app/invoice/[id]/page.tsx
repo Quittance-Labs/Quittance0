@@ -8,6 +8,7 @@ import QRCodeDisplay from '@/components/QRCodeDisplay';
 import PaymentStatus from '@/components/PaymentStatus';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
+import FreighterInstallPrompt from '@/components/FreighterInstallPrompt';
 import PaymentReceipt from '@/components/PaymentReceipt';
 import { formatAmount, formatDate, getTimeRemaining } from '@/lib/utils';
 import { MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';
@@ -16,6 +17,9 @@ import { toast } from 'sonner';
 import ApiErrorState from '@/components/ApiErrorState';
 import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
 import { invoiceSharePath } from '@/lib/invoice-share-path';
+import { useWalletStore } from '@/lib/store';
+import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
+import { walletGate } from '@/lib/freighter-availability';
 
 export default function InvoiceDetailPage() {
   const params = useParams();
@@ -25,7 +29,7 @@ export default function InvoiceDetailPage() {
   const [invoice, setInvoice] = useState<any>(null);
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [userWallet, setUserWallet] = useState<string | null>(null);
+  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lifecycleNow, setLifecycleNow] = useState(() => Date.now());
   // Cancelling reloads the invoice and swaps the status panel out from under
@@ -156,6 +160,11 @@ export default function InvoiceDetailPage() {
 
   const effectiveStatus = (effectiveInvoiceStatus(invoice, lifecycleNow) || invoice.status) as
     'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
+  const gate = walletGate(
+    { freighterAvailable, connected, publicKey, network },
+    EXPECTED_WALLET_NETWORK
+  );
+  const userWallet = gate.ready ? publicKey : null;
 
   return (
     <div className="min-h-screen bg-logo-pattern relative py-8 sm:py-12 px-4">
@@ -185,10 +194,10 @@ export default function InvoiceDetailPage() {
           </div>
 
           <nav className="flex items-center gap-3" aria-label="Invoice actions">
-            {!userWallet ? (
-              <WalletConnect onConnect={setUserWallet} />
+            {!publicKey ? (
+              <WalletConnect />
             ) : (
-              <UserProfile userWallet={userWallet} onDisconnect={() => setUserWallet(null)} />
+              <UserProfile userWallet={publicKey} />
             )}
             {effectiveStatus === 'PENDING' && (
               <div className="flex items-center gap-2">
@@ -340,6 +349,14 @@ export default function InvoiceDetailPage() {
 
               {effectiveStatus === 'PENDING' && paymentInfo?.paymentAvailable !== false && (
                 <div className="card">
+                  {!gate.ready && (
+                    <FreighterInstallPrompt
+                      gate={gate}
+                      action={<WalletConnect />}
+                      compact
+                      className="mb-4"
+                    />
+                  )}
                   <h3 className="text-lg font-semibold mb-4 text-center">
                     Payment QR Code
                   </h3>

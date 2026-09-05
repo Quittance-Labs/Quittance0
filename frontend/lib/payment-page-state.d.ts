@@ -1,3 +1,5 @@
+import type { WalletGateResult } from './freighter-availability';
+
 export type PayStatus = 'idle' | 'paying' | 'verifying' | 'paid' | 'error' | 'expired';
 
 export interface PayInvoice {
@@ -12,6 +14,21 @@ export interface PaymentState {
   invoice: PayInvoice | null;
   txHash: string | null;
   error: string | null;
+}
+
+export interface WalletGateSession {
+  freighterAvailable?: boolean | null;
+  connected?: boolean;
+  publicKey?: string | null;
+  network?: string | null;
+}
+
+export interface InvoiceUnavailableGate {
+  status: 'invoice_unavailable';
+  ready: false;
+  title: string;
+  message: string;
+  action: 'none';
 }
 
 export type PaymentEvent =
@@ -60,6 +77,13 @@ export function getPayPageView(invoice?: PayInvoice | null): {
   showProof: boolean;
   showMonitor: boolean;
 };
+
+export function getPayPageWalletGate(
+  invoice: PayInvoice | null | undefined,
+  session?: WalletGateSession,
+  expectedNetwork?: string,
+  now?: string | number | Date
+): WalletGateResult | InvoiceUnavailableGate;
 
 export function stateForStatus(statusOrInvoice: string | PayInvoice, now?: string | number | Date): PayStatus | null;
 export function initialPaymentState(invoice?: PayInvoice | null): PaymentState;

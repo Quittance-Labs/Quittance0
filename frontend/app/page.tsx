@@ -7,8 +7,11 @@ import InvoiceForm from '@/components/InvoiceForm';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
+import FreighterInstallPrompt from '@/components/FreighterInstallPrompt';
 import AssetLogo from '@/components/AssetLogo';
 import { useWalletStore } from '@/lib/store';
+import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
+import { walletGate } from '@/lib/freighter-availability';
 import { Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { shareInvoiceByEmail } from '@/lib/export';
@@ -17,8 +20,12 @@ import { CREATED_INVOICE_ID, MAIN_CONTENT_ID, describeAmount } from '@/lib/a11y'
 
 export default function HomePage() {
   const [createdInvoice, setCreatedInvoice] = useState<any>(null);
-  const { publicKey, connected } = useWalletStore();
+  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
   const resultRef = useRef<HTMLDivElement>(null);
+  const gate = walletGate(
+    { freighterAvailable, connected, publicKey, network },
+    EXPECTED_WALLET_NETWORK
+  );
 
   const handleInvoiceCreated = (result: any) => setCreatedInvoice(result);
   const handleWalletDisconnected = () => setCreatedInvoice(null);
@@ -34,6 +41,11 @@ export default function HomePage() {
     if (!createdInvoice) return;
     resultRef.current?.focus();
   }, [createdInvoice]);
+
+  useEffect(() => {
+    if (gate.ready) return;
+    setCreatedInvoice(null);
+  }, [gate.ready]);
 
   const scrollToCreate = () => {
     document.getElementById('create')?.scrollIntoView({ behavior: 'smooth' });
@@ -102,7 +114,7 @@ export default function HomePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.28, ease: [0.22, 1, 0.36, 1] }}
           >
-            {connected ? (
+            {gate.ready ? (
               <button type="button" onClick={scrollToCreate} className="btn btn-primary px-7 py-3">
                 Create invoice
               </button>
@@ -170,15 +182,9 @@ export default function HomePage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-start">
             <div className="card">
-              {!connected ? (
+              {!gate.ready ? (
                 <div className="py-8 text-center">
-                  <p className="font-display text-2xl text-[var(--ink)] mb-3">Connect Freighter</p>
-                  <p className="text-[var(--muted)] text-sm mb-8 max-w-sm mx-auto">
-                    Your wallet is your identity. No Google account required.
-                  </p>
-                  <div className="flex justify-center">
-                    <WalletConnect />
-                  </div>
+                  <FreighterInstallPrompt gate={gate} action={<WalletConnect />} />
                 </div>
               ) : (
                 <>

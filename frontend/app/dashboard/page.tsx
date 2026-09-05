@@ -5,8 +5,11 @@ import { invoiceApi, describeApiError } from '@/lib/api';
 import InvoiceCard from '@/components/InvoiceCard';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
+import FreighterInstallPrompt from '@/components/FreighterInstallPrompt';
 import AssetLogo from '@/components/AssetLogo';
 import { useWalletStore } from '@/lib/store';
+import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
+import { walletGate } from '@/lib/freighter-availability';
 import Link from 'next/link';
 import { Loader2, Plus, TrendingUp, DollarSign, FileText, Download } from 'lucide-react';
 import { toast } from 'sonner';
@@ -24,7 +27,11 @@ import { dashboardEmptyMessage } from '@/lib/dashboard-empty-copy';
 import { DASHBOARD_RESULTS_ID, MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';
 
 export default function DashboardPage() {
-  const { publicKey, connected } = useWalletStore();
+  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
+  const gate = walletGate(
+    { freighterAvailable, connected, publicKey, network },
+    EXPECTED_WALLET_NETWORK
+  );
   // Loaded data is tagged with the wallet it belongs to, so a response for a
   // previous seller can never be rendered under the current one.
   const [loaded, setLoaded] = useState<{ owner: string | null; invoices: any[]; stats: any }>({
@@ -41,7 +48,7 @@ export default function DashboardPage() {
 
   const { invoices, stats } = dashboardDataFor(
     loaded,
-    connected ? publicKey : null,
+    gate.ready ? publicKey : null,
     lifecycleNow
   );
   const filteredInvoices = searchInvoices(invoices, searchQuery);
@@ -54,7 +61,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (!connected || !publicKey) {
+    if (!gate.ready || !publicKey) {
       setLoaded({ owner: null, invoices: [], stats: null });
       setLoading(false);
       return;
@@ -95,7 +102,7 @@ export default function DashboardPage() {
     return () => {
       active = false;
     };
-  }, [filter, connected, publicKey, reloadKey]);
+  }, [filter, gate.ready, publicKey, reloadKey]);
 
   const handleExportCSV = () => {
     const paidInvoices = exportableInvoices(filteredInvoices);
@@ -140,9 +147,7 @@ export default function DashboardPage() {
             {!connected ? (
               <WalletConnect />
             ) : (
-              <UserProfile userWallet={publicKey} onDisconnect={() => {
-                window.location.reload();
-              }} />
+              <UserProfile userWallet={publicKey} />
             )}
             <Link href="/" className="btn btn-primary flex items-center gap-2">
               <Plus className="w-5 h-5" aria-hidden="true" />
@@ -156,14 +161,15 @@ export default function DashboardPage() {
       <main id={MAIN_CONTENT_ID} tabIndex={-1} className="pt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 relative z-10">
         <h1 className="sr-only">Invoice dashboard</h1>
-        {!connected || !publicKey ? (
+        {!gate.ready || !publicKey ? (
           <div className="card text-center py-16 max-w-lg mx-auto">
             <FileText className="w-16 h-16 text-gray-500 mx-auto mb-4" aria-hidden="true" />
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Connect your wallet</h2>
-            <p className="text-gray-600 mb-6">{dashboardEmptyMessage(false)}</p>
-            <div className="flex justify-center">
-              <WalletConnect />
-            </div>
+            <FreighterInstallPrompt
+              gate={gate}
+              action={<WalletConnect />}
+              className="mt-4"
+            />
+            <p className="text-gray-600 mt-6">{dashboardEmptyMessage(false)}</p>
           </div>
         ) : (
           <>

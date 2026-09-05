@@ -1,4 +1,5 @@
 import * as StellarSdk from '@stellar/stellar-sdk';
+import * as FreighterApi from '@stellar/freighter-api';
 import {
   isConnected,
   getPublicKey,
@@ -6,7 +7,13 @@ import {
   isAllowed,
   setAllowed,
 } from '@stellar/freighter-api';
-import { detectFreighter } from './freighter-availability';
+import {
+  FREIGHTER_CONNECT_REQUIRED_MESSAGE,
+  FREIGHTER_REQUIRED_MESSAGE,
+  detectFreighter,
+  networkMatches,
+  wrongNetworkMessage,
+} from './freighter-availability';
 import { networkDisplayName } from './network-display-name';
 
 // Network configuration
@@ -23,12 +30,18 @@ export const NETWORK_PASSPHRASE =
     : StellarSdk.Networks.PUBLIC;
 
 export const NETWORK_DISPLAY_NAME = networkDisplayName(NETWORK_PASSPHRASE);
+export const EXPECTED_WALLET_NETWORK = STELLAR_NETWORK.toUpperCase();
 
 export const server = new StellarSdk.Horizon.Server(HORIZON_URL);
 
 export const getExplorerTransactionUrl = (txHash: string): string => {
   const network = STELLAR_NETWORK === 'TESTNET' ? 'testnet' : 'public';
   return `https://stellar.expert/explorer/${network}/tx/${encodeURIComponent(txHash)}`;
+};
+
+export const getExplorerAccountUrl = (publicKey: string, walletNetwork = STELLAR_NETWORK): string => {
+  const network = walletNetwork === 'PUBLIC' ? 'public' : 'testnet';
+  return `https://stellar.expert/explorer/${network}/account/${encodeURIComponent(publicKey)}`;
 };
 
 const getTrustlineMessage = (assetCode: string): string =>
@@ -65,6 +78,35 @@ export const describeStellarNetworkError = (error: any): string => {
   return error?.message || 'Stellar network request failed.';
 };
 
+const readResultBoolean = (value: any, key: string): boolean => {
+  if (typeof value === 'boolean') return value;
+  if (value?.error) return false;
+  if (typeof value?.[key] === 'boolean') return value[key];
+  return Boolean(value);
+};
+
+const readResultString = (value: any, keys: string[]): string | null => {
+  if (typeof value === 'string') return value || null;
+  if (value?.error) return null;
+  for (const key of keys) {
+    if (typeof value?.[key] === 'string' && value[key]) return value[key];
+  }
+  return null;
+};
+
+export interface FreighterNetwork {
+  network: string | null;
+  networkPassphrase: string | null;
+}
+
+export interface FreighterSession {
+  freighterAvailable: boolean;
+  connected: boolean;
+  publicKey: string | null;
+  network: string | null;
+  networkPassphrase: string | null;
+}
+
 /**
  * Check whether the Freighter extension API is available
  */
@@ -77,8 +119,9 @@ export const checkWalletConnection = async (): Promise<boolean> => {
  */
 export const requestWalletAccess = async (): Promise<boolean> => {
   try {
-    await setAllowed();
-    return await isAllowed();
+    const allowed = await setAllowed();
+    if (readResultBoolean(allowed, 'isAllowed')) return true;
+    return readResultBoolean(await isAllowed(), 'isAllowed');
   } catch (error) {
     console.error('Error requesting wallet access:', error);
     return false;
@@ -91,11 +134,95 @@ export const requestWalletAccess = async (): Promise<boolean> => {
 export const getUserPublicKey = async (): Promise<string | null> => {
   try {
     const publicKey = await getPublicKey();
-    return publicKey;
+    const normalized = readResultString(publicKey, ['publicKey', 'address']);
+    if (normalized) return normalized;
+
+    const getAddress = (FreighterApi as any).getAddress;
+    if (typeof getAddress === 'function') {
+      return readResultString(await getAddress(), ['address', 'publicKey']);
+    }
+    return null;
   } catch (error) {
     console.error('Error getting public key:', error);
     return null;
   }
+};
+
+export const getFreighterNetwork = async (): Promise<FreighterNetwork> => {
+  const getNetwork = (FreighterApi as any).getNetwork;
+  if (typeof getNetwork !== 'function') {
+    return { network: null, networkPassphrase: null };
+  }
+
+  try {
+    const result = await getNetwork();
+    if (result?.error) return { network: null, networkPassphrase: null };
+    return {
+      network: readResultString(result?.network ?? result, ['network']),
+      networkPassphrase: readResultString(result?.networkPassphrase, ['networkPassphrase']),
+    };
+  } catch (error) {
+    console.error('Error getting Freighter network:', error);
+    return { network: null, networkPassphrase: null };
+  }
+};
+
+export const readFreighterSession = async (): Promise<FreighterSession> => {
+  const freighterAvailable = await checkWalletConnection();
+  if (!freighterAvailable) {
+    return {
+      freighterAvailable: false,
+      connected: false,
+      publicKey: null,
+      network: null,
+      networkPassphrase: null,
+    };
+  }
+
+  const [allowed, publicKey, network] = await Promise.all([
+    isAllowed().then((value) => readResultBoolean(value, 'isAllowed')).catch(() => false),
+    getUserPublicKey(),
+    getFreighterNetwork(),
+  ]);
+
+  return {
+    freighterAvailable: true,
+    connected: allowed && Boolean(publicKey),
+    publicKey,
+    network: network.network,
+    networkPassphrase: network.networkPassphrase,
+  };
+};
+
+export const stopFreighterWalletWatcher = (
+  onChange: (session: FreighterSession) => void,
+  intervalMs = 1000
+): (() => void) => {
+  const WatchWalletChanges = (FreighterApi as any).WatchWalletChanges;
+  if (typeof WatchWalletChanges !== 'function') return () => {};
+
+  const watcher = new WatchWalletChanges(intervalMs);
+  watcher.watch((change: any) => {
+    onChange({
+      freighterAvailable: true,
+      connected: Boolean(change?.address || change?.publicKey),
+      publicKey: change?.address || change?.publicKey || null,
+      network: change?.network || null,
+      networkPassphrase: change?.networkPassphrase || null,
+    });
+  });
+
+  return () => watcher.stop();
+};
+
+export const assertFreighterReady = async (): Promise<FreighterSession> => {
+  const session = await readFreighterSession();
+  if (!session.freighterAvailable) throw new Error(FREIGHTER_REQUIRED_MESSAGE);
+  if (!session.connected || !session.publicKey) throw new Error(FREIGHTER_CONNECT_REQUIRED_MESSAGE);
+  if (!networkMatches(session.network, EXPECTED_WALLET_NETWORK)) {
+    throw new Error(wrongNetworkMessage(EXPECTED_WALLET_NETWORK, session.network));
+  }
+  return session;
 };
 
 /**
@@ -140,17 +267,8 @@ export const sendPayment = async (
   assetIssuer?: string
 ): Promise<string> => {
   try {
-    // Check wallet connection
-    const connected = await checkWalletConnection();
-    if (!connected) {
-      throw new Error('Wallet not connected');
-    }
-
-    // Get user public key
-    const userPublicKey = await getUserPublicKey();
-    if (!userPublicKey) {
-      throw new Error('Could not get user public key');
-    }
+    const session = await assertFreighterReady();
+    const userPublicKey = session.publicKey as string;
 
     // Load account
     let account;
@@ -194,9 +312,13 @@ export const sendPayment = async (
       .build();
 
     // Sign with Freighter
-    const signedTxXdr = await signTransaction(transaction.toXDR(), {
+    const signedResult = await signTransaction(transaction.toXDR(), {
       networkPassphrase: NETWORK_PASSPHRASE,
     });
+    const signedTxXdr = readResultString(signedResult, ['signedTxXdr']);
+    if (!signedTxXdr) {
+      throw new Error('Freighter did not return a signed transaction');
+    }
 
     // Parse signed transaction
     const signedTx = StellarSdk.TransactionBuilder.fromXDR(
