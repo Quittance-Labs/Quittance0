@@ -35,6 +35,7 @@ const PAY_STATES = Object.freeze({
 
 const TERMINAL_STATES = Object.freeze([PAY_STATES.PAID, PAY_STATES.EXPIRED]);
 const { effectiveInvoiceStatus, hasInvoiceExpired } = require('./invoice-lifecycle');
+const { walletGate } = require('./freighter-availability');
 
 const asInvoice = (statusOrInvoice) =>
   statusOrInvoice && typeof statusOrInvoice === 'object'
@@ -63,6 +64,23 @@ function getPayPageView(invoice) {
     showProof: status === 'PAID' && Boolean(invoice?.paymentTxHash),
     showMonitor: status === 'PENDING' && !invoice?.paymentTxHash,
   };
+}
+
+function getPayPageWalletGate(invoice, session, expectedNetwork, now) {
+  const view = getPayPageView(invoice);
+  if (!view.showPaymentControls) {
+    return {
+      status: 'invoice_unavailable',
+      ready: false,
+      title: 'Payment unavailable',
+      message: view.expired
+        ? 'This invoice has expired and can no longer be paid.'
+        : 'This invoice is not available for payment.',
+      action: 'none',
+    };
+  }
+
+  return walletGate(session, expectedNetwork);
 }
 
 /** Maps an invoice status onto the state it forces, or null if it forces none. */
@@ -289,6 +307,7 @@ module.exports = {
   isExpiredInvoice,
   shouldShowPaymentControls,
   getPayPageView,
+  getPayPageWalletGate,
   stateForStatus,
   initialPaymentState,
   paymentReducer,

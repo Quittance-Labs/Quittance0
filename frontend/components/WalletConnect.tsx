@@ -1,9 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { 
-  checkWalletConnection, 
-  requestWalletAccess, 
+  EXPECTED_WALLET_NETWORK,
+  checkWalletConnection,
+  getExplorerAccountUrl,
+  getFreighterNetwork,
+  requestWalletAccess,
   getUserPublicKey,
   getAccountBalance,
   describeStellarNetworkError,
@@ -14,6 +17,7 @@ import { Wallet, LogOut, Loader2, ExternalLink, Bell, BellOff } from 'lucide-rea
 import { toast } from 'sonner';
 import { formatAddress } from '@/lib/utils';
 import { showFreighterInstallPrompt } from '@/components/FreighterInstallPrompt';
+import { networkLabel, walletGate } from '@/lib/freighter-availability';
 
 interface WalletConnectProps {
   onConnect?: (publicKey: string) => void;
@@ -22,10 +26,47 @@ interface WalletConnectProps {
 export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
   const [loading, setLoading] = useState(false);
   const [monitoringActive, setMonitoringActive] = useState(false);
-  const { publicKey, balance, connected, setWallet, updateBalance, disconnect } = useWalletStore();
+  const {
+    publicKey,
+    balance,
+    connected,
+    network,
+    networkPassphrase,
+    freighterAvailable,
+    setWallet,
+    syncSession,
+    disconnect,
+  } = useWalletStore();
+  const gate = walletGate(
+    { freighterAvailable, connected, publicKey, network },
+    EXPECTED_WALLET_NETWORK
+  );
+
+  const loadBalance = useCallback(async (
+    key: string,
+    walletNetwork = network,
+    walletNetworkPassphrase = networkPassphrase
+  ) => {
+    try {
+      const balances = await getAccountBalance(key);
+      const xlmBalance = balances.find(b => b.assetCode === 'XLM');
+      const balanceStr = xlmBalance ? parseFloat(xlmBalance.balance).toFixed(2) : '0.00';
+      setWallet(key, balanceStr, walletNetwork, walletNetworkPassphrase);
+    } catch (error: any) {
+      if (error.message?.includes('Not Found') || error.response?.status === 404) {
+        setWallet(key, '0.00', walletNetwork, walletNetworkPassphrase);
+        toast.warning('Account needs funding');
+      } else {
+        setWallet(key, '—', walletNetwork, walletNetworkPassphrase);
+        toast.warning('Wallet connected; balance unavailable', {
+          description: describeStellarNetworkError(error),
+        });
+      }
+    }
+  }, [network, networkPassphrase, setWallet]);
 
   useEffect(() => {
-    if (connected && publicKey && !paymentMonitor.isMonitoring(publicKey)) {
+    if (gate.ready && publicKey && !paymentMonitor.isMonitoring(publicKey)) {
       paymentMonitor.startMonitoring(publicKey, () => loadBalance(publicKey));
       setMonitoringActive(true);
     }
@@ -35,27 +76,7 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
         paymentMonitor.stopMonitoring(publicKey);
       }
     };
-  }, [connected, publicKey]);
-
-  const loadBalance = async (key: string) => {
-    try {
-      const balances = await getAccountBalance(key);
-      const xlmBalance = balances.find(b => b.assetCode === 'XLM');
-      const balanceStr = xlmBalance ? parseFloat(xlmBalance.balance).toFixed(2) : '0.00';
-      setWallet(key, balanceStr);
-    } catch (error: any) {
-      if (error.message?.includes('Not Found') || error.response?.status === 404) {
-        setWallet(key, '0.00');
-        toast.warning('Account needs funding');
-      } else {
-        // Wallet identity is still usable even if Horizon balance lookup is down.
-        setWallet(key, '—');
-        toast.warning('Wallet connected; balance unavailable', {
-          description: describeStellarNetworkError(error),
-        });
-      }
-    }
-  };
+  }, [gate.ready, loadBalance, publicKey]);
 
   const handleConnect = async () => {
     setLoading(true);
@@ -68,9 +89,32 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
 
       const allowed = await requestWalletAccess();
       if (allowed) {
-        const key = await getUserPublicKey();
+        const [key, walletNetwork] = await Promise.all([
+          getUserPublicKey(),
+          getFreighterNetwork(),
+        ]);
         if (key) {
-          await loadBalance(key);
+          syncSession({
+            publicKey: key,
+            connected: true,
+            freighterAvailable: true,
+            network: walletNetwork.network,
+            networkPassphrase: walletNetwork.networkPassphrase,
+          });
+          const nextGate = walletGate(
+            {
+              freighterAvailable: true,
+              connected: true,
+              publicKey: key,
+              network: walletNetwork.network,
+            },
+            EXPECTED_WALLET_NETWORK
+          );
+          if (!nextGate.ready) {
+            showFreighterInstallPrompt(nextGate);
+            return;
+          }
+          await loadBalance(key, walletNetwork.network, walletNetwork.networkPassphrase);
           toast.success('Wallet connected');
           onConnect?.(key);
         } else {
@@ -96,7 +140,7 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
   };
 
   const toggleMonitoring = () => {
-    if (!publicKey) return;
+    if (!publicKey || !gate.ready) return;
 
     if (monitoringActive) {
       paymentMonitor.stopMonitoring(publicKey);
@@ -109,8 +153,8 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
   };
 
   const openExplorer = () => {
-    const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET' ? 'testnet' : 'public';
-    window.open(`https://stellar.expert/explorer/${network}/account/${publicKey}`, '_blank');
+    if (!publicKey) return;
+    window.open(getExplorerAccountUrl(publicKey, network || EXPECTED_WALLET_NETWORK), '_blank');
   };
 
   if (connected && publicKey) {
@@ -133,6 +177,14 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
             <span className="sr-only">Balance: </span>
             {balance} XLM
           </span>
+          <span className="text-xs text-gray-500">
+            {networkLabel(network)}
+          </span>
+          {!gate.ready && (
+            <span className="text-xs font-medium text-amber-700">
+              Switch network
+            </span>
+          )}
         </div>
 
         {/* Address */}
@@ -163,6 +215,7 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
           // A toggle, so its state belongs in aria-pressed rather than in a
           // label that changes out from under the user.
           aria-pressed={monitoringActive}
+          aria-disabled={!gate.ready}
           aria-label="Monitor this wallet for incoming payments"
           className={`p-2 rounded-lg transition-colors ${
             monitoringActive
@@ -196,7 +249,7 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
       aria-busy={loading}
       // The text label is hidden below `sm`, so the name comes from aria-label
       // and does not vanish on a phone.
-      aria-label={loading ? 'Connecting to Freighter wallet' : 'Connect Freighter wallet'}
+      aria-label={loading ? 'Connecting to Freighter wallet' : gate.message}
       className="btn btn-primary flex items-center gap-2"
     >
       {loading ? (

@@ -6,11 +6,9 @@ import UserProfile from './UserProfile';
 
 interface PayPageHeaderProps {
   wallet: string | null;
-  onConnect: (wallet: string) => void;
-  onDisconnect: () => void;
 }
 
-export default function PayPageHeader({ wallet, onConnect, onDisconnect }: PayPageHeaderProps) {
+export default function PayPageHeader({ wallet }: PayPageHeaderProps) {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 premium-header border-b border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
@@ -18,9 +16,9 @@ export default function PayPageHeader({ wallet, onConnect, onDisconnect }: PayPa
           Quittance
         </Link>
         {wallet ? (
-          <UserProfile userWallet={wallet} onDisconnect={onDisconnect} />
+          <UserProfile userWallet={wallet} />
         ) : (
-          <WalletConnect onConnect={onConnect} />
+          <WalletConnect />
         )}
       </div>
     </header>

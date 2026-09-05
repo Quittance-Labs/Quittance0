@@ -6,7 +6,7 @@
 // both adapters with the same assertions to guarantee field parity.
 import { Request, Response } from 'express';
 import stellarService from '../services/stellar.service';
-import { createInvoiceSchema } from '../utils/validation';
+import { createInvoiceSchema, stellarPublicKeySchema } from '../utils/validation';
 import { generatePaymentQR, generateStellarPaymentQR } from '../utils/qrcode';
 import { sendFailure, sendSuccess, sendVerificationFailure } from '../types/api';
 import type { InvoiceStorage, StoredInvoice } from '../storage/invoice-storage';
@@ -111,6 +111,9 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
     async createInvoice(req: Request, res: Response) {
       try {
         const validatedData = createInvoiceSchema.parse(req.body);
+        if (validatedData.network && validatedData.network !== STELLAR_NETWORK) {
+          return sendFailure(res, 400, 'Client wallet network does not match the server Stellar network');
+        }
         const invoice = await storage.createInvoice(validatedData);
         const payment = await buildPaymentPayload(invoice);
 
@@ -150,12 +153,16 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         if (!sellerPublicKey) {
           return sendFailure(res, 400, 'sellerPublicKey query parameter is required');
         }
+        const sellerCheck = stellarPublicKeySchema.safeParse(sellerPublicKey);
+        if (!sellerCheck.success) {
+          return sendFailure(res, 400, 'sellerPublicKey must be a valid Stellar public key');
+        }
 
         const limit = toPositiveInt(req.query.limit, 50);
         const offset = toPositiveInt(req.query.offset, 0);
 
         const invoices = await storage.getInvoicesBySeller(
-          sellerPublicKey as string,
+          sellerCheck.data,
           status as string | undefined,
           limit,
           offset
@@ -293,8 +300,12 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         if (!sellerPublicKey) {
           return sendFailure(res, 400, 'sellerPublicKey query parameter is required');
         }
+        const sellerCheck = stellarPublicKeySchema.safeParse(sellerPublicKey);
+        if (!sellerCheck.success) {
+          return sendFailure(res, 400, 'sellerPublicKey must be a valid Stellar public key');
+        }
 
-        const stats = await storage.getInvoiceStats(sellerPublicKey as string);
+        const stats = await storage.getInvoiceStats(sellerCheck.data);
         sendSuccess(res, 200, stats);
       } catch (error: any) {
         logError('Get stats error:', error);

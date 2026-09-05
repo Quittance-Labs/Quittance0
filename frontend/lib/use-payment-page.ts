@@ -13,12 +13,13 @@ import {
 } from './payment-page-state';
 import type { PayPageInvoice, PayPagePaymentInfo } from '@/components/pay-page.types';
 import { toast } from 'sonner';
+import { useWalletStore } from './store';
 
 export function usePaymentPage(id: string) {
   const [payment, dispatch] = useReducer(paymentReducer, undefined, () => initialPaymentState(null));
   const [loading, setLoading] = useState(true);
   const [paymentInfo, setPaymentInfo] = useState<PayPagePaymentInfo | null>(null);
-  const [wallet, setWallet] = useState<string | null>(null);
+  const { publicKey, connected } = useWalletStore();
   const [txHash, setTxHash] = useState('');
   const [payerName, setPayerName] = useState('');
   const [payerEmail, setPayerEmail] = useState('');
@@ -111,8 +112,7 @@ export function usePaymentPage(id: string) {
     loading,
     loadError,
     paymentInfo,
-    wallet,
-    setWallet,
+    wallet: connected ? publicKey : null,
     txHash,
     setTxHash,
     payerName,

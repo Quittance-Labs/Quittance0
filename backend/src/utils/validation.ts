@@ -5,6 +5,7 @@ import {
   MIN_INVOICE_EXPIRY_DAYS,
 } from '../domain/invoice-expiry';
 import { NATIVE_ASSET_CODE, requiresIssuer } from './asset-helpers';
+import { SUPPORTED_STELLAR_NETWORKS } from '../config/stellar';
 
 // Schemas used identically by both servers. Zod validates the create+verify
 // payloads before they ever reach the InvoiceStorage layer, so the memory
@@ -33,6 +34,7 @@ export const createInvoiceSchema = z
     customerEmail: z.string().email().optional(),
     sellerName: z.string().max(255).optional(),
     sellerEmail: z.string().email().optional(),
+    network: z.enum(SUPPORTED_STELLAR_NETWORKS).optional(),
     expiresInDays: z.number()
       .int()
       .min(MIN_INVOICE_EXPIRY_DAYS)

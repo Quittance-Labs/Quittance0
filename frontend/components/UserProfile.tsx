@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { User, LogOut, Wallet, ChevronDown } from 'lucide-react';
 import { useWalletStore } from '@/lib/store';
+import { networkLabel } from '@/lib/freighter-availability';
 
 interface UserProfileProps {
   userWallet: string | null;
@@ -14,7 +15,7 @@ export default function UserProfile({ userWallet, onDisconnect }: UserProfilePro
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const { disconnect } = useWalletStore();
+  const { disconnect, network } = useWalletStore();
   const menuId = 'user-profile-menu';
 
   useEffect(() => {
@@ -87,7 +88,7 @@ export default function UserProfile({ userWallet, onDisconnect }: UserProfilePro
         </div>
         <div className="hidden sm:block text-left" aria-hidden="true">
           <p className="text-sm font-medium text-gray-900">Wallet</p>
-          <p className="text-xs text-gray-600 font-mono">{shortAddress}</p>
+          <p className="text-xs text-gray-600 font-mono">{shortAddress} - {networkLabel(network)}</p>
         </div>
         <ChevronDown
           className={`w-4 h-4 text-gray-600 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
@@ -107,6 +108,7 @@ export default function UserProfile({ userWallet, onDisconnect }: UserProfilePro
             <p className="text-sm font-semibold text-gray-900">Connected wallet</p>
             {/* text-gray-400 on white is 2.6:1 — below AA for this address. */}
             <p className="text-xs text-gray-600 font-mono break-all mt-1">{userWallet}</p>
+            <p className="text-xs text-gray-600 mt-2">Freighter network: {networkLabel(network)}</p>
           </div>
 
           <div className="py-2">
