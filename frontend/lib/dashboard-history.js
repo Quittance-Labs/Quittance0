@@ -14,6 +14,7 @@
 /** Invoice statuses the dashboard can filter by, plus the catch-all. */
 const INVOICE_FILTERS = Object.freeze(['all', 'pending', 'paid', 'expired', 'cancelled']);
 const { applyExpiryLifecycle, isActionableInvoice } = require('./invoice-lifecycle');
+const { sortKeyForInvoice } = require('./history-sort-key.ts');
 
 /**
  * Whether an invoice belongs to the connected seller.
@@ -137,6 +138,14 @@ function hasAnyInvoices(stats) {
   return Number(stats?.total_invoices || 0) > 0;
 }
 
+/**
+ * Sorts invoices in descending chronological order using sortKeyForInvoice.
+ */
+function sortInvoices(invoices) {
+  if (!Array.isArray(invoices)) return [];
+  return [...invoices].sort((a, b) => sortKeyForInvoice(b).localeCompare(sortKeyForInvoice(a)));
+}
+
 module.exports = {
   INVOICE_FILTERS,
   belongsToSeller,
@@ -151,4 +160,6 @@ module.exports = {
   reconcileExpiryStats,
   revenueEntries,
   hasAnyInvoices,
+  sortKeyForInvoice,
+  sortInvoices,
 };
