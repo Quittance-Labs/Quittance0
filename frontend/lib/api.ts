@@ -7,6 +7,7 @@ import {
   resolveApiConfig,
   toApiError,
 } from './api-runtime';
+import { mapApiError } from './api-error-message';
 
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
 export const API_CONFIG = resolveApiConfig(
@@ -44,22 +45,10 @@ api.interceptors.response.use(
  * available; this mirrors `describeVerifyError` in `payment-page-state.js`,
  * which does the same for the verify endpoint.
  */
+export { mapApiError };
+
 export function describeApiError(error: any, fallback = 'Something went wrong.'): string {
-  const serverMessage = error?.response?.data?.error;
-  if (typeof serverMessage === 'string' && serverMessage.trim()) {
-    return serverMessage;
-  }
-
-  if (error?.response?.status === 404) {
-    return 'Not found.';
-  }
-
-  const transportMessage = error?.message;
-  if (typeof transportMessage === 'string' && transportMessage.trim()) {
-    return transportMessage;
-  }
-
-  return fallback;
+  return mapApiError(error, fallback);
 }
 export const invoiceApi = USE_MOCK_API ? mockInvoiceApi : {
   create: async (data: {
