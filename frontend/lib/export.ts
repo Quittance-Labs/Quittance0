@@ -3,8 +3,9 @@ import {
   assertPaymentProofAvailable,
   canExportPaymentProof,
 } from './payment-proof-policy.js';
+import { formatProofTimestamp } from './proof-timestamp';
 
-export { assertPaymentProofAvailable, canExportPaymentProof };
+export { assertPaymentProofAvailable, canExportPaymentProof, formatProofTimestamp };
 
 const HTML_ESCAPE_CHARACTERS: Record<string, string> = {
   '&': '&amp;',
@@ -327,7 +328,7 @@ export function generateInvoicePDF(invoice: Invoice): string {
 
   <div class="footer">
     <p><strong>Quittance</strong> - Stellar Payment Platform</p>
-    <p>Generated on ${format(new Date(), 'PPpp')}</p>
+    <p>Generated on ${formatProofTimestamp(new Date())}</p>
     <p style="margin-top: 10px;">This is an automatically generated invoice.</p>
   </div>
 
@@ -384,7 +385,7 @@ export function shareInvoiceByEmail(invoice: Invoice) {
   
   if (isPaid && invoice.paymentTxHash) {
     body += `\nPayment Information:\n`;
-    body += `Payment Date: ${format(new Date(invoice.paidAt!), 'PPpp')}\n`;
+    body += `Payment Date: ${formatProofTimestamp(invoice.paidAt)}\n`;
     body += `Transaction Hash: ${invoice.paymentTxHash}\n`;
     if (invoice.payerPublicKey) body += `Payer Address: ${invoice.payerPublicKey}\n`;
     body += `Verified on Stellar Blockchain\n`;
