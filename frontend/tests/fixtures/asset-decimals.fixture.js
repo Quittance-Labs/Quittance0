@@ -1,0 +1,16 @@
+export const assetDecimalsFixture = [
+  { input: 'XLM', expected: 7 },
+  { input: 'xlm', expected: 7 },
+  { input: 'USDC', expected: 7 },
+  { input: 'usdc', expected: 7 },
+  { input: 'USDT', expected: 7 },
+  { input: 'usdt', expected: 7 },
+  { input: 'EURC', expected: 7 },
+  { input: 'eurc', expected: 7 },
+  { input: '  XLM  ', expected: 7 },
+  { input: 'UNKNOWN_ASSET', expected: 7 },
+  { input: '', expected: 7 },
+  { input: '   ', expected: 7 },
+  { input: null, expected: 7 },
+  { input: undefined, expected: 7 },
+];

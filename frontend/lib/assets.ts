@@ -1,3 +1,5 @@
+import { decimalsForAsset } from './asset-decimals';
+
 // Stellar Asset Configuration
 export interface StellarAsset {
   code: string;
@@ -15,7 +17,7 @@ export const STELLAR_ASSETS: StellarAsset[] = [
     name: 'Stellar Lumens',
     logo: 'https://assets.coingecko.com/coins/images/100/small/stellar-xlm-logo.png',
     color: '#14b6e7',
-    decimals: 7,
+    decimals: decimalsForAsset('XLM'),
   },
   {
     code: 'USDC',
@@ -23,7 +25,7 @@ export const STELLAR_ASSETS: StellarAsset[] = [
     issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5', // Testnet USDC
     logo: 'https://assets.coingecko.com/coins/images/6319/small/usdc.png',
     color: '#2775ca',
-    decimals: 7,
+    decimals: decimalsForAsset('USDC'),
   },
   {
     code: 'USDT',
@@ -31,9 +33,11 @@ export const STELLAR_ASSETS: StellarAsset[] = [
     issuer: 'GCQTGZQQ5G4PTM2GL7CDIFKUBIPEC52BROAQIAPW53XBRJVN6ZJVTG6V', // Testnet USDT
     logo: 'https://assets.coingecko.com/coins/images/325/small/tether.png',
     color: '#26a17b',
-    decimals: 7,
+    decimals: decimalsForAsset('USDT'),
   },
 ];
+
+export { decimalsForAsset };
 
 // Get asset by code
 export const getAssetByCode = (code: string): StellarAsset | undefined => {
