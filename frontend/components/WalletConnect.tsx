@@ -14,6 +14,7 @@ import { Wallet, LogOut, Loader2, ExternalLink, Bell, BellOff } from 'lucide-rea
 import { toast } from 'sonner';
 import { formatAddress } from '@/lib/utils';
 import { showFreighterInstallPrompt } from '@/components/FreighterInstallPrompt';
+import { buildHorizonAccountUrl } from '@/lib/explorer-account-link';
 
 interface WalletConnectProps {
   onConnect?: (publicKey: string) => void;
@@ -110,7 +111,8 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
 
   const openExplorer = () => {
     const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET' ? 'testnet' : 'public';
-    window.open(`https://stellar.expert/explorer/${network}/account/${publicKey}`, '_blank');
+    const url = buildHorizonAccountUrl(publicKey, network);
+    window.open(url ?? `https://stellar.expert/explorer/${network}/account/${publicKey}`, '_blank');
   };
 
   if (connected && publicKey) {
