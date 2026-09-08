@@ -61,6 +61,17 @@ class MemoryStorage {
     return updated;
   }
 
+  // Cancel invoice
+  cancelInvoice(id: string, sellerPublicKey?: string): Invoice | undefined {
+    this.markExpiredInvoices();
+    const invoice = this.invoices.get(id);
+    if (!invoice || invoice.status !== 'PENDING') return undefined;
+    if (sellerPublicKey && invoice.sellerPublicKey !== sellerPublicKey) {
+      throw new Error('Unauthorized: only the seller can cancel this invoice');
+    }
+    return this.updateInvoice(id, { status: 'CANCELLED' });
+  }
+
   // Mark as paid
   markAsPaid(
     id: string,

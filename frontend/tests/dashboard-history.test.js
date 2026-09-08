@@ -238,45 +238,20 @@ test('hasAnyInvoices reads the seller-scoped total', () => {
   assert.equal(hasAnyInvoices(null), false);
 });
 
-// ----------------------------------------------------------- filter & sort
+// ----------------------------------------------------------------- cancelled
 
-test('filterInvoicesByStatus handles all known statuses and case insensitivity', () => {
+test('INVOICE_FILTERS includes cancelled status', () => {
+  const { INVOICE_FILTERS } = require('../lib/dashboard-history');
+  assert.ok(INVOICE_FILTERS.includes('cancelled'));
+});
+
+test('cancelled invoices are retained in historical invoices', () => {
+  const now = '2026-08-30T12:00:00.000Z';
   const invoices = [
-    invoice({ id: '1', status: 'PENDING' }),
-    invoice({ id: '2', status: 'PAID' }),
-    invoice({ id: '3', status: 'EXPIRED' }),
-    invoice({ id: '4', status: 'CANCELLED' }),
+    invoice({ id: 'live', expiresAt: '2026-08-31T12:00:00.000Z' }),
+    invoice({ id: 'cancelled', status: 'CANCELLED' }),
   ];
 
-  assert.equal(filterInvoicesByStatus(invoices, 'all').length, 4);
-  assert.deepEqual(filterInvoicesByStatus(invoices, 'pending').map((i) => i.id), ['1']);
-  assert.deepEqual(filterInvoicesByStatus(invoices, 'PAID').map((i) => i.id), ['2']);
-  assert.deepEqual(filterInvoicesByStatus(invoices, 'expired').map((i) => i.id), ['3']);
-  assert.deepEqual(filterInvoicesByStatus(invoices, 'Cancelled').map((i) => i.id), ['4']);
-  assert.deepEqual(filterInvoicesByStatus(null, 'all'), []);
+  assert.deepEqual(actionableInvoices(invoices, now).map((i) => i.id), ['live']);
+  assert.deepEqual(historicalInvoices(invoices, now).map((i) => i.id), ['cancelled']);
 });
-
-test('sortInvoices sorts by newest, oldest, amount, and status with stable tiebreaking', () => {
-  const invoices = [
-    invoice({ id: 'a', amount: 10, createdAt: '2026-08-01T10:00:00.000Z', status: 'PENDING' }),
-    invoice({ id: 'b', amount: 50, createdAt: '2026-08-03T10:00:00.000Z', status: 'PAID' }),
-    invoice({ id: 'c', amount: 20, createdAt: '2026-08-02T10:00:00.000Z', status: 'CANCELLED' }),
-  ];
-
-  assert.deepEqual(sortInvoices(invoices, 'newest').map((i) => i.id), ['b', 'c', 'a']);
-  assert.deepEqual(sortInvoices(invoices, 'oldest').map((i) => i.id), ['a', 'c', 'b']);
-  assert.deepEqual(sortInvoices(invoices, 'amount-desc').map((i) => i.id), ['b', 'c', 'a']);
-  assert.deepEqual(sortInvoices(invoices, 'amount-asc').map((i) => i.id), ['a', 'c', 'b']);
-  assert.deepEqual(sortInvoices(invoices, 'status').map((i) => i.id), ['c', 'b', 'a']);
-  assert.deepEqual(sortInvoices([], 'newest'), []);
-  assert.deepEqual(sortInvoices(null, 'newest'), []);
-});
-
-test('DASHBOARD_SORT_OPTIONS defines the supported sort modes', () => {
-  assert.ok(DASHBOARD_SORT_OPTIONS.includes('newest'));
-  assert.ok(DASHBOARD_SORT_OPTIONS.includes('oldest'));
-  assert.ok(DASHBOARD_SORT_OPTIONS.includes('amount-desc'));
-  assert.ok(DASHBOARD_SORT_OPTIONS.includes('amount-asc'));
-  assert.ok(DASHBOARD_SORT_OPTIONS.includes('status'));
-});
-

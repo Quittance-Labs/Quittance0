@@ -133,6 +133,13 @@ Quittance supports multi-asset invoicing across native XLM and credit assets suc
 - **Credit Assets (e.g. USDC)**: Verified with `asset_type`, `asset_code`, and pinned `asset_issuer`.
 - **Trustline UX**: The pay flow inspects trustline status and provides actionable guidance (`op_no_trust` handling) if the buyer wallet needs to add a trustline.
 
+### Seller invoice management & cancellation
+
+Sellers manage their invoices from the dashboard and detail views:
+- **Cancel Pending Invoices**: Sellers can cancel any pending invoice before payment or expiration. Cancellation is strictly gated on wallet ownership: `POST /api/invoices/:id/cancel` verifies the request against the invoice's `sellerPublicKey` (returning `403 Forbidden` on a mismatch).
+- **Copy Pay & Share Links**: Direct quick-copy actions with toast feedback for pay URLs and invoice IDs across dashboard cards and detail pages.
+- **Proof & Receipt Navigation**: One-click jump to verified PDF payment proof and transaction details for all `PAID` invoices.
+
 ---
 
 ## Stack

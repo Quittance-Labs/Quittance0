@@ -26,8 +26,8 @@ export class MemoryInvoiceStorage implements InvoiceStorage {
     return this.service.getInvoicesBySeller(sellerPublicKey, status, limit, offset);
   }
 
-  async cancelInvoice(id: string): Promise<StoredInvoice> {
-    return this.service.cancelInvoice(id);
+  async cancelInvoice(id: string, sellerPublicKey?: string): Promise<StoredInvoice> {
+    return this.service.cancelInvoice(id, sellerPublicKey);
   }
 
   async markAsPaid(

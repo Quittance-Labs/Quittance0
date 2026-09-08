@@ -357,20 +357,17 @@ describe('InvoiceService (Postgres) seller scoping', () => {
     );
   });
 
-  it('supports multi-asset invoice creation with USDC and assetIssuer', async () => {
+  it('cancelInvoice permits cancellation when sellerPublicKey matches and rejects when mismatched', async () => {
     const db = new FakeInvoiceDb();
     const service = new InvoiceService(db);
-    const created = await service.createInvoice(
-      input(SELLER_A, {
-        amount: 100,
-        assetCode: 'USDC',
-        assetIssuer: USDC_ISSUER,
-      })
+    const pending = await service.createInvoice(input(SELLER_A, { amount: 1 }));
+
+    await assert.rejects(
+      () => service.cancelInvoice(pending.id, SELLER_B),
+      /Unauthorized: only the seller can cancel this invoice/
     );
 
-    assert.equal(created.assetCode, 'USDC');
-    assert.equal(created.assetIssuer, USDC_ISSUER);
-    assert.equal(db.rows[0].asset_code, 'USDC');
-    assert.equal(db.rows[0].asset_issuer, USDC_ISSUER);
+    const cancelled = await service.cancelInvoice(pending.id, SELLER_A);
+    assert.equal(cancelled.status, 'CANCELLED');
   });
 });

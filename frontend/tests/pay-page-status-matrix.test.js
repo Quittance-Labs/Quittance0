@@ -89,6 +89,7 @@ test('component visibility is derived consistently for every invoice status', ()
   assert.equal(matrix.PENDING.showMonitor, true);
   assert.equal(matrix.PAID.showProof, true);
   assert.equal(matrix.EXPIRED.expired, true);
+  assert.equal(matrix.CANCELLED.cancelled, true);
   assert.equal(matrix.CANCELLED.showPaymentControls, false);
 });
 
