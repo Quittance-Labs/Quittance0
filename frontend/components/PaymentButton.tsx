@@ -97,7 +97,10 @@ export default function PaymentButton({
           // Surface the shared rejection message rather than a generic warning.
           toast.warning('Payment sent but verification failed', {
             id: PAY_TOAST_ID,
-            description: describeVerifyError(error, 'Refresh the page or wait for status to update'),
+            description: resolveVerificationError(
+              error,
+              'Refresh the page or wait for status to update'
+            ),
           });
         }
       } else {

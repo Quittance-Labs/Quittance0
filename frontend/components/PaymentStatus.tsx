@@ -3,6 +3,7 @@
 import { CheckCircle, XCircle, Clock } from 'lucide-react';
 import { NETWORK_DISPLAY_NAME, getExplorerTransactionUrl } from '@/lib/stellar';
 import { statusText } from '@/lib/a11y';
+import { statusLabel } from '@/lib/invoice-status-label';
 
 interface PaymentStatusProps {
   status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
@@ -53,6 +54,7 @@ export default function PaymentStatus({ status, txHash, compact = false }: Payme
   const statusInfo = getStatusMessage();
   const { label, description: sharedDescription } = statusText(status);
   const description = statusInfo.description ?? sharedDescription;
+  const badgeLabel = statusLabel(status);
 
   return (
     <div

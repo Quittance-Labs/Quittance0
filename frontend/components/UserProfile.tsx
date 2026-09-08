@@ -84,7 +84,9 @@ export default function UserProfile({ userWallet, onDisconnect }: UserProfilePro
         className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors duration-200 border border-gray-200 bg-white"
       >
         <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-full flex items-center justify-center">
-          <User className="w-4 h-4 text-white" aria-hidden="true" />
+          <span className="text-xs font-bold text-white" aria-hidden="true">
+            {initialsFromAddress(userWallet)}
+          </span>
         </div>
         <div className="hidden sm:block text-left" aria-hidden="true">
           <p className="text-sm font-medium text-gray-900">Wallet</p>

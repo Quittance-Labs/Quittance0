@@ -8,6 +8,7 @@ import {
   FREIGHTER_REQUIRED_MESSAGE,
   type WalletGateResult,
 } from '@/lib/freighter-availability';
+import { freighterInstallMessage } from '@/lib/freighter-prompt-copy';
 
 const FREIGHTER_TOAST_ID = 'freighter-not-installed';
 

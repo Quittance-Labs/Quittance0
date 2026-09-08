@@ -19,6 +19,8 @@ import { copyToClipboard, formatAmount } from '@/lib/utils';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { getPayPageView, getPayPageWalletGate } from '@/lib/payment-page-state';
 import { PAYMENT_STATUS_POLL_INTERVAL_MS } from '@/lib/api';
+// Payment and verification errors on the pay page resolve through the shared
+// canonical rejection code table, ensuring consistent English copy across all views.
 import { usePaymentPage } from '@/lib/use-payment-page';
 import { MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';
 import { useWalletStore } from '@/lib/store';
@@ -92,8 +94,16 @@ export default function PaymentPage() {
     toast.success('Opening payment proof');
   };
   const email = () => {
-    if (!invoice.customerEmail) return toast.error('No client email on this invoice');
-    shareInvoiceByEmail(invoice);
+    try {
+      if (invoice.status === 'PAID') {
+        emailPaymentProof(invoice);
+      } else {
+        shareInvoiceByEmail(invoice);
+      }
+      toast.success('Opening email client');
+    } catch (err: any) {
+      toast.error(err?.message || 'No recipient email on this invoice');
+    }
   };
 
   const amountLabel = describeAmount(formatAmount(invoice.amount, 7), invoice.assetCode);
@@ -131,6 +141,9 @@ export default function PaymentPage() {
             <div className="space-y-6">
               <PayAmountBlock invoice={invoice} />
               <PayMemoBlock invoice={invoice} onCopy={copy} />
+              <p className="text-xs text-gray-600">
+                {memoPaymentHint(invoice.memo)}
+              </p>
             </div>
             <div className="space-y-6">
               {view.showProof && (

@@ -16,6 +16,7 @@ import { paymentMonitor } from '@/lib/payment-monitor';
 import { Wallet, LogOut, Loader2, ExternalLink, Bell, BellOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatAddress } from '@/lib/utils';
+import { buildHorizonAccountUrl } from '@/lib/explorer-account-link';
 import { showFreighterInstallPrompt } from '@/components/FreighterInstallPrompt';
 import { networkLabel, walletGate } from '@/lib/freighter-availability';
 

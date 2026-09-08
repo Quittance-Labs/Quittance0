@@ -5,6 +5,7 @@ import { apiErrorMessage, invoiceApi, isApiUnavailableError } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { STELLAR_ASSETS, getAssetByCode } from '@/lib/assets';
+import { parseAmountInput } from '@/lib/parse-amount-input';
 import AssetLogo from './AssetLogo';
 import ApiErrorState from './ApiErrorState';
 import { useWalletStore } from '@/lib/store';
@@ -43,7 +44,8 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       return;
     }
 
-    if (!amount || parseFloat(amount) <= 0) {
+    const parsedAmount = parseAmountInput(amount);
+    if (parsedAmount === null) {
       toast.error('Enter a valid amount');
       return;
     }
@@ -63,7 +65,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
     try {
       const selectedAsset = getAssetByCode(assetCode);
       const result = await invoiceApi.create({
-        amount: parseFloat(amount),
+        amount: parsedAmount,
         assetCode: assetCode,
         assetIssuer: selectedAsset?.issuer,
         expiresInDays,

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { walletStorageKey } from './wallet-storage-key';
 
 interface WalletState {
   publicKey: string | null;
