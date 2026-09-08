@@ -6,3 +6,4 @@ const networkDisplayNameFixture = [
 ];
 
 module.exports = { networkDisplayNameFixture };
+

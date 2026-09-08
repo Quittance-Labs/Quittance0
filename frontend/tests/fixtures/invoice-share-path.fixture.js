@@ -5,3 +5,4 @@ const invoiceSharePathFixture = [
 ];
 
 module.exports = { invoiceSharePathFixture };
+
