@@ -5,7 +5,6 @@
 
 import { server } from './stellar';
 import { toast } from 'sonner';
-import { monitorIntervalMs } from './monitor-interval';
 
 export interface PaymentNotification {
   id: string;
@@ -34,7 +33,6 @@ export const paymentMonitorLabels = Object.freeze({
 class PaymentMonitor {
   private activeStreams: Map<string, () => void> = new Map();
   private callbacks: Map<string, PaymentCallback[]> = new Map();
-  private reconnectAttempts: Map<string, number> = new Map();
 
   /**
    * Start monitoring payments for a wallet address
@@ -50,7 +48,7 @@ class PaymentMonitor {
       return;
     }
 
-    console.log(`🔄 Starting payment monitoring for: ${publicKey}`);
+    console.log(`Starting payment monitoring for: ${publicKey}`);
 
     // Initialize callbacks array
     this.callbacks.set(publicKey, onPayment ? [onPayment] : []);
@@ -82,7 +80,7 @@ class PaymentMonitor {
                   timestamp: new Date(record.created_at),
                 };
 
-                console.log('💰 Payment received:', payment);
+                console.log('Payment received:', payment);
 
                 // Show toast notification
                 this.showNotification(payment);
@@ -96,19 +94,19 @@ class PaymentMonitor {
             }
           },
           onerror: (error: any) => {
-            console.error('❌ Payment stream error:', error);
+            console.error('Payment stream error:', error);
+            // Horizon/stream failures are surfaced as a stable string so the
+            // monitor banner reads consistently with API/verification errors.
             toast.error('Payment monitoring disconnected', {
-              description: 'Reconnecting...',
+              description: 'The live stream is unavailable. Reconnecting automatically.',
             });
 
-            // Try to reconnect with capped exponential backoff.
-            const delayMs = monitorIntervalMs(this.reconnectAttempts.get(publicKey) ?? 0);
-            this.reconnectAttempts.set(publicKey, (this.reconnectAttempts.get(publicKey) ?? 0) + 1);
+            // Try to reconnect after 5 seconds
             setTimeout(() => {
-              console.log('🔄 Reconnecting payment stream...');
+              console.log('Reconnecting payment stream...');
               this.stopMonitoring(publicKey);
               this.startMonitoring(publicKey, onPayment);
-            }, delayMs);
+            }, 5000);
           },
         });
 
@@ -133,8 +131,7 @@ class PaymentMonitor {
       closeHandler();
       this.activeStreams.delete(publicKey);
       this.callbacks.delete(publicKey);
-      this.reconnectAttempts.delete(publicKey);
-      console.log(`⏹️  Stopped payment monitoring for: ${publicKey}`);
+      console.log(`Stopped payment monitoring for: ${publicKey}`);
     }
   }
 
@@ -144,11 +141,10 @@ class PaymentMonitor {
   stopAll() {
     this.activeStreams.forEach((closeHandler, publicKey) => {
       closeHandler();
-      console.log(`⏹️  Stopped payment monitoring for: ${publicKey}`);
+      console.log(`Stopped payment monitoring for: ${publicKey}`);
     });
     this.activeStreams.clear();
     this.callbacks.clear();
-    this.reconnectAttempts.clear();
   }
 
   /**
@@ -166,7 +162,7 @@ class PaymentMonitor {
 
       // Show browser notification if permitted
       if (Notification.permission === 'granted') {
-        new Notification('💰 Payment Received!', {
+        new Notification('Payment Received!', {
           body: `${amount} ${payment.assetCode} from ${payment.from.slice(0, 8)}...`,
           icon: '/Quittance.jpg',
           tag: payment.hash,
@@ -175,7 +171,7 @@ class PaymentMonitor {
     }
 
     // Show toast notification
-    toast.success('💰 Payment Received!', {
+    toast.success('Payment Received!', {
       description: `${amount} ${payment.assetCode}${payment.memo ? ` - Memo: ${payment.memo}` : ''}`,
       duration: 10000,
       action: {
