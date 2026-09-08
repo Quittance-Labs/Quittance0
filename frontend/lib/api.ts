@@ -7,6 +7,7 @@ import {
   resolveApiConfig,
   toApiError,
 } from './api-runtime';
+import { resolveVerificationError } from './verification';
 
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
 export const API_CONFIG = resolveApiConfig(
@@ -163,6 +164,6 @@ export const healthCheck = USE_MOCK_API ? mockHealthCheck : async () => {
   return response.data;
 };
 
-export { apiErrorMessage, isApiUnavailableError };
+export { apiErrorMessage, isApiUnavailableError, resolveVerificationError };
 
 export default api;

@@ -7,7 +7,11 @@ import AssetLogo from './AssetLogo';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { toast } from 'sonner';
 import type { PayPageInvoice } from './pay-page.types';
+import { buildHorizonTxUrl } from '@/lib/explorer-tx-link';
 import { getExplorerTransactionUrl } from '@/lib/stellar';
+// The receipt renders a settled (paid / expired / cancelled) record. It shares
+// the same status vocabulary as PaymentStatus and the verification rejection
+// table, so the proof view and the pay page never disagree on wording.
 
 interface PaymentReceiptProps {
   invoice: PayPageInvoice;
@@ -247,7 +251,10 @@ Stellar Blockchain Payment System
         )}
 
         <a
-          href={getExplorerTransactionUrl(invoice.paymentTxHash || '')}
+          href={
+            buildHorizonTxUrl(invoice.paymentTxHash, 'public') ??
+            getExplorerTransactionUrl(invoice.paymentTxHash || '')
+          }
           target="_blank"
           rel="noopener noreferrer"
           className="btn btn-outline w-full flex items-center justify-center gap-2"

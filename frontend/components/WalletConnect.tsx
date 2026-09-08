@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   checkWalletConnection, 
   requestWalletAccess, 
@@ -14,6 +14,7 @@ import { Wallet, LogOut, Loader2, ExternalLink, Bell, BellOff } from 'lucide-rea
 import { toast } from 'sonner';
 import { formatAddress } from '@/lib/utils';
 import { showFreighterInstallPrompt } from '@/components/FreighterInstallPrompt';
+import { buildHorizonAccountUrl } from '@/lib/explorer-account-link';
 
 interface WalletConnectProps {
   onConnect?: (publicKey: string) => void;
@@ -24,20 +25,7 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
   const [monitoringActive, setMonitoringActive] = useState(false);
   const { publicKey, balance, connected, setWallet, updateBalance, disconnect } = useWalletStore();
 
-  useEffect(() => {
-    if (connected && publicKey && !paymentMonitor.isMonitoring(publicKey)) {
-      paymentMonitor.startMonitoring(publicKey, () => loadBalance(publicKey));
-      setMonitoringActive(true);
-    }
-
-    return () => {
-      if (publicKey) {
-        paymentMonitor.stopMonitoring(publicKey);
-      }
-    };
-  }, [connected, publicKey]);
-
-  const loadBalance = async (key: string) => {
+  const loadBalance = useCallback(async (key: string) => {
     try {
       const balances = await getAccountBalance(key);
       const xlmBalance = balances.find(b => b.assetCode === 'XLM');
@@ -55,7 +43,20 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
         });
       }
     }
-  };
+  }, [setWallet]);
+
+  useEffect(() => {
+    if (connected && publicKey && !paymentMonitor.isMonitoring(publicKey)) {
+      paymentMonitor.startMonitoring(publicKey, () => loadBalance(publicKey));
+      setMonitoringActive(true);
+    }
+
+    return () => {
+      if (publicKey) {
+        paymentMonitor.stopMonitoring(publicKey);
+      }
+    };
+  }, [connected, publicKey, loadBalance]);
 
   const handleConnect = async () => {
     setLoading(true);
@@ -110,7 +111,8 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
 
   const openExplorer = () => {
     const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET' ? 'testnet' : 'public';
-    window.open(`https://stellar.expert/explorer/${network}/account/${publicKey}`, '_blank');
+    const url = buildHorizonAccountUrl(publicKey, network);
+    window.open(url ?? `https://stellar.expert/explorer/${network}/account/${publicKey}`, '_blank');
   };
 
   if (connected && publicKey) {

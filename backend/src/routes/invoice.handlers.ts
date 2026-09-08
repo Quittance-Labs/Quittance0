@@ -12,13 +12,14 @@ import { sendFailure, sendSuccess, sendVerificationFailure } from '../types/api'
 import type { InvoiceStorage, StoredInvoice } from '../storage/invoice-storage';
 import { STELLAR_NETWORK } from '../config/stellar';
 import {
-  VERIFICATION_MESSAGES,
+  failure,
   checkInvoiceIsPayable,
   checkPayerInfo,
   checkTxHash,
   verifyHorizonPayment,
 } from '../services/payment-verification';
 import { simulationAllowed } from '../config/runtime';
+import { createRequestId } from '../utils/request-correlation-id';
 
 /** Kept explicit so clients can tune polling without duplicating backend policy. */
 export const PAYMENT_STATUS_POLL_INTERVAL_MS = 3000;
@@ -53,8 +54,9 @@ export interface InvoiceHandlers {
  * (zod) cannot be inspected by `console` on newer Node versions, and the throw
  * would escape the catch block and leave the request hanging.
  */
-function logError(label: string, error: any): void {
-  console.error(label, error?.stack || error?.message || error);
+function logError(label: string, error: any, requestId?: string): void {
+  const prefix = requestId ? `[${requestId}] ` : '';
+  console.error(`${prefix}${label}`, error?.stack || error?.message || error);
 }
 
 function toPositiveInt(value: unknown, fallback: number): number {
@@ -109,6 +111,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
   return {
     async createInvoice(req: Request, res: Response) {
+      const requestId = createRequestId();
       try {
         const validatedData = createInvoiceSchema.parse(req.body);
         const invoice = await storage.createInvoice(validatedData);
@@ -123,7 +126,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           stellarQrCode: payment.stellarQrCode,
         });
       } catch (error: any) {
-        logError('Create invoice error:', error);
+        logError('Create invoice error:', error, requestId);
         sendFailure(res, 400, error.message || 'Failed to create invoice');
       }
     },
@@ -228,12 +231,8 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           txDetails = await stellar.getTransaction(hashCheck.value);
         } catch (error: any) {
           logError('Verify payment lookup error:', error);
-          return sendVerificationFailure(
-            res,
-            404,
-            'TRANSACTION_NOT_FOUND',
-            VERIFICATION_MESSAGES.TRANSACTION_NOT_FOUND
-          );
+          const notFound = failure('TRANSACTION_NOT_FOUND');
+          return sendVerificationFailure(res, 404, notFound.code, notFound.error);
         }
 
         const verification = verifyHorizonPayment({
