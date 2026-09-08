@@ -2,6 +2,11 @@ import { Response } from 'express';
 import type { VerificationCode } from '../services/payment-verification';
 
 // Shared response envelope used by both the MVP and the Postgres server.
+// Both servers send the same success/failure shape so clients stay
+// storage-agnostic: a frontend pointed at server-mvp.ts behaves exactly the
+// same against server.ts (only persistence duration changes).
+// sendSuccess / sendFailure wrap this envelope; they are shared helpers, so
+// HTTP status codes and envelope keys are also pinned across backends.
 export interface ApiPagination {
   limit: number;
   offset: number;
@@ -20,6 +25,12 @@ export interface ApiFailure {
   error: string;
   code?: VerificationCode;
 }
+
+export type VerificationFailureBody = {
+  success: false;
+  code: VerificationCode;
+  error: string;
+};
 
 export type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
 
@@ -65,9 +76,18 @@ export function sendVerificationFailure(
   res.status(status).json({ success: false, code, error });
 }
 
+/** Build a verification failure envelope with a stable code and its message. */
+export function verificationFailureBody(
+  code: VerificationCode,
+  error: string
+): VerificationFailureBody {
+  return { success: false, code, error };
+}
+
 export default {
   apiSuccess,
   apiFailure,
   sendSuccess,
   sendFailure,
+  verificationFailureBody,
 };

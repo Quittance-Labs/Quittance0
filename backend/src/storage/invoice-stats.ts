@@ -1,3 +1,9 @@
+// Projection of StoredInvoice used by the dashboard stats aggregator. Uses a
+// strict subset of StoredInvoice fields so both storage backends can feed the
+// same pure calculateInvoiceStats helper without re-mapping types — the memory
+// backend passes raw invoices, the Postgres backend maps a COUNT/SUM row to
+// this shape.  Keeps sellerPublicKey, amount, assetCode, status in the same
+// casing as StoredInvoice to avoid silent rename bugs.
 export interface StatsInvoice {
   sellerPublicKey: string;
   amount: number;
@@ -9,9 +15,12 @@ export interface InvoiceStats {
   total_invoices: number;
   paid_invoices: number;
   pending_invoices: number;
+  actionable_invoices: number;
   expired_invoices: number;
   revenue_by_asset: Record<string, number>;
 }
+
+import { isPendingInvoice } from '../utils/stats-pending-filter';
 
 export function calculateInvoiceStats(
   allInvoices: StatsInvoice[],
@@ -34,10 +43,13 @@ export function calculateInvoiceStats(
       revenueByAsset[invoice.assetCode] = currentRevenue + invoice.amount;
     });
 
+  const pendingInvoices = invoices.filter(isPendingInvoice).length;
+
   return {
     total_invoices: invoices.length,
     paid_invoices: invoices.filter(invoice => invoice.status === 'PAID').length,
-    pending_invoices: invoices.filter(invoice => invoice.status === 'PENDING').length,
+    pending_invoices: pendingInvoices,
+    actionable_invoices: pendingInvoices,
     expired_invoices: invoices.filter(invoice => invoice.status === 'EXPIRED').length,
     revenue_by_asset: revenueByAsset,
   };

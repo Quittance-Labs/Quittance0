@@ -8,12 +8,15 @@ services:
     runtime: node
     rootDir: backend
     plan: free
-    buildCommand: npm install
-    startCommand: npm run start:mvp
-    healthCheckPath: /api/health
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:mvp:prod
+    healthCheckPath: /api/ready
+    autoDeployTrigger: commit
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: "20"
       - key: STELLAR_NETWORK
         value: TESTNET
       - key: STELLAR_HORIZON_URL
@@ -21,4 +24,6 @@ services:
       - key: ALLOW_SIMULATE
         value: "false"
       - key: FRONTEND_URL
+        sync: false
+      - key: FRONTEND_URLS
         sync: false

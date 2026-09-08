@@ -12,6 +12,7 @@ export function cn(...inputs: ClassValue[]) {
  */
 export function formatAmount(amount: number | string, decimals: number = 2): string {
   const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+  if (!Number.isFinite(num)) return (0).toFixed(decimals);
   return num.toLocaleString('en-US', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
@@ -54,7 +55,10 @@ export function formatDate(date: string | Date): string {
 }
 
 /**
- * Calculate time remaining
+ * Calculate time remaining until an invoice expires.
+ *
+ * The "Expired" label mirrors the canonical `INVOICE_EXPIRED` rejection
+ * wording from verification.js so countdowns and rejection banners agree.
  */
 export function getTimeRemaining(expiresAt: string | Date): string {
   const now = new Date().getTime();
@@ -82,15 +86,24 @@ export function getShareUrl(invoiceId: string): string {
 
 /**
  * Get status color
+ *
+ * Every pair below clears WCAG AA (4.5:1) at the badge's 12px size. The
+ * previous foregrounds were a step lighter — green-600 on green-50 was 3.0:1
+ * and yellow-600 on yellow-50 was 2.5:1 — which axe flagged as colour-contrast
+ * failures on the dashboard (issue #289). The same values are asserted from
+ * `a11yContrastPairs` in `tailwind.config.js`.
+ *
+ * Colour is never the only carrier of status: `statusBadgeLabel` in `lib/a11y`
+ * supplies the badge's text equivalent.
  */
 export function getStatusColor(status: string): string {
   switch (status.toLowerCase()) {
     case 'paid':
-      return 'text-green-600 bg-green-50';
+      return 'text-green-700 bg-green-50';
     case 'pending':
-      return 'text-yellow-600 bg-yellow-50';
+      return 'text-yellow-800 bg-yellow-50';
     case 'expired':
-      return 'text-red-600 bg-red-50';
+      return 'text-red-700 bg-red-50';
     case 'cancelled':
       return 'text-gray-600 bg-gray-50';
     default:
@@ -125,4 +138,3 @@ export default {
   isValidEmail,
   formatCurrency,
 };
-

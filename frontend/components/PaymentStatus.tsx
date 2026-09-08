@@ -1,85 +1,95 @@
 'use client';
 
-import { CheckCircle, XCircle, Clock, Loader2 } from 'lucide-react';
+import { CheckCircle, XCircle, Clock } from 'lucide-react';
+import { getExplorerTransactionUrl } from '@/lib/stellar';
+// PaymentStatus reflects the shared status vocabulary matching PaymentReceipt
+// and the canonical verification rejection code copy (e.g. INVOICE_EXPIRED).
+import { statusText } from '@/lib/a11y';
+import { statusLabel } from '@/lib/invoice-status-label';
 
 interface PaymentStatusProps {
   status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
   txHash?: string;
+  /** Removes the large card/icon treatment when embedded in payment details. */
+  compact?: boolean;
 }
 
-export default function PaymentStatus({ status, txHash }: PaymentStatusProps) {
+export default function PaymentStatus({ status, txHash, compact = false }: PaymentStatusProps) {
   const getStatusIcon = () => {
     switch (status) {
       case 'PAID':
-        return <CheckCircle className="w-16 h-16 text-green-500" />;
+        return <CheckCircle className="w-16 h-16 text-green-700" aria-hidden="true" />;
       case 'EXPIRED':
-        return <XCircle className="w-16 h-16 text-red-500" />;
+        return <XCircle className="w-16 h-16 text-red-700" aria-hidden="true" />;
       case 'CANCELLED':
-        return <XCircle className="w-16 h-16 text-gray-500" />;
+        return <XCircle className="w-16 h-16 text-gray-700" aria-hidden="true" />;
       default:
-        return <Clock className="w-16 h-16 text-yellow-500" />;
+        return <Clock className="w-16 h-16 text-yellow-800" aria-hidden="true" />;
     }
   };
 
+  /*
+   * The heading and its colour used to be the only signal. Both the colour and
+   * the icon are now decorative, and `statusText` supplies the wording so the
+   * dashboard badge and the pay-page dot say exactly the same thing.
+   *
+   * Colours moved a step darker (green-600 to green-700, yellow-600 to
+   * yellow-800) because the originals sat between 2.9:1 and 3.4:1 on white.
+   */
   const getStatusMessage = () => {
     switch (status) {
       case 'PAID':
-        return {
-          title: 'Payment Successful!',
-          description: 'This invoice has been paid.',
-          color: 'text-green-600',
-        };
+        return { title: 'Payment Successful!', color: 'text-green-700' };
       case 'EXPIRED':
         return {
           title: 'Invoice Expired',
-          description: 'This invoice is no longer valid.',
-          color: 'text-red-600',
+          description: 'The payment window ended. This record remains available for reference.',
+          color: 'text-red-700',
         };
       case 'CANCELLED':
-        return {
-          title: 'Invoice Cancelled',
-          description: 'This invoice has been cancelled.',
-          color: 'text-gray-600',
-        };
+        return { title: 'Invoice Cancelled', color: 'text-gray-700' };
       default:
-        return {
-          title: 'Waiting for Payment',
-          description: 'Complete the payment to proceed.',
-          color: 'text-yellow-600',
-        };
+        return { title: 'Waiting for Payment', color: 'text-yellow-800' };
     }
   };
 
   const statusInfo = getStatusMessage();
-  const horizonUrl =
-    process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET'
-      ? 'https://stellar.expert/explorer/testnet'
-      : 'https://stellar.expert/explorer/public';
+  const { label, description: sharedDescription } = statusText(status);
+  const description = statusInfo.description ?? sharedDescription;
+  const badgeLabel = statusLabel(status);
 
   return (
-    <div className="card text-center">
+    <div
+      className={compact ? 'pay-status-compact text-center' : 'card text-center'}
+      role={compact ? undefined : 'status'}
+      aria-live={compact ? undefined : 'polite'}
+      aria-atomic={compact ? undefined : 'true'}
+    >
       <div className="flex flex-col items-center gap-4">
-        {getStatusIcon()}
-        
+        {!compact && getStatusIcon()}
+
         <div>
           <h2 className={`text-2xl font-bold ${statusInfo.color}`}>
             {statusInfo.title}
           </h2>
-          <p className="text-gray-600 mt-2">{statusInfo.description}</p>
+          <p className="text-gray-700 mt-2">{description}</p>
+          <p className="font-medium text-sm mt-1">{badgeLabel}</p>
+          {/* Text equivalent for the icon and colour, in the shared wording. */}
+          <p className="sr-only">Invoice status: {label}.</p>
         </div>
 
         {txHash && (
           <a
-            href={`${horizonUrl}/tx/${txHash}`}
+            href={getExplorerTransactionUrl(txHash)}
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-outline mt-4"
           >
             View on Stellar Explorer
+            <span className="sr-only"> (opens in a new tab)</span>
           </a>
         )}
       </div>
     </div>
   );
 }
-

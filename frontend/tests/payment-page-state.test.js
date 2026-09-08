@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {
   PAY_STATES,
   describeVerifyError,
+  getPayPageView,
   initialPaymentState,
   isExpiredInvoice,
   isLikelyTransactionHash,
@@ -11,7 +12,12 @@ const {
   shouldPoll,
   shouldShowPaymentControls,
   stateForStatus,
+  isBusyState,
+  isResultState,
+  paymentStateKind,
+  describePaymentState,
 } = require('../lib/payment-page-state');
+const { announcementRole, announcementPoliteness } = require('../lib/a11y');
 
 const pending = { status: 'PENDING' };
 const paid = { status: 'PAID', paymentTxHash: 'a'.repeat(64) };
@@ -30,9 +36,30 @@ test('hides payment controls for an expired invoice', () => {
   assert.equal(shouldShowPaymentControls('EXPIRED'), false);
 });
 
+test('stale pending data fails closed after expiresAt', () => {
+  const stale = { status: 'PENDING', expiresAt: '2000-01-01T00:00:00.000Z' };
+  const now = '2026-08-30T12:00:00.000Z';
+
+  assert.equal(isExpiredInvoice(stale, now), true);
+  assert.equal(shouldShowPaymentControls(stale, undefined, now), false);
+  assert.equal(initialPaymentState(stale).status, PAY_STATES.EXPIRED);
+});
+
 test('keeps payment controls available for an unpaid pending invoice', () => {
   assert.equal(shouldShowPaymentControls('PENDING'), true);
   assert.equal(shouldShowPaymentControls('PENDING', 'existing-transaction'), false);
+});
+
+test('paid, pending, and expired components are mutually exclusive', () => {
+  assert.deepEqual(getPayPageView(pending), {
+    expired: false,
+    paid: false,
+    showPaymentControls: true,
+    showProof: false,
+    showMonitor: true,
+  });
+  assert.equal(getPayPageView(paid).showProof, true);
+  assert.equal(getPayPageView(expired).showPaymentControls, false);
 });
 
 // -------------------------------------------------------------- initial state
@@ -193,6 +220,11 @@ test('polling runs only while the answer is still unknown', () => {
   assert.equal(shouldPoll(idleOn(null)), false);
 });
 
+test('polling stops for a locally elapsed pending invoice', () => {
+  const stale = { status: 'PENDING', expiresAt: '2000-01-01T00:00:00.000Z' };
+  assert.equal(shouldPoll(idleOn(stale)), false);
+});
+
 test('polling stops the moment the invoice settles', () => {
   const settled = paymentReducer(idleOn(pending), { type: 'POLL_RESULT', invoice: paid });
   assert.equal(shouldPoll(settled), false);
@@ -245,6 +277,32 @@ test('the backend message is preferred over the transport message', () => {
   assert.equal(describeVerifyError(error), 'Memo mismatch');
 });
 
+test('a stable verification code resolves to its canonical message', () => {
+  // The pay page surfaces verify rejections through describeVerifyError. A code
+  // in the failure envelope must render the canonical copy, not the raw text.
+  const { VERIFICATION_MESSAGES } = require('../lib/verification');
+
+  for (const code of Object.keys(VERIFICATION_MESSAGES)) {
+    const error = {
+      response: { data: { code, error: 'Server said no' } },
+    };
+
+    assert.equal(
+      describeVerifyError(error, 'Verification failed'),
+      VERIFICATION_MESSAGES[code],
+      `${code} did not resolve to its canonical pay-page message`
+    );
+  }
+});
+
+test('the canonical message wins even when the server text differs', () => {
+  const error = {
+    response: { data: { code: 'DESTINATION_MISMATCH', error: 'other wording' } },
+  };
+
+  assert.equal(describeVerifyError(error), 'Payment destination mismatch');
+});
+
 test('the transport message is used when the backend said nothing', () => {
   assert.equal(describeVerifyError({ message: 'Network Error' }), 'Network Error');
 });
@@ -263,4 +321,102 @@ test('a transaction hash is 64 hexadecimal characters', () => {
   assert.equal(isLikelyTransactionHash('z'.repeat(64)), false);
   assert.equal(isLikelyTransactionHash(''), false);
   assert.equal(isLikelyTransactionHash(undefined), false);
+});
+
+// ------------------------------------------------- announcements (issue #289)
+
+/*
+ * The pay page's result panel is driven entirely by these four helpers: they
+ * decide whether it reports itself busy, whether it takes focus, how loudly it
+ * announces, and what it says. The panel's own behaviour is covered in
+ * `a11y-core-pages.test.js`; what follows pins down the decisions it reads.
+ */
+
+test('the busy states are exactly the two with a request in flight', () => {
+  const busy = [PAY_STATES.PAYING, PAY_STATES.VERIFYING];
+
+  for (const status of Object.values(PAY_STATES)) {
+    assert.equal(
+      isBusyState({ status }),
+      busy.includes(status),
+      `${status} was classified incorrectly as busy or idle`
+    );
+  }
+});
+
+test('the result states are the three that carry an answer', () => {
+  const results = [PAY_STATES.PAID, PAY_STATES.EXPIRED, PAY_STATES.ERROR];
+
+  for (const status of Object.values(PAY_STATES)) {
+    assert.equal(
+      isResultState({ status }),
+      results.includes(status),
+      `${status} was classified incorrectly as a result`
+    );
+  }
+});
+
+test('an idle page is neither busy nor a result, so focus stays put', () => {
+  const state = idleOn(pending);
+  assert.equal(isBusyState(state), false);
+  assert.equal(isResultState(state), false);
+  assert.equal(describePaymentState(state), '');
+});
+
+test('only a failure is announced assertively', () => {
+  for (const status of Object.values(PAY_STATES)) {
+    const kind = paymentStateKind({ status });
+    assert.equal(kind, status === PAY_STATES.ERROR ? 'error' : 'status');
+    // The role and the politeness are one decision, not two.
+    assert.equal(announcementRole(kind), status === PAY_STATES.ERROR ? 'alert' : 'status');
+    assert.equal(
+      announcementPoliteness(kind),
+      status === PAY_STATES.ERROR ? 'assertive' : 'polite'
+    );
+  }
+});
+
+test('every non-idle state has an announcement that reads as prose', () => {
+  for (const status of Object.values(PAY_STATES)) {
+    if (status === PAY_STATES.IDLE) continue;
+
+    const message = describePaymentState({ status, error: 'Memo mismatch' });
+    assert.ok(message, `${status} has no announcement`);
+    assert.ok(message.endsWith('.'), `${status} announcement is not a sentence: ${message}`);
+    // A bare state name is not something worth reading aloud.
+    assert.ok(
+      message.split(' ').length >= 4,
+      `${status} announcement is a label, not a sentence: ${message}`
+    );
+  }
+});
+
+test('a failure announcement carries the backend reason it was given', () => {
+  const failed = paymentReducer(idleOn(pending), {
+    type: 'VERIFY_FAILED',
+    error: 'Memo mismatch',
+  });
+
+  assert.match(describePaymentState(failed), /Memo mismatch/);
+});
+
+test('a failure with no reason still announces the failure itself', () => {
+  const failed = paymentReducer(idleOn(pending), { type: 'PAY_FAILED' });
+  assert.equal(describePaymentState(failed), 'Payment could not be completed. Payment failed.');
+});
+
+test('a payment confirmed by polling announces the same result as one verified', () => {
+  const polled = paymentReducer(idleOn(pending), { type: 'POLL_RESULT', invoice: paid });
+  const verified = paymentReducer(idleOn(pending), { type: 'VERIFY_SUCCEEDED', invoice: paid });
+
+  assert.equal(describePaymentState(polled), describePaymentState(verified));
+  assert.equal(isResultState(polled), true);
+});
+
+test('an absent state is handled without throwing', () => {
+  // The panel renders before the first dispatch on a slow load.
+  assert.equal(isBusyState(undefined), false);
+  assert.equal(isResultState(null), false);
+  assert.equal(describePaymentState(undefined), '');
+  assert.equal(paymentStateKind(null), 'status');
 });

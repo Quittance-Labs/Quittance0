@@ -74,6 +74,7 @@ Rejections return a stable `code` alongside the human-readable `error`:
 | `INVALID_PAYER_EMAIL` | Payer email is invalid | 400 |
 | `PAYER_INFO_TOO_LONG` | Payer information is too long | 400 |
 | `INVOICE_ALREADY_PAID` | Invoice has already been paid | 400 |
+| `INVOICE_EXPIRED` | Invoice has expired and can no longer accept payment | 400 |
 | `INVOICE_NOT_PENDING` | Invoice is not pending | 400 |
 | `TRANSACTION_NOT_FOUND` | Transaction not found on Stellar | 404 |
 | `NO_PAYMENT_OPERATION` | No payment operation found in transaction | 400 |
@@ -87,10 +88,29 @@ The client mirror lets the pay page reject malformed input before a round trip
 and show the exact message the server would return. A test asserts the two
 tables stay identical — if you add a code, add it in **both** files.
 
+Those codes are also how the app keeps every page on one copy of the wording.
+`frontend/lib/verification.js` exposes `messageForCode(code)`; the API layer
+(`api-runtime.js` / `apiErrorMessage`) and the pay page (`describeVerifyError`)
+resolve a stable `code` to that message before falling back to server text, so
+the pay page, invoice detail, dashboard, and monitoring banners all read
+identically for the same rejection. `VERIFICATION_CODES` and `messageForCode`
+are exported from `backend/src/services/payment-verification.ts` as well, so a
+test pins the two layers together.
+
 Amounts compare at Stellar's 7-decimal (stroop) precision, so `100` and
 `100.0000000` match while a partial payment does not.
 
 Run the checks: `cd backend && npm test` — `cd frontend && npm test`.
+
+### Invoice expiry lifecycle
+
+Sellers choose a payment window of **1–30 days** (7 days by default). Both
+storage backends persist `expiresAt` and lazily transition elapsed `PENDING`
+invoices to `EXPIRED` before get, list, stats, verify, cancel, or monitor work.
+Expired invoices remain visible in seller history, but they are excluded from
+pending/actionable counts and cannot expose QR, pay, verify, or payment-proof
+controls. The client also projects stale pending data through `expiresAt` so a
+page fails closed while it waits for the next authoritative server response.
 
 ---
 
@@ -246,26 +266,35 @@ both return `400` when the seller key is missing.
 
 ```bash
 cd backend
-npm test                                                              # unit + scoping tests
+npm run typecheck                                                     # TypeScript compile check (no emit)
+npm test                                                              # unit + scoping + parity tests
 npm run test:isolated                                                 # standalone regression tests in tests/isolated
 DATABASE_URL=postgresql://user:password@localhost:5432/quittance_test npm test   # adds the Postgres integration test
 ```
 
 The integration test (`backend/tests/invoice-postgres.integration.test.ts`) is
 skipped unless `DATABASE_URL` is set. Point it at a disposable database — it
-applies the schema and writes rows.
+applies the schema, runs the seed twice to check idempotency, and writes rows
+covering create, list, status filter, pagination, verify (markAsPaid with all
+payer fields), expiry-time guard, cancel once-only, markExpiredInvoices lazy
+transition, and the PostgresInvoiceStorage adapter end to end.
 
 `npm test` also exercises the shared invoice handlers against both the in-memory
-and PostgreSQL storage adapters, so create/verify regressions surface without a live database.
+and PostgreSQL storage adapters, so create/verify/cancel/list/expiry/stats
+regressions surface without a live database. Every backend path uses the same
+`StoredInvoice` fields (seller metadata, asset issuer, expiry, payer info,
+metadata) — the handler suite is parameterised over both adapters, so field
+parity between memory and Postgres stays pinned by the same assertions.
 
 ---
 
 ## Deploy frontend (Vercel)
 
-1. Import the GitHub repo in [Vercel](https://vercel.com).  
-2. Set **Root Directory** to `frontend`.  
-3. Framework preset: Next.js (see `frontend/vercel.json`).  
-4. Add environment variables (Production):
+1. Create/import the project in Vercel and set **Root Directory** to `frontend`.
+2. Keep the Next.js preset; `frontend/vercel.json` uses `npm ci`, builds `.next`,
+   and applies the public security headers.
+3. Add these variables to **Production** (and Preview when preview deploys should
+   call the API):
 
 | Variable | Example |
 |----------|---------|
@@ -274,7 +303,9 @@ and PostgreSQL storage adapters, so create/verify regressions surface without a 
 | `NEXT_PUBLIC_HORIZON_URL` | `https://horizon-testnet.stellar.org` |
 | `NEXT_PUBLIC_APP_URL` | `https://YOUR-APP.vercel.app` |
 
-5. Deploy. After the API is live (Phase D2), point `NEXT_PUBLIC_API_URL` at it and set the backend `FRONTEND_URL` to this Vercel URL.
+4. Run `npm run deploy:check` locally with the same variables before deploying.
+5. Deploy. A missing/invalid production API URL fails closed in the UI with an
+   explicit configuration warning; it never falls back to a visitor's localhost.
 
 Templates: `frontend/env.example.txt`, `frontend/env.mvp.local`.
 
@@ -282,15 +313,17 @@ Templates: `frontend/env.example.txt`, `frontend/env.mvp.local`.
 
 ## Deploy backend MVP (Render)
 
-Recommended host for `server-mvp.ts` (in-memory). Do **not** use `backend/vercel.json` for the demo — that targets the Postgres full server.
+Recommended host for `server-mvp.ts` (in-memory). `backend/vercel.json` now has
+an optional serverless MVP entrypoint, but Render is the documented demo path
+because it exposes normal liveness/readiness checks and predictable logs.
 
 ### Manual Web Service
 
 1. Create a **Web Service** on [Render](https://render.com) from this repo.  
 2. **Root Directory:** `backend`  
-3. **Build:** `npm install`  
-4. **Start:** `npm run start:mvp`  
-5. Health check path: `/api/health`  
+3. **Build:** `npm ci && npm run build`
+4. **Start:** `npm run start:mvp:prod`
+5. Health check path: `/api/ready` (`/api/health` remains liveness)
 6. Environment variables:
 
 | Variable | Value |
@@ -299,25 +332,50 @@ Recommended host for `server-mvp.ts` (in-memory). Do **not** use `backend/vercel
 | `STELLAR_NETWORK` | `TESTNET` |
 | `STELLAR_HORIZON_URL` | `https://horizon-testnet.stellar.org` |
 | `FRONTEND_URL` | `https://YOUR-APP.vercel.app` (exact frontend origin) |
+| `FRONTEND_URLS` | Optional comma-separated preview/custom origins |
 | `ALLOW_SIMULATE` | `false` |
 
 `PORT` is set by Render automatically.
 
 ### Blueprint (optional)
 
-`backend/render.yaml` can be used as a starting point. Set `FRONTEND_URL` in the dashboard after the frontend URL is known.
+`backend/render.yaml` is a complete Blueprint for this path. Set the unsynced
+`FRONTEND_URL` value in Render; origins are exact and wildcards are rejected.
 
 ### After API is live
 
 1. Copy the public API URL (e.g. `https://quittance-api.onrender.com`).  
 2. Set frontend `NEXT_PUBLIC_API_URL` to `https://…/api` and redeploy Vercel.  
 3. Confirm CORS: browser call from the Vercel origin to `/api/health` succeeds.
+4. Confirm `GET /api/ready` returns HTTP 200 with `ready: true`.
+5. Run the deployed create/read round-trip:
+
+```bash
+DEPLOY_API_URL=https://YOUR-API-HOST/api node scripts/deploy-smoke.mjs
+```
+
+The smoke command creates one tiny in-memory XLM invoice, reads it back, and
+checks health/readiness. It never simulates or submits a Stellar payment.
+
+### Safe deploy order
+
+1. Reserve/deploy the Vercel project URL.
+2. Configure that exact origin as Render `FRONTEND_URL`, then deploy Render.
+3. Put the Render URL plus `/api` into Vercel `NEXT_PUBLIC_API_URL` and redeploy.
+4. Run the smoke command and the browser checklist in `EVIDENCE.md`.
 
 **Note:** Free-tier / in-memory means cold starts and process restarts clear all invoices. Fine for a short demo; document this for reviewers.
 
 Env template: `backend/env.mvp.example`.
 
 ---
+
+### Asset and verification contracts
+
+A Stellar asset is the pair `(code, issuer)`, never the code alone — anyone can
+issue a credit asset coded `USDC`, or even `XLM`. How invoices name assets and
+how settlement compares them is documented in
+[`docs/ASSETS.md`](./docs/ASSETS.md) and [`docs/VERIFY.md`](./docs/VERIFY.md).
 
 ## Tests & CI
 
@@ -333,9 +391,18 @@ cd backend && npm ci && npm run typecheck && npm test
 # Frontend: lint + typecheck + unit tests
 cd frontend && npm ci && npm run lint && npm run typecheck && npm test
 
+# Frontend: focused axe, focus-management, live-region, and contrast checks
+cd frontend && npm run test:a11y
+
 # Shared export helpers (repository root)
 node --test "tests/**/*.test.mjs"
 ```
+
+The focused accessibility suite renders the landing, dashboard, pay, and
+invoice-detail routes in jsdom, audits them with axe, and directly checks the
+focus and live-region behavior that a static axe scan cannot observe. Because
+jsdom has no layout engine, WCAG contrast ratios are verified separately from
+the color pairs declared in `frontend/tailwind.config.js`.
 
 ### The invoice payment loop is covered end to end
 

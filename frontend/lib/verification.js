@@ -7,6 +7,8 @@
  * messages here identical to the backend module.
  */
 
+const { rejectionLabel: _rejectionLabel } = require('./verify-rejection-label.ts');
+
 const VERIFICATION_MESSAGES = {
   MISSING_TX_HASH: 'Transaction hash is required',
   INVALID_TX_HASH: 'Transaction hash must be 64 hexadecimal characters',
@@ -14,6 +16,7 @@ const VERIFICATION_MESSAGES = {
   INVALID_PAYER_EMAIL: 'Payer email is invalid',
   PAYER_INFO_TOO_LONG: 'Payer information is too long',
   INVOICE_ALREADY_PAID: 'Invoice has already been paid',
+  INVOICE_EXPIRED: 'Invoice has expired and can no longer accept payment',
   INVOICE_NOT_PENDING: 'Invoice is not pending',
   TRANSACTION_NOT_FOUND: 'Transaction not found on Stellar',
   NO_PAYMENT_OPERATION: 'No payment operation found in transaction',
@@ -27,6 +30,8 @@ const VERIFICATION_MESSAGES = {
 const MAX_PAYER_FIELD_LENGTH = 255;
 const PAYER_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TX_HASH_PATTERN = /^[0-9a-f]{64}$/i;
+const normalizeTransactionHash = (value) =>
+  typeof value === 'string' ? value.trim() : '';
 
 const failure = (code) => ({
   ok: false,
@@ -36,7 +41,7 @@ const failure = (code) => ({
 
 /** A Stellar transaction hash is 64 hexadecimal characters. */
 const isValidTxHash = (txHash) =>
-  typeof txHash === 'string' && TX_HASH_PATTERN.test(txHash.trim());
+  TX_HASH_PATTERN.test(normalizeTransactionHash(txHash));
 
 /** Same order of checks as the backend, so both sides report the same first failure. */
 const checkTxHash = (txHash) => {
@@ -44,7 +49,7 @@ const checkTxHash = (txHash) => {
     return failure('MISSING_TX_HASH');
   }
 
-  const normalized = txHash.trim();
+  const normalized = normalizeTransactionHash(txHash);
   if (!isValidTxHash(normalized)) {
     return failure('INVALID_TX_HASH');
   }
@@ -82,6 +87,17 @@ const checkPayerInfo = (input) => {
 };
 
 /**
+ * Resolve a stable rejection code to its canonical user-facing message.
+ *
+ * This is the single place the frontend maps a code from an error envelope to
+ * English copy. Every page surface — pay page, invoice detail, dashboard, and
+ * the shared API error layer — routes through it, so a code always renders the
+ * same actionable sentence no matter which endpoint rejected it.
+ */
+const messageForCode = (code) =>
+  (code && VERIFICATION_MESSAGES[code]) || undefined;
+
+/**
  * Turn a failed verify request into the shared message.
  *
  * Prefers the code the server sent so the wording stays identical even when the
@@ -90,8 +106,9 @@ const checkPayerInfo = (input) => {
 const resolveVerificationError = (error, fallback = 'Verification failed') => {
   const data = (error && error.response && error.response.data) || {};
 
-  if (data.code && VERIFICATION_MESSAGES[data.code]) {
-    return VERIFICATION_MESSAGES[data.code];
+  const canonical = messageForCode(data.code);
+  if (canonical) {
+    return canonical;
   }
 
   return data.error || (error && error.message) || fallback;
@@ -99,9 +116,12 @@ const resolveVerificationError = (error, fallback = 'Verification failed') => {
 
 module.exports = {
   VERIFICATION_MESSAGES,
+  messageForCode,
   failure,
   isValidTxHash,
+  normalizeTransactionHash,
   checkTxHash,
   checkPayerInfo,
   resolveVerificationError,
+  rejectionLabel: _rejectionLabel,
 };

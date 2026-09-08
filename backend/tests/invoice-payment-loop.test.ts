@@ -10,6 +10,14 @@
  *
  * The stub must exist before the app is imported, because
  * `config/stellar.ts` builds its Horizon client at module load.
+ *
+ * Field parity coverage: these end-to-end HTTP tests exercise create + get +
+ * verify + cancel through server-mvp.ts's in-memory InvoiceStorage,
+ * asserting sellerPublicKey, assetCode (native XLM / credit with issuer),
+ * memo, status transitions, payer info on markAsPaid, and expiresAt
+ * semantics. Any new parity field added to StoredInvoice / createInvoiceSchema
+ * should get an equivalent HTTP assertion here so the integration loop stays
+ * pinned.
  */
 
 import { after, before, describe, it } from 'node:test';
@@ -135,7 +143,10 @@ describe('invoice payment loop', () => {
       res.end(JSON.stringify(body));
     });
 
-    await new Promise<void>((resolve) => horizon.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve, reject) => {
+      horizon.once('error', reject);
+      horizon.listen(0, '127.0.0.1', resolve);
+    });
     const horizonPort = (horizon.address() as AddressInfo).port;
 
     // Must be set before the app (and therefore config/stellar.ts) is imported,
@@ -145,14 +156,24 @@ describe('invoice payment loop', () => {
 
     ({ default: app } = await import('../src/server-mvp'));
 
-    api = app.listen(0, '127.0.0.1');
-    await new Promise<void>((resolve) => api.once('listening', () => resolve()));
+    api = await new Promise<http.Server>((resolve, reject) => {
+      const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
+      listener.once('error', reject);
+    });
     port = (api.address() as AddressInfo).port;
   });
 
   after(async () => {
     await new Promise<void>((resolve) => api.close(() => resolve()));
     await new Promise<void>((resolve) => horizon.close(() => resolve()));
+  });
+
+  it('exposes the deploy liveness contract', async () => {
+    const health = await jsonRequest(port, 'GET', '/api/health');
+    assert.equal(health.status, 200);
+    assert.equal(health.body.status, 'ok');
+    assert.equal(health.body.storage, 'in-memory');
+    assert.equal(health.body.simulationEnabled, false);
   });
 
   it('marks an invoice PAID when the transaction matches', async () => {
@@ -197,6 +218,7 @@ describe('invoice payment loop', () => {
     });
 
     assert.equal(verified.status, 400);
+    assert.equal(verified.body.code, 'MEMO_MISMATCH');
     assert.match(verified.body.error, /memo/i);
 
     const fetched = await jsonRequest(port, 'GET', `/api/invoices/${invoice.id}`);
@@ -212,6 +234,7 @@ describe('invoice payment loop', () => {
     });
 
     assert.equal(verified.status, 400);
+    assert.equal(verified.body.code, 'DESTINATION_MISMATCH');
     assert.match(verified.body.error, /destination/i);
   });
 
@@ -224,6 +247,7 @@ describe('invoice payment loop', () => {
     });
 
     assert.equal(verified.status, 400);
+    assert.equal(verified.body.code, 'AMOUNT_MISMATCH');
     assert.match(verified.body.error, /amount/i);
   });
 
@@ -240,6 +264,7 @@ describe('invoice payment loop', () => {
     });
 
     assert.equal(verified.status, 400);
+    assert.equal(verified.body.code, 'ASSET_MISMATCH');
     assert.match(verified.body.error, /asset/i);
   });
 
@@ -257,6 +282,7 @@ describe('invoice payment loop', () => {
     });
 
     assert.equal(second.status, 400);
+    assert.equal(second.body.code, 'INVOICE_ALREADY_PAID');
     assert.match(second.body.error, /already been paid/i);
   });
 
@@ -266,6 +292,7 @@ describe('invoice payment loop', () => {
     const verified = await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, {});
 
     assert.equal(verified.status, 400);
+    assert.equal(verified.body.code, 'MISSING_TX_HASH');
     assert.match(verified.body.error, /hash is required/i);
   });
 
@@ -281,6 +308,7 @@ describe('invoice payment loop', () => {
     });
 
     assert.equal(verified.status, 400);
+    assert.equal(verified.body.code, 'INVALID_PAYER_EMAIL');
     assert.match(verified.body.error, /email is invalid/i);
   });
 

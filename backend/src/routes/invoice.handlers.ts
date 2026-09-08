@@ -1,3 +1,9 @@
+// Handlers for both backends (in-memory and PostgreSQL). They take an
+// InvoiceStorage implementation and do not branch on the storage mode, so a
+// bug in one backend is a bug in both. All seller/payer/asset/customer/
+// metadata/expiry fields pass through unchanged from the storage layer. The
+// shared suite in invoice-handlers.test.ts runs these same handlers against
+// both adapters with the same assertions to guarantee field parity.
 import { Request, Response } from 'express';
 import stellarService from '../services/stellar.service';
 import { createInvoiceSchema } from '../utils/validation';
@@ -6,12 +12,17 @@ import { sendFailure, sendSuccess, sendVerificationFailure } from '../types/api'
 import type { InvoiceStorage, StoredInvoice } from '../storage/invoice-storage';
 import { STELLAR_NETWORK } from '../config/stellar';
 import {
-  VERIFICATION_MESSAGES,
+  failure,
   checkInvoiceIsPayable,
   checkPayerInfo,
   checkTxHash,
   verifyHorizonPayment,
 } from '../services/payment-verification';
+import { simulationAllowed } from '../config/runtime';
+import { createRequestId } from '../utils/request-correlation-id';
+
+/** Kept explicit so clients can tune polling without duplicating backend policy. */
+export const PAYMENT_STATUS_POLL_INTERVAL_MS = 3000;
 
 /** Only the part of the Stellar service the verify handler needs. */
 export interface TransactionLookup {
@@ -22,7 +33,7 @@ export interface InvoiceHandlerOptions {
   storage: InvoiceStorage;
   /** Defaults to FRONTEND_URL, read per request so tests and dev reloads see changes. */
   frontendUrl?: string;
-  /** Defaults to ALLOW_SIMULATE=true. */
+  /** Optional local-test override. Production always forces simulation off. */
   allowSimulate?: boolean;
   stellar?: TransactionLookup;
 }
@@ -43,8 +54,9 @@ export interface InvoiceHandlers {
  * (zod) cannot be inspected by `console` on newer Node versions, and the throw
  * would escape the catch block and leave the request hanging.
  */
-function logError(label: string, error: any): void {
-  console.error(label, error?.stack || error?.message || error);
+function logError(label: string, error: any, requestId?: string): void {
+  const prefix = requestId ? `[${requestId}] ` : '';
+  console.error(`${prefix}${label}`, error?.stack || error?.message || error);
 }
 
 function toPositiveInt(value: unknown, fallback: number): number {
@@ -64,15 +76,28 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
     options.frontendUrl || process.env.FRONTEND_URL || 'http://localhost:3000';
 
   const simulateAllowed = () =>
-    options.allowSimulate !== undefined
-      ? options.allowSimulate
-      : process.env.ALLOW_SIMULATE === 'true';
+    process.env.NODE_ENV !== 'production' && (
+      options.allowSimulate !== undefined
+        ? options.allowSimulate
+        : simulationAllowed()
+    );
 
   const buildPaymentPayload = async (invoice: StoredInvoice) => {
     const paymentUrl = `${frontendUrl()}/pay/${invoice.id}`;
 
+    if (invoice.status !== 'PENDING') {
+      return {
+        paymentAvailable: false,
+        paymentUrl,
+        qrCode: null,
+        stellarQrCode: null,
+      };
+    }
+
     return {
+      paymentAvailable: true,
       paymentUrl,
+      statusPollingIntervalMs: PAYMENT_STATUS_POLL_INTERVAL_MS,
       qrCode: await generatePaymentQR(paymentUrl),
       stellarQrCode: await generateStellarPaymentQR(
         invoice.sellerPublicKey,
@@ -86,6 +111,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
   return {
     async createInvoice(req: Request, res: Response) {
+      const requestId = createRequestId();
       try {
         const validatedData = createInvoiceSchema.parse(req.body);
         const invoice = await storage.createInvoice(validatedData);
@@ -93,12 +119,14 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
         sendSuccess(res, 201, {
           invoice,
+          paymentAvailable: payment.paymentAvailable,
           paymentUrl: payment.paymentUrl,
+          statusPollingIntervalMs: payment.statusPollingIntervalMs,
           qrCode: payment.qrCode,
           stellarQrCode: payment.stellarQrCode,
         });
       } catch (error: any) {
-        logError('Create invoice error:', error);
+        logError('Create invoice error:', error, requestId);
         sendFailure(res, 400, error.message || 'Failed to create invoice');
       }
     },
@@ -203,12 +231,8 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           txDetails = await stellar.getTransaction(hashCheck.value);
         } catch (error: any) {
           logError('Verify payment lookup error:', error);
-          return sendVerificationFailure(
-            res,
-            404,
-            'TRANSACTION_NOT_FOUND',
-            VERIFICATION_MESSAGES.TRANSACTION_NOT_FOUND
-          );
+          const notFound = failure('TRANSACTION_NOT_FOUND');
+          return sendVerificationFailure(res, 404, notFound.code, notFound.error);
         }
 
         const verification = verifyHorizonPayment({
@@ -230,12 +254,29 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           return sendVerificationFailure(res, 400, verification.code, verification.error);
         }
 
-        const updatedInvoice = await storage.markAsPaid(
-          id,
-          verification.value.txHash,
-          verification.value.from,
-          payerCheck.value
-        );
+        let updatedInvoice: StoredInvoice;
+        try {
+          updatedInvoice = await storage.markAsPaid(
+            id,
+            verification.value.txHash,
+            verification.value.from,
+            payerCheck.value
+          );
+        } catch (error) {
+          // The payment lookup can cross expiresAt after the first status read.
+          // Re-read so that race still returns the public expiry contract.
+          const latest = await storage.getInvoiceById(id);
+          const latestStatus = latest && checkInvoiceIsPayable(latest.status);
+          if (latestStatus && !latestStatus.ok) {
+            return sendVerificationFailure(
+              res,
+              400,
+              latestStatus.code,
+              latestStatus.error
+            );
+          }
+          throw error;
+        }
 
         sendSuccess(res, 200, updatedInvoice, { message: 'Payment verified on Stellar' });
       } catch (error: any) {
@@ -274,16 +315,9 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           return sendFailure(res, 404, 'Invoice not found');
         }
 
-        if (invoice.status === 'PAID') {
-          return sendFailure(
-            res,
-            400,
-            'This invoice has already been paid. Cannot accept duplicate payment.'
-          );
-        }
-
-        if (invoice.status !== 'PENDING') {
-          return sendFailure(res, 400, 'Invoice is not pending');
+        const statusCheck = checkInvoiceIsPayable(invoice.status);
+        if (!statusCheck.ok) {
+          return sendVerificationFailure(res, 400, statusCheck.code, statusCheck.error);
         }
 
         const mockTxHash = `MOCK_TX_${Date.now().toString(36).toUpperCase()}_${Math.random()

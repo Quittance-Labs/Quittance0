@@ -3,6 +3,7 @@ export interface DashboardInvoice {
   memo: string;
   amount: number | string;
   status: string;
+  expiresAt?: string | Date;
   sellerPublicKey: string;
   description?: string;
   customerName?: string;
@@ -14,6 +15,7 @@ export interface DashboardStats {
   total_invoices?: number;
   paid_invoices?: number;
   pending_invoices?: number;
+  actionable_invoices?: number;
   expired_invoices?: number;
   revenue_by_asset?: Record<string, number | string>;
 }
@@ -31,6 +33,9 @@ export interface DashboardData {
 }
 
 export declare const INVOICE_FILTERS: readonly string[];
+export declare const DASHBOARD_SORT_OPTIONS: readonly string[];
+
+export type DashboardSortBy = 'newest' | 'oldest' | 'amount-desc' | 'amount-asc' | 'status' | string;
 
 export function belongsToSeller(
   invoice: DashboardInvoice | null | undefined,
@@ -49,19 +54,47 @@ export function searchInvoices(
   query: string | null | undefined
 ): DashboardInvoice[];
 
+export function filterInvoicesByStatus(
+  invoices: DashboardInvoice[] | null | undefined,
+  statusFilter: string | null | undefined
+): DashboardInvoice[];
+
+export function sortInvoices(
+  invoices: DashboardInvoice[] | null | undefined,
+  sortBy?: DashboardSortBy
+): DashboardInvoice[];
+
 export function exportableInvoices(
   invoices: DashboardInvoice[] | null | undefined
+): DashboardInvoice[];
+
+export function actionableInvoices(
+  invoices: DashboardInvoice[] | null | undefined,
+  now?: string | number | Date
+): DashboardInvoice[];
+
+export function historicalInvoices(
+  invoices: DashboardInvoice[] | null | undefined,
+  now?: string | number | Date
 ): DashboardInvoice[];
 
 export function emptyDashboardData(): DashboardData;
 
 export function dashboardDataFor(
   data: OwnedDashboardData | null | undefined,
-  sellerPublicKey: string | null | undefined
+  sellerPublicKey: string | null | undefined,
+  now?: string | number | Date
 ): DashboardData;
+
+export function reconcileExpiryStats(
+  stats: DashboardStats | null | undefined,
+  originalInvoices: DashboardInvoice[],
+  projectedInvoices: DashboardInvoice[]
+): DashboardStats | null;
 
 export function revenueEntries(
   stats: DashboardStats | null | undefined
 ): Array<[string, number | string]>;
 
 export function hasAnyInvoices(stats: DashboardStats | null | undefined): boolean;
+

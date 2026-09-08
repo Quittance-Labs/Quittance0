@@ -7,6 +7,7 @@ import {
   setAllowed,
 } from '@stellar/freighter-api';
 import { detectFreighter } from './freighter-availability';
+import { networkDisplayName } from './network-display-name';
 
 // Network configuration
 const STELLAR_NETWORK = process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET';
@@ -21,7 +22,14 @@ export const NETWORK_PASSPHRASE =
     ? StellarSdk.Networks.TESTNET
     : StellarSdk.Networks.PUBLIC;
 
+export const NETWORK_DISPLAY_NAME = networkDisplayName(NETWORK_PASSPHRASE);
+
 export const server = new StellarSdk.Horizon.Server(HORIZON_URL);
+
+export const getExplorerTransactionUrl = (txHash: string): string => {
+  const network = STELLAR_NETWORK === 'TESTNET' ? 'testnet' : 'public';
+  return `https://stellar.expert/explorer/${network}/tx/${encodeURIComponent(txHash)}`;
+};
 
 const getTrustlineMessage = (assetCode: string): string =>
   `Your wallet does not have a ${assetCode} trustline on ${STELLAR_NETWORK.toLowerCase()}. Add the ${assetCode} trustline in Freighter, or ask the seller for an XLM invoice.`;
@@ -45,6 +53,16 @@ const isMissingTrustlineError = (error: any): boolean => {
     error?.message?.toLowerCase().includes('op_no_trust') ||
     error?.message?.toLowerCase().includes('no trustline')
   );
+};
+
+export const describeStellarNetworkError = (error: any): string => {
+  if (error?.message?.includes('Not Found') || error?.response?.status === 404) {
+    return 'Account needs funding on the selected Stellar network.';
+  }
+  if (!error?.response || ['ERR_NETWORK', 'ECONNABORTED', 'ETIMEDOUT'].includes(error?.code)) {
+    return 'Stellar Horizon is temporarily unreachable. Your wallet can stay connected; retry shortly.';
+  }
+  return error?.message || 'Stellar network request failed.';
 };
 
 /**
@@ -285,4 +303,5 @@ export default {
   streamPayments,
   formatStellarAmount,
   isValidPublicKey,
+  describeStellarNetworkError,
 };

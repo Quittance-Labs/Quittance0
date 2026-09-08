@@ -13,6 +13,8 @@
 
 /** Invoice statuses the dashboard can filter by, plus the catch-all. */
 const INVOICE_FILTERS = Object.freeze(['all', 'pending', 'paid', 'expired', 'cancelled']);
+const { applyExpiryLifecycle, isActionableInvoice } = require('./invoice-lifecycle');
+const { sortKeyForInvoice } = require('./history-sort-key.ts');
 
 /**
  * Whether an invoice belongs to the connected seller.
@@ -66,6 +68,16 @@ function exportableInvoices(invoices) {
   return invoices.filter((invoice) => invoice?.status === 'PAID');
 }
 
+/** Pending invoices that may still accept a payment right now. */
+function actionableInvoices(invoices, now) {
+  return applyExpiryLifecycle(invoices, now).filter((invoice) => isActionableInvoice(invoice, now));
+}
+
+/** Settled, cancelled and expired records remain visible as history. */
+function historicalInvoices(invoices, now) {
+  return applyExpiryLifecycle(invoices, now).filter((invoice) => !isActionableInvoice(invoice, now));
+}
+
 /** The empty dashboard, used on disconnect and on every wallet switch. */
 function emptyDashboardData() {
   return { invoices: [], stats: null };
@@ -78,14 +90,41 @@ function emptyDashboardData() {
  * previous seller's invoices from staying on screen while the next seller's
  * request is still in flight.
  */
-function dashboardDataFor(data, sellerPublicKey) {
+function reconcileExpiryStats(stats, originalInvoices, projectedInvoices) {
+  if (!stats) return null;
+  const transitioned = projectedInvoices.reduce((count, invoice, index) => (
+    originalInvoices[index]?.status === 'PENDING' && invoice.status === 'EXPIRED'
+      ? count + 1
+      : count
+  ), 0);
+
+  if (transitioned === 0) return stats;
+  const pending = Math.max(0, Number(stats.pending_invoices || 0) - transitioned);
+
+  return {
+    ...stats,
+    pending_invoices: pending,
+    actionable_invoices: Math.max(
+      0,
+      Number(stats.actionable_invoices ?? stats.pending_invoices ?? 0) - transitioned
+    ),
+    expired_invoices: Number(stats.expired_invoices || 0) + transitioned,
+  };
+}
+
+function dashboardDataFor(data, sellerPublicKey, now) {
   if (!sellerPublicKey || !data || data.owner !== sellerPublicKey) {
     return emptyDashboardData();
   }
 
+  const owned = scopeInvoicesToSeller(data.invoices, sellerPublicKey);
+  const invoices = applyExpiryLifecycle(owned, now).sort(
+    (a, b) => sortKeyForInvoice(b) - sortKeyForInvoice(a)
+  );
+
   return {
-    invoices: scopeInvoicesToSeller(data.invoices, sellerPublicKey),
-    stats: data.stats ?? null,
+    invoices,
+    stats: reconcileExpiryStats(data.stats, owned, invoices),
   };
 }
 
@@ -97,19 +136,88 @@ function revenueEntries(stats) {
   return Object.entries(revenue).sort(([assetA], [assetB]) => assetA.localeCompare(assetB));
 }
 
+const DASHBOARD_SORT_OPTIONS = Object.freeze([
+  'newest',
+  'oldest',
+  'amount-desc',
+  'amount-asc',
+  'status',
+]);
+
+function filterInvoicesByStatus(invoices, statusFilter) {
+  if (!Array.isArray(invoices)) return [];
+  const normalized = (statusFilter ?? 'all').trim().toLowerCase();
+  if (normalized === 'all') return [...invoices];
+  return invoices.filter((invoice) => (invoice?.status ?? '').toLowerCase() === normalized);
+}
+
+function parseInvoiceDate(value) {
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function sortInvoices(invoices, sortBy = 'newest') {
+  if (!Array.isArray(invoices)) return [];
+  const list = [...invoices];
+
+  return list.sort((a, b) => {
+    switch (sortBy) {
+      case 'oldest': {
+        const timeA = parseInvoiceDate(a?.createdAt || a?.created_at);
+        const timeB = parseInvoiceDate(b?.createdAt || b?.created_at);
+        if (timeA !== timeB) return timeA - timeB;
+        return String(a?.id || '').localeCompare(String(b?.id || ''));
+      }
+      case 'amount-desc': {
+        const amtA = Number(a?.amount || 0);
+        const amtB = Number(b?.amount || 0);
+        if (amtA !== amtB) return amtB - amtA;
+        return String(a?.id || '').localeCompare(String(b?.id || ''));
+      }
+      case 'amount-asc': {
+        const amtA = Number(a?.amount || 0);
+        const amtB = Number(b?.amount || 0);
+        if (amtA !== amtB) return amtA - amtB;
+        return String(a?.id || '').localeCompare(String(b?.id || ''));
+      }
+      case 'status': {
+        const statusA = String(a?.status || '').toLowerCase();
+        const statusB = String(b?.status || '').toLowerCase();
+        if (statusA !== statusB) return statusA.localeCompare(statusB);
+        return String(a?.id || '').localeCompare(String(b?.id || ''));
+      }
+      case 'newest':
+      default: {
+        const timeA = parseInvoiceDate(a?.createdAt || a?.created_at);
+        const timeB = parseInvoiceDate(b?.createdAt || b?.created_at);
+        if (timeA !== timeB) return timeB - timeA;
+        return String(b?.id || '').localeCompare(String(a?.id || ''));
+      }
+    }
+  });
+}
+
 function hasAnyInvoices(stats) {
   return Number(stats?.total_invoices || 0) > 0;
 }
 
 module.exports = {
   INVOICE_FILTERS,
+  DASHBOARD_SORT_OPTIONS,
   belongsToSeller,
   scopeInvoicesToSeller,
   invoiceSearchText,
   searchInvoices,
+  filterInvoicesByStatus,
+  sortInvoices,
   exportableInvoices,
+  actionableInvoices,
+  historicalInvoices,
   emptyDashboardData,
   dashboardDataFor,
+  reconcileExpiryStats,
   revenueEntries,
   hasAnyInvoices,
 };
+

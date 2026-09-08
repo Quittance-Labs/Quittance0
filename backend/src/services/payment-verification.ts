@@ -10,6 +10,14 @@
  * Horizon and hand them in. See README.md "Payment verification contract".
  */
 
+import {
+  assetsMatch,
+  formatAssetIdentity,
+  resolveInvoiceAsset,
+  resolvePaymentAsset,
+} from '../utils/asset-helpers';
+import { amountsMatch as stroopAmountsMatch } from '../utils/verify-amount-tolerance';
+
 export type VerificationCode =
   | 'MISSING_TX_HASH'
   | 'INVALID_TX_HASH'
@@ -17,6 +25,7 @@ export type VerificationCode =
   | 'INVALID_PAYER_EMAIL'
   | 'PAYER_INFO_TOO_LONG'
   | 'INVOICE_ALREADY_PAID'
+  | 'INVOICE_EXPIRED'
   | 'INVOICE_NOT_PENDING'
   | 'TRANSACTION_NOT_FOUND'
   | 'NO_PAYMENT_OPERATION'
@@ -34,6 +43,7 @@ export const VERIFICATION_MESSAGES: Record<VerificationCode, string> = {
   INVALID_PAYER_EMAIL: 'Payer email is invalid',
   PAYER_INFO_TOO_LONG: 'Payer information is too long',
   INVOICE_ALREADY_PAID: 'Invoice has already been paid',
+  INVOICE_EXPIRED: 'Invoice has expired and can no longer accept payment',
   INVOICE_NOT_PENDING: 'Invoice is not pending',
   TRANSACTION_NOT_FOUND: 'Transaction not found on Stellar',
   NO_PAYMENT_OPERATION: 'No payment operation found in transaction',
@@ -43,6 +53,16 @@ export const VERIFICATION_MESSAGES: Record<VerificationCode, string> = {
   ASSET_MISMATCH: 'Asset mismatch',
   NETWORK_MISMATCH: 'Transaction is on a different Stellar network',
 };
+
+/** The stable set of rejection codes, in declaration order. */
+export const VERIFICATION_CODES: VerificationCode[] = Object.keys(
+  VERIFICATION_MESSAGES
+) as VerificationCode[];
+
+/** The canonical user-facing message for a rejection code. */
+export function messageForCode(code: VerificationCode): string {
+  return VERIFICATION_MESSAGES[code];
+}
 
 export interface VerificationFailure {
   ok: false;
@@ -58,7 +78,7 @@ export interface VerificationSuccess<T> {
 export type VerificationResult<T> = VerificationSuccess<T> | VerificationFailure;
 
 /** Amount precision used by Stellar (7 decimal places). */
-const STROOP_PRECISION = 7;
+export const STROOP_PRECISION = 7;
 const MAX_PAYER_FIELD_LENGTH = 255;
 const PAYER_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TX_HASH_PATTERN = /^[0-9a-f]{64}$/i;
@@ -126,6 +146,9 @@ export function checkInvoiceIsPayable(status: string): VerificationResult<null> 
   if (status === 'PAID') {
     return failure('INVOICE_ALREADY_PAID');
   }
+  if (status === 'EXPIRED') {
+    return failure('INVOICE_EXPIRED');
+  }
   if (status !== 'PENDING') {
     return failure('INVOICE_NOT_PENDING');
   }
@@ -189,15 +212,8 @@ function assetCodeOf(operation: HorizonOperationLike): string {
   return operation.asset_type === 'native' ? 'XLM' : operation.asset_code ?? '';
 }
 
-function amountsMatch(actual: unknown, expected: string | number): boolean {
-  const actualAmount = parseFloat(String(actual));
-  const expectedAmount = Number(expected);
-
-  if (!Number.isFinite(actualAmount) || !Number.isFinite(expectedAmount)) {
-    return false;
-  }
-
-  return actualAmount.toFixed(STROOP_PRECISION) === expectedAmount.toFixed(STROOP_PRECISION);
+export function amountsMatch(actual: unknown, expected: string | number): boolean {
+  return stroopAmountsMatch(expected, actual, 0);
 }
 
 /**
@@ -235,15 +251,25 @@ export function verifyHorizonPayment(input: VerifyPaymentInput): VerificationRes
     return failure('AMOUNT_MISMATCH');
   }
 
-  const paidAssetCode = assetCodeOf(paymentOp);
-  if (paidAssetCode !== expected.assetCode) {
+  // A Stellar asset is the pair (code, issuer), never the code alone. Anyone
+  // can issue a credit asset coded "XLM", so comparing codes would let a
+  // worthless look-alike settle a native invoice. `assetsMatch` compares
+  // identities and fails closed when either side has no issuer to pin it to.
+  const invoiceAsset = resolveInvoiceAsset({
+    assetCode: expected.assetCode,
+    assetIssuer: expected.assetIssuer,
+  });
+  const paidAsset = resolvePaymentAsset({
+    assetType: paymentOp.asset_type,
+    assetCode: paymentOp.asset_code,
+    assetIssuer: paymentOp.asset_issuer,
+  });
+
+  if (!assetsMatch(invoiceAsset, paidAsset)) {
     return failure('ASSET_MISMATCH');
   }
 
-  // Non-native assets are only identical when the issuer matches too.
-  if (expected.assetIssuer && paymentOp.asset_issuer !== expected.assetIssuer) {
-    return failure('ASSET_MISMATCH');
-  }
+  const paidAssetCode = assetCodeOf(paymentOp);
 
   return {
     ok: true,
@@ -259,8 +285,12 @@ export function verifyHorizonPayment(input: VerifyPaymentInput): VerificationRes
   };
 }
 
+export { formatAssetIdentity, resolveInvoiceAsset, resolvePaymentAsset };
+
 export default {
   VERIFICATION_MESSAGES,
+  VERIFICATION_CODES,
+  messageForCode,
   failure,
   isValidTxHash,
   checkTxHash,

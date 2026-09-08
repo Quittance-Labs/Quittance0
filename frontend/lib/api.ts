@@ -3,7 +3,8 @@ import axios from 'axios';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_CONFIG.baseUrl,
+  timeout: 12000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -12,8 +13,9 @@ const api = axios.create({
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
-    return Promise.reject(error);
+    const normalized = toApiError(error);
+    console.error('API Error:', normalized.code, normalized.message);
+    return Promise.reject(normalized);
   }
 );
 
@@ -25,7 +27,7 @@ export const invoiceApi = {
     description?: string;
     customerName?: string;
     customerEmail?: string;
-    expiresInDays?: number;
+    expiresInDays: number;
     sellerPublicKey?: string;
     sellerName?: string;
     sellerEmail?: string;
@@ -116,5 +118,6 @@ export const healthCheck = async () => {
   return response.data;
 };
 
-export default api;
+export { apiErrorMessage, isApiUnavailableError, resolveVerificationError };
 
+export default api;

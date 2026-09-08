@@ -6,6 +6,8 @@ const {
   checkTxHash,
   checkPayerInfo,
   resolveVerificationError,
+  normalizeTransactionHash,
+  messageForCode,
 } = require('../lib/verification');
 
 const TX_HASH = 'a1b2c3d4'.repeat(8); // 64 hex characters
@@ -15,6 +17,12 @@ test('accepts a well-formed transaction hash and trims it', () => {
 
   assert.equal(result.ok, true);
   assert.equal(result.value, TX_HASH);
+});
+
+test('transaction hash normalization is safe for unknown input', () => {
+  assert.equal(normalizeTransactionHash(`  ${TX_HASH}  `), TX_HASH);
+  assert.equal(normalizeTransactionHash(null), '');
+  assert.equal(normalizeTransactionHash({}), '');
 });
 
 test('rejects a missing transaction hash with the shared message', () => {
@@ -82,6 +90,7 @@ test('covers every rejection code with a message', () => {
     'INVALID_PAYER_EMAIL',
     'PAYER_INFO_TOO_LONG',
     'INVOICE_ALREADY_PAID',
+    'INVOICE_EXPIRED',
     'INVOICE_NOT_PENDING',
     'TRANSACTION_NOT_FOUND',
     'NO_PAYMENT_OPERATION',
@@ -97,4 +106,10 @@ test('covers every rejection code with a message', () => {
     assert.equal(typeof VERIFICATION_MESSAGES[code], 'string');
     assert.ok(VERIFICATION_MESSAGES[code].length > 0);
   }
+});
+
+test('messageForCode maps a known code and returns nothing for an unknown one', () => {
+  assert.equal(messageForCode('ASSET_MISMATCH'), 'Asset mismatch');
+  assert.equal(messageForCode('SOMETHING_NEW'), undefined);
+  assert.equal(messageForCode(undefined), undefined);
 });

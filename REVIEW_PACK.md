@@ -2,7 +2,7 @@
 
 Use this document when an AI cannot clone GitHub. Paste this file + the prompt at the bottom into the other chat.
 
-Repo: https://github.com/CemAyyildiz/Quittance  
+Repo: https://github.com/Quittance-Labs/Quittance0
 Stack: Next.js 14 frontend + Express/TS MVP backend + Stellar Horizon (no smart contracts in MVP).
 
 ---
@@ -27,7 +27,8 @@ Stack: Next.js 14 frontend + Express/TS MVP backend + Stellar Horizon (no smart 
 | Simulate UI removed; API gated by `ALLOW_SIMULATE` | Done |
 | Landing redesign (no Stellink watermark JPG bg) | Done |
 | Payment loading toast dismiss bug | Fixed |
-| Public deploy + EVIDENCE filled | Not done |
+| Vercel + Render deploy wiring | Done; public account deployment still operator-owned |
+| EVIDENCE capture template | Reviewer-ready; live URL/tx/video slots await operator capture |
 | Postgres / SMTP / analytics / Sentry | Not done |
 
 ## Key paths
@@ -64,7 +65,7 @@ Storage: in-memory Map; restart clears data.
 
 ## Known gaps / risks (pre-reported; verify and extend)
 
-1. No public URL yet — production/demo incomplete.
+1. Public URLs and real testnet evidence must still be captured by the deploy operator.
 2. In-memory = not production persistence.
 3. Full `server.ts` + PG still uses env `SELLER_PUBLIC_KEY` in places — do not mix with MVP demo.
 4. `GoogleLogin.tsx` / `lib/auth.ts` mock may still exist as dead code.
@@ -73,7 +74,20 @@ Storage: in-memory Map; restart clears data.
 7. Client PDF is print-to-PDF HTML, not server PDF.
 8. No Sentry/analytics/feedback loop yet (Journey Mastery gaps).
 9. Redis/Bull deps largely unused on MVP path.
-10. Backend `tsc` may still have pre-existing stellar.service typing noise.
+10. MVP Render storage is intentionally ephemeral; a cold start clears invoices.
+
+## Deploy verification steps
+
+1. Vercel root is `frontend`; run `npm ci`, `npm run deploy:check`, and `npm run build`.
+2. Render uses `backend/render.yaml`, builds TypeScript, starts
+   `dist/server-mvp.js`, and health-checks `/api/ready`.
+3. `GET /api/health` must be 200; `GET /api/ready` must be 200 with `ready: true`.
+4. The exact Vercel origin must receive CORS headers; an unknown origin must get 403.
+5. Run `DEPLOY_API_URL=https://…/api node scripts/deploy-smoke.mjs`.
+6. Temporarily stop the API and confirm landing, dashboard, pay, and detail show
+   the explicit backend retry UI; then restart and retry successfully.
+7. Complete every `REQUIRED` slot in `EVIDENCE.md` with the deployed SHA, URLs,
+   real testnet transaction, and short recording.
 
 ## Goals of review
 

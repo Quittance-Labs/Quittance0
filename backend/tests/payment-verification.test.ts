@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   VERIFICATION_MESSAGES,
+  VERIFICATION_CODES,
+  messageForCode,
+  STROOP_PRECISION,
+  amountsMatch,
   checkInvoiceIsPayable,
   checkPayerInfo,
   checkTxHash,
@@ -58,6 +62,13 @@ function codeOf(result: ReturnType<typeof verifyHorizonPayment>): string {
 }
 
 describe('verifyHorizonPayment — happy path', () => {
+  it('compares values at Stellar stroop precision', () => {
+    assert.equal(STROOP_PRECISION, 7);
+    assert.equal(amountsMatch('1.00000004', 1), true);
+    assert.equal(amountsMatch('1.00000006', 1), false);
+    assert.equal(amountsMatch('not-an-amount', 1), false);
+  });
+
   it('accepts a payment matching memo, destination, amount, and asset', () => {
     const result = verifyHorizonPayment(input());
 
@@ -196,6 +207,55 @@ describe('verifyHorizonPayment — rejections', () => {
     assert.equal(codeOf(result), 'ASSET_MISMATCH');
   });
 
+  it('refuses a credit asset coded XLM against a native invoice', () => {
+    // Anyone can issue an asset whose code is "XLM". Comparing codes alone
+    // would let a worthless look-alike settle a native invoice.
+    const result = verifyHorizonPayment(
+      input({
+        expected: expected({ assetCode: 'XLM' }),
+        operations: [
+          paymentOp({
+            asset_type: 'credit_alphanum4',
+            asset_code: 'XLM',
+            asset_issuer: OTHER_ACCOUNT,
+          }),
+        ],
+      }),
+    );
+
+    assert.equal(codeOf(result), 'ASSET_MISMATCH');
+  });
+
+  it('refuses a native payment against a credit invoice', () => {
+    const result = verifyHorizonPayment(
+      input({
+        expected: expected({ assetCode: 'USDC', assetIssuer: USDC_ISSUER }),
+        operations: [paymentOp({ asset_type: 'native' })],
+      }),
+    );
+
+    assert.equal(codeOf(result), 'ASSET_MISMATCH');
+  });
+
+  it('refuses a credit invoice that records no issuer', () => {
+    // An asset nobody pinned is not an asset anyone agreed to accept, so it is
+    // unsettleable rather than settleable by anything.
+    const result = verifyHorizonPayment(
+      input({
+        expected: expected({ assetCode: 'USDC' }),
+        operations: [
+          paymentOp({
+            asset_type: 'credit_alphanum4',
+            asset_code: 'USDC',
+            asset_issuer: USDC_ISSUER,
+          }),
+        ],
+      }),
+    );
+
+    assert.equal(codeOf(result), 'ASSET_MISMATCH');
+  });
+
   it('rejects a transaction with no payment operation', () => {
     assert.equal(
       codeOf(verifyHorizonPayment(input({ operations: [{ type: 'create_account' }] }))),
@@ -297,11 +357,14 @@ describe('checkInvoiceIsPayable', () => {
     assert.equal(paid.ok, false);
     assert.equal(paid.ok ? '' : paid.code, 'INVOICE_ALREADY_PAID');
 
-    for (const status of ['EXPIRED', 'CANCELLED']) {
-      const result = checkInvoiceIsPayable(status);
-      assert.equal(result.ok, false);
-      assert.equal(result.ok ? '' : result.code, 'INVOICE_NOT_PENDING');
-    }
+    const expired = checkInvoiceIsPayable('EXPIRED');
+    assert.equal(expired.ok, false);
+    assert.equal(expired.ok ? '' : expired.code, 'INVOICE_EXPIRED');
+    assert.equal(expired.ok ? '' : expired.error, 'Invoice has expired and can no longer accept payment');
+
+    const cancelled = checkInvoiceIsPayable('CANCELLED');
+    assert.equal(cancelled.ok, false);
+    assert.equal(cancelled.ok ? '' : cancelled.code, 'INVOICE_NOT_PENDING');
   });
 });
 
@@ -348,5 +411,14 @@ describe('shared contract', () => {
     const clientVerification = require('../../frontend/lib/verification.js');
 
     assert.deepEqual(clientVerification.VERIFICATION_MESSAGES, VERIFICATION_MESSAGES);
+  });
+
+  it('every rejection code resolves to a non-empty message', () => {
+    assert.deepEqual(Object.keys(VERIFICATION_MESSAGES), VERIFICATION_CODES);
+    for (const code of VERIFICATION_CODES) {
+      assert.equal(typeof VERIFICATION_MESSAGES[code], 'string');
+      assert.ok(VERIFICATION_MESSAGES[code].length > 0, `${code} has no message`);
+      assert.equal(messageForCode(code), VERIFICATION_MESSAGES[code]);
+    }
   });
 });

@@ -121,8 +121,21 @@ function createFakePostgres() {
       return { rows: page.map(clone), rowCount: page.length };
     }
 
+    if (sql.startsWith("UPDATE invoices SET status = 'EXPIRED'")) {
+      const now = new Date(params[0]).getTime();
+      const expired = rows.filter(
+        row => row.status === 'PENDING' && new Date(row.expires_at).getTime() <= now
+      );
+      expired.forEach(row => { row.status = 'EXPIRED'; });
+      return { rows: expired.map(row => ({ id: row.id })), rowCount: expired.length };
+    }
+
     if (sql.startsWith("UPDATE invoices SET status = 'PAID'")) {
-      const row = rows.find(candidate => candidate.id === params[0]);
+      const row = rows.find(
+        candidate => candidate.id === params[0] &&
+          candidate.status === 'PENDING' &&
+          new Date(candidate.expires_at).getTime() > Date.now()
+      );
       if (!row) {
         return { rows: [], rowCount: 0 };
       }
@@ -163,6 +176,7 @@ function createFakePostgres() {
             total_invoices: String(owned.length),
             paid_invoices: String(owned.filter(row => row.status === 'PAID').length),
             pending_invoices: String(owned.filter(row => row.status === 'PENDING').length),
+            actionable_invoices: String(owned.filter(row => row.status === 'PENDING').length),
             expired_invoices: String(owned.filter(row => row.status === 'EXPIRED').length),
             revenue_by_asset: revenue,
           },
@@ -209,6 +223,8 @@ function invoiceBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const USDC_ISSUER = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+
 /**
  * Both storage backends must expose identical request/response behaviour.
  */
@@ -237,6 +253,85 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       transaction = undefined;
     });
 
+    it('round-trips all seller, payer, asset, customer and expiry parity fields through create+get+verify+list', async () => {
+      const sellerName = 'Round-trip Studio';
+      const sellerEmail = 'studio@roundtrip.example';
+      const customerName = 'Client Co';
+      const customerEmail = 'pay@client.example';
+      const payerName = 'Percy Payer';
+      const payerEmail = 'percy@payer.example';
+
+      const created = await createInvoice({
+        amount: 88.25,
+        assetCode: 'USDC',
+        assetIssuer: USDC_ISSUER,
+        sellerName,
+        sellerEmail,
+        customerName,
+        customerEmail,
+        expiresInDays: 5,
+      });
+
+      assert.equal(created.sellerName, sellerName);
+      assert.equal(created.sellerEmail, sellerEmail);
+      assert.equal(created.customerName, customerName);
+      assert.equal(created.customerEmail, customerEmail);
+      assert.equal(created.assetCode, 'USDC');
+      assert.equal(created.assetIssuer, USDC_ISSUER);
+      assert.equal(created.status, 'PENDING');
+
+      const lifetimeHours = (new Date(created.expiresAt).getTime() - new Date(created.createdAt).getTime()) / (60 * 60 * 1000);
+      assert.ok(lifetimeHours >= 5 * 24 - 1, `5-day expiry window should be ~120h, got ${lifetimeHours}h`);
+
+      const got = await call(handlers().getInvoice, createReq({ params: { id: created.id } }));
+      assert.equal(got.statusCode, 200);
+      assert.equal(got.body.data.sellerName, sellerName);
+      assert.equal(got.body.data.assetIssuer, USDC_ISSUER);
+      assert.equal(got.body.data.customerEmail, customerEmail);
+
+      transaction = {
+        transaction: { memo: created.memo },
+        operations: [
+          {
+            type: 'payment',
+            from: PAYER,
+            to: SELLER_A,
+            amount: '88.2500000',
+            asset_type: 'credit_alphanum4',
+            asset_code: 'USDC',
+            asset_issuer: USDC_ISSUER,
+          },
+        ],
+      };
+
+      const verified = await call(
+        handlers().verifyPayment,
+        createReq({
+          params: { id: created.id },
+          body: { txHash: TX_HASH, payerName, payerEmail },
+        })
+      );
+
+      assert.equal(verified.statusCode, 200);
+      assert.equal(verified.body.data.payerName, payerName);
+      assert.equal(verified.body.data.payerEmail, payerEmail);
+      assert.equal(verified.body.data.payerPublicKey, PAYER);
+      assert.equal(verified.body.data.paymentTxHash, TX_HASH);
+      assert.ok(verified.body.data.paidAt, 'paidAt must be set after verify');
+      assert.equal(verified.body.data.status, 'PAID');
+
+      const listed = await call(
+        handlers().getInvoices,
+        createReq({ query: { sellerPublicKey: SELLER_A, status: 'PAID' } })
+      );
+      assert.equal(listed.statusCode, 200);
+      assert.equal(listed.body.data.length >= 1, true);
+      const paidListed = listed.body.data.find((inv: any) => inv.id === created.id);
+      assert.equal(paidListed?.payerName, payerName);
+      assert.equal(paidListed?.assetIssuer, USDC_ISSUER);
+      assert.equal(paidListed?.sellerEmail, sellerEmail);
+    });
+
     it('creates an invoice scoped to the seller wallet', async () => {
       const res = await call(handlers().createInvoice, createReq({ body: invoiceBody() }));
 
@@ -253,6 +348,56 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       );
       assert.match(res.body.data.qrCode, /^data:image\/png;base64,/);
       assert.match(res.body.data.stellarQrCode, /^data:image\/png;base64,/);
+      assert.equal(res.body.data.statusPollingIntervalMs, 3000);
+      assert.equal(res.body.data.paymentAvailable, true);
+    });
+
+    it('accepts seller-selected expiry only within the 1-30 day contract', async () => {
+      const invoice = await createInvoice({ expiresInDays: 30 });
+      const lifetime = new Date(invoice.expiresAt).getTime() - new Date(invoice.createdAt).getTime();
+      assert.ok(lifetime > 29 * 24 * 60 * 60 * 1000);
+
+      for (const expiresInDays of [0, 31, 1.5]) {
+        const res = await call(
+          handlers().createInvoice,
+          createReq({ body: invoiceBody({ expiresInDays }) })
+        );
+        assert.equal(res.statusCode, 400);
+      }
+    });
+
+    it('expires lazily and closes payment, verification, and actionable stats', async () => {
+      const invoice = await createInvoice({ expiresInDays: 1 });
+      await storage.markExpiredInvoices(new Date(new Date(invoice.expiresAt).getTime() + 1));
+
+      const read = await call(
+        handlers().getInvoice,
+        createReq({ params: { id: invoice.id } })
+      );
+      assert.equal(read.body.data.status, 'EXPIRED');
+
+      const paymentInfo = await call(
+        handlers().getPaymentInfo,
+        createReq({ params: { id: invoice.id } })
+      );
+      assert.equal(paymentInfo.body.data.paymentAvailable, false);
+      assert.equal(paymentInfo.body.data.qrCode, null);
+      assert.equal(paymentInfo.body.data.stellarQrCode, null);
+
+      const verify = await call(
+        handlers().verifyPayment,
+        createReq({ params: { id: invoice.id }, body: { txHash: TX_HASH } })
+      );
+      assert.equal(verify.statusCode, 400);
+      assert.equal(verify.body.code, 'INVOICE_EXPIRED');
+
+      const stats = await call(
+        handlers().getStats,
+        createReq({ query: { sellerPublicKey: SELLER_A } })
+      );
+      assert.equal(stats.body.data[0].pending_invoices, 0);
+      assert.equal(stats.body.data[0].actionable_invoices, 0);
+      assert.equal(stats.body.data[0].expired_invoices, 1);
     });
 
     it('rejects an invoice with an invalid seller wallet', async () => {
@@ -304,6 +449,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       );
 
       assert.equal(res.statusCode, 400);
+      assert.equal(res.body.code, 'MISSING_TX_HASH');
       assert.equal(res.body.error, 'Transaction hash is required');
     });
 
@@ -321,6 +467,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       );
 
       assert.equal(res.statusCode, 400);
+      assert.equal(res.body.code, 'MEMO_MISMATCH');
       assert.equal(res.body.error, 'Memo mismatch');
     });
 
@@ -338,6 +485,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       );
 
       assert.equal(res.statusCode, 400);
+      assert.equal(res.body.code, 'DESTINATION_MISMATCH');
       assert.equal(res.body.error, 'Payment destination mismatch');
     });
 
@@ -355,6 +503,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       );
 
       assert.equal(res.statusCode, 400);
+      assert.equal(res.body.code, 'AMOUNT_MISMATCH');
       assert.equal(res.body.error, 'Amount mismatch');
     });
 
@@ -371,6 +520,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       const res = await call(handlers().verifyPayment, req);
 
       assert.equal(res.statusCode, 400);
+      assert.equal(res.body.code, 'INVOICE_ALREADY_PAID');
       assert.equal(res.body.error, 'Invoice has already been paid');
     });
 
@@ -447,6 +597,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
         total_invoices: 1,
         paid_invoices: 1,
         pending_invoices: 0,
+        actionable_invoices: 0,
         expired_invoices: 0,
         revenue_by_asset: { XLM: 42.5 },
       });

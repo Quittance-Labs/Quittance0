@@ -5,6 +5,7 @@ export type VerificationCode =
   | 'INVALID_PAYER_EMAIL'
   | 'PAYER_INFO_TOO_LONG'
   | 'INVOICE_ALREADY_PAID'
+  | 'INVOICE_EXPIRED'
   | 'INVOICE_NOT_PENDING'
   | 'TRANSACTION_NOT_FOUND'
   | 'NO_PAYMENT_OPERATION'
@@ -33,6 +34,8 @@ export interface PayerInfo {
 }
 
 export const VERIFICATION_MESSAGES: Record<VerificationCode, string>;
+
+export function messageForCode(code: unknown): string | undefined;
 
 export function failure(code: VerificationCode): VerificationFailure;
 
