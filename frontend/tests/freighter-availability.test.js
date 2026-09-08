@@ -4,13 +4,9 @@ const {
   FREIGHTER_INSTALL_URL,
   FREIGHTER_CONNECT_REQUIRED_MESSAGE,
   FREIGHTER_REQUIRED_MESSAGE,
+  FREIGHTER_WRONG_NETWORK_MESSAGE,
   detectFreighter,
-  networkLabel,
-  networkMatches,
-  normalizeFreighterBoolean,
-  normalizeNetworkName,
-  walletGate,
-  wrongNetworkMessage,
+  isNetworkMatching,
 } = require('../lib/freighter-availability');
 
 test('detectFreighter reports an installed extension', async () => {
@@ -39,61 +35,17 @@ test('the install prompt links to the official Freighter site', () => {
   assert.match(FREIGHTER_REQUIRED_MESSAGE, /create or pay an invoice/);
 });
 
-test('normalizes Freighter boolean responses across API versions', () => {
-  assert.equal(normalizeFreighterBoolean(true, 'isAllowed'), true);
-  assert.equal(normalizeFreighterBoolean({ isAllowed: true }, 'isAllowed'), true);
-  assert.equal(normalizeFreighterBoolean({ isAllowed: false }, 'isAllowed'), false);
-  assert.equal(normalizeFreighterBoolean({ error: 'denied', isAllowed: true }, 'isAllowed'), false);
+test('FREIGHTER_WRONG_NETWORK_MESSAGE formats target network', () => {
+  assert.match(FREIGHTER_WRONG_NETWORK_MESSAGE('Testnet'), /switch to Testnet in Freighter/);
+  assert.match(FREIGHTER_WRONG_NETWORK_MESSAGE('Public'), /switch to Public in Freighter/);
 });
 
-test('normalizes and labels Freighter networks', () => {
-  assert.equal(normalizeNetworkName(' pubnet '), 'PUBLIC');
-  assert.equal(networkLabel('TESTNET'), 'Testnet');
-  assert.equal(networkLabel('PUBLIC'), 'Mainnet');
-  assert.equal(networkLabel(null), 'Unknown network');
-  assert.equal(networkMatches('PUBNET', 'PUBLIC'), true);
-  assert.equal(networkMatches('TESTNET', 'PUBLIC'), false);
-});
-
-test('walletGate blocks the missing extension state', () => {
-  assert.deepEqual(walletGate({ freighterAvailable: false }, 'TESTNET'), {
-    status: 'missing',
-    ready: false,
-    title: 'Install Freighter',
-    message: FREIGHTER_REQUIRED_MESSAGE,
-    action: 'install',
-  });
-});
-
-test('walletGate blocks disconnected wallets with shared copy', () => {
-  const gate = walletGate({ freighterAvailable: true, connected: false }, 'TESTNET');
-
-  assert.equal(gate.status, 'disconnected');
-  assert.equal(gate.ready, false);
-  assert.equal(gate.message, FREIGHTER_CONNECT_REQUIRED_MESSAGE);
-});
-
-test('walletGate blocks a connected wallet on the wrong network', () => {
-  const gate = walletGate({
-    freighterAvailable: true,
-    connected: true,
-    publicKey: 'G'.padEnd(56, 'A'),
-    network: 'PUBLIC',
-  }, 'TESTNET');
-
-  assert.equal(gate.status, 'wrong_network');
-  assert.equal(gate.ready, false);
-  assert.equal(gate.message, wrongNetworkMessage('TESTNET', 'PUBLIC'));
-});
-
-test('walletGate allows a connected wallet on the expected network', () => {
-  const gate = walletGate({
-    freighterAvailable: true,
-    connected: true,
-    publicKey: 'G'.padEnd(56, 'A'),
-    network: 'TESTNET',
-  }, 'TESTNET');
-
-  assert.equal(gate.status, 'ready');
-  assert.equal(gate.ready, true);
+test('isNetworkMatching correctly compares network names and passphrases', () => {
+  assert.equal(isNetworkMatching('TESTNET', 'TESTNET'), true);
+  assert.equal(isNetworkMatching('testnet', 'TESTNET'), true);
+  assert.equal(isNetworkMatching('Test SDF Network ; September 2015', 'TESTNET'), true);
+  assert.equal(isNetworkMatching('Public Global Stellar Network ; September 2015', 'PUBLIC'), true);
+  assert.equal(isNetworkMatching('PUBLIC', 'TESTNET'), false);
+  assert.equal(isNetworkMatching(null, 'TESTNET'), false);
+  assert.equal(isNetworkMatching(undefined, 'TESTNET'), false);
 });

@@ -4,4 +4,3 @@ const dashboardEmptyCopyFixture = [
 ];
 
 module.exports = { dashboardEmptyCopyFixture };
-

@@ -5,7 +5,7 @@ import { Toaster } from 'sonner';
 import { MAIN_CONTENT_ID } from '@/lib/a11y';
 import './globals.css';
 import ApiStatusBanner from '@/components/ApiStatusBanner';
-import WalletSessionSync from '@/components/WalletSessionSync';
+import FreighterNetworkListener from '@/components/FreighterNetworkListener';
 
 const instrumentSerif = Instrument_Serif({
   weight: '400',
@@ -45,6 +45,7 @@ export default function RootLayout({
         <Toaster position="top-right" richColors closeButton />
         <WalletSessionSync />
         <ApiStatusBanner />
+        <FreighterNetworkListener />
         {children}
       </body>
     </html>
