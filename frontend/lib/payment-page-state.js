@@ -34,6 +34,7 @@ const PAY_STATES = Object.freeze({
 });
 
 const TERMINAL_STATES = Object.freeze([PAY_STATES.PAID, PAY_STATES.EXPIRED]);
+const { isTerminalPayState } = require('./pay-terminal-guard.ts');
 const { effectiveInvoiceStatus, hasInvoiceExpired } = require('./invoice-lifecycle');
 const { messageForCode } = require('./verification');
 
@@ -115,11 +116,11 @@ function paymentReducer(state, event) {
     }
 
     case 'PAY_STARTED':
-      if (TERMINAL_STATES.includes(state.status)) return state;
+      if (isTerminalPayState(state.status)) return state;
       return { ...state, status: PAY_STATES.PAYING, error: null };
 
     case 'PAY_SENT':
-      if (TERMINAL_STATES.includes(state.status)) return state;
+      if (isTerminalPayState(state.status)) return state;
       return {
         ...state,
         status: PAY_STATES.VERIFYING,
@@ -128,11 +129,11 @@ function paymentReducer(state, event) {
       };
 
     case 'PAY_FAILED':
-      if (TERMINAL_STATES.includes(state.status)) return state;
+      if (isTerminalPayState(state.status)) return state;
       return { ...state, status: PAY_STATES.ERROR, error: event.error ?? 'Payment failed' };
 
     case 'VERIFY_STARTED':
-      if (TERMINAL_STATES.includes(state.status)) return state;
+      if (isTerminalPayState(state.status)) return state;
       return { ...state, status: PAY_STATES.VERIFYING, error: null };
 
     case 'VERIFY_SUCCEEDED':
@@ -144,11 +145,11 @@ function paymentReducer(state, event) {
       };
 
     case 'VERIFY_FAILED':
-      if (TERMINAL_STATES.includes(state.status)) return state;
+      if (isTerminalPayState(state.status)) return state;
       return { ...state, status: PAY_STATES.ERROR, error: event.error ?? 'Verification failed' };
 
     case 'RESET':
-      if (TERMINAL_STATES.includes(state.status)) return state;
+      if (isTerminalPayState(state.status)) return state;
       return { ...state, status: PAY_STATES.IDLE, error: null };
 
     default:
@@ -164,7 +165,7 @@ function paymentReducer(state, event) {
  */
 function shouldPoll(state) {
   if (!state?.invoice) return false;
-  if (TERMINAL_STATES.includes(state.status)) return false;
+  if (isTerminalPayState(state.status)) return false;
   return effectiveInvoiceStatus(state.invoice) === 'PENDING';
 }
 
@@ -295,6 +296,7 @@ function describePaymentState(state) {
 module.exports = {
   PAY_STATES,
   TERMINAL_STATES,
+  isTerminalPayState,
   isExpiredInvoice,
   shouldShowPaymentControls,
   getPayPageView,
