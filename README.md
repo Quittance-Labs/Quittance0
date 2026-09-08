@@ -39,6 +39,22 @@ Identity is the **wallet**. Email is an **optional delivery channel**, not a log
 
 ---
 
+## Wallet session contract
+
+Freighter is the only wallet gate for create and pay. The frontend stores one
+session snapshot in `frontend/lib/store.ts`: extension availability, public key,
+active Freighter network, network passphrase, balance, and connection state.
+`WalletSessionSync` refreshes that snapshot on every route and watches Freighter
+for account or network changes without reloading the page.
+
+Landing, dashboard, create, pay, and invoice-detail all use the same gate matrix:
+install Freighter when the extension is missing, connect Freighter when no public
+key is available, switch networks when Freighter is not on
+`NEXT_PUBLIC_STELLAR_NETWORK`, and continue only when the wallet is connected on
+the expected network.
+
+---
+
 ## Payment verification contract
 
 An invoice becomes `PAID` only when **all four checks pass** against Horizon:

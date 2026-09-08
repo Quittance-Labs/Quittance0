@@ -5,6 +5,7 @@ import { Toaster } from 'sonner';
 import { MAIN_CONTENT_ID } from '@/lib/a11y';
 import './globals.css';
 import ApiStatusBanner from '@/components/ApiStatusBanner';
+import WalletSessionSync from '@/components/WalletSessionSync';
 
 const instrumentSerif = Instrument_Serif({
   weight: '400',
@@ -42,6 +43,7 @@ export default function RootLayout({
           region keeps it distinguishable from the pages' own status regions.
         */}
         <Toaster position="top-right" richColors closeButton />
+        <WalletSessionSync />
         <ApiStatusBanner />
         {children}
       </body>

@@ -8,6 +8,10 @@ import { STELLAR_ASSETS, getAssetByCode } from '@/lib/assets';
 import { parseAmountInput } from '@/lib/parse-amount-input';
 import AssetLogo from './AssetLogo';
 import ApiErrorState from './ApiErrorState';
+import { useWalletStore } from '@/lib/store';
+import { walletGate } from '@/lib/freighter-availability';
+import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
+import { showFreighterInstallPrompt } from './FreighterInstallPrompt';
 
 interface InvoiceFormProps {
   onSuccess?: (invoice: any) => void;
@@ -15,6 +19,7 @@ interface InvoiceFormProps {
 }
 
 export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps) {
+  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState('');
   const [assetCode, setAssetCode] = useState('XLM');
@@ -29,8 +34,13 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!userWallet) {
-      toast.error('Connect your wallet first');
+    const sellerWallet = userWallet || publicKey || undefined;
+    const gate = walletGate(
+      { freighterAvailable, connected, publicKey: sellerWallet, network },
+      EXPECTED_WALLET_NETWORK
+    );
+    if (!gate.ready) {
+      showFreighterInstallPrompt(gate);
       return;
     }
 
@@ -59,7 +69,8 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
         assetCode: assetCode,
         assetIssuer: selectedAsset?.issuer,
         expiresInDays,
-        sellerPublicKey: userWallet,
+        sellerPublicKey: sellerWallet,
+        network: EXPECTED_WALLET_NETWORK,
         sellerName: sellerName.trim() || undefined,
         sellerEmail: sellerEmail.trim() || undefined,
         description: description || undefined,

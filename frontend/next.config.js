@@ -1,4 +1,9 @@
 /** @type {import('next').NextConfig} */
+const stellarNetwork = (process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET').toUpperCase();
+if (!['TESTNET', 'PUBLIC'].includes(stellarNetwork)) {
+  throw new Error('NEXT_PUBLIC_STELLAR_NETWORK must be TESTNET or PUBLIC');
+}
+
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,

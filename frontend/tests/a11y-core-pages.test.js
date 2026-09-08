@@ -59,6 +59,28 @@ const ALL_STATUSES = ['PENDING', 'PAID', 'EXPIRED', 'CANCELLED'];
 
 const SELLER = 'GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ';
 
+function setConnectedWallet() {
+  bundle.useWalletStore.setState({
+    publicKey: SELLER,
+    balance: '100.00',
+    connected: true,
+    network: 'TESTNET',
+    networkPassphrase: 'Test SDF Network ; September 2015',
+    freighterAvailable: true,
+  });
+}
+
+function setDisconnectedWallet() {
+  bundle.useWalletStore.setState({
+    publicKey: null,
+    balance: '0.00',
+    connected: false,
+    network: null,
+    networkPassphrase: null,
+    freighterAvailable: true,
+  });
+}
+
 /** A representative invoice; `overrides` selects the state under audit. */
 function invoiceFixture(overrides = {}) {
   return {
@@ -117,7 +139,7 @@ function assertNoViolations(violations, label) {
 
 test('the landing page, including the invoice form, is axe-clean', async () => {
   primeApi(invoiceFixture());
-  bundle.useWalletStore.setState({ publicKey: SELLER, balance: '100.00', connected: true });
+  setConnectedWallet();
 
   const violations = await auditElement(React.createElement(bundle.HomePage));
   assertNoViolations(violations, 'landing page (wallet connected)');
@@ -125,7 +147,7 @@ test('the landing page, including the invoice form, is axe-clean', async () => {
 
 test('the landing page is axe-clean before a wallet is connected', async () => {
   primeApi(invoiceFixture());
-  bundle.useWalletStore.setState({ publicKey: null, balance: '0.00', connected: false });
+  setDisconnectedWallet();
 
   const violations = await auditElement(React.createElement(bundle.HomePage));
   assertNoViolations(violations, 'landing page (disconnected)');
@@ -136,7 +158,7 @@ test('the dashboard is axe-clean with invoices in every status', async () => {
     invoiceFixture({ id: `inv_${index}`, status })
   );
   primeApi(invoiceFixture(), invoices);
-  bundle.useWalletStore.setState({ publicKey: SELLER, balance: '100.00', connected: true });
+  setConnectedWallet();
 
   const violations = await auditElement(React.createElement(bundle.DashboardPage));
   assertNoViolations(violations, 'dashboard');
@@ -144,14 +166,14 @@ test('the dashboard is axe-clean with invoices in every status', async () => {
 
 test('the dashboard is axe-clean in its disconnected state', async () => {
   primeApi(invoiceFixture(), []);
-  bundle.useWalletStore.setState({ publicKey: null, balance: '0.00', connected: false });
+  setDisconnectedWallet();
 
   const violations = await auditElement(React.createElement(bundle.DashboardPage));
   assertNoViolations(violations, 'dashboard (disconnected)');
 });
 
 test('the pay page is axe-clean in every invoice status', async () => {
-  bundle.useWalletStore.setState({ publicKey: null, balance: '0.00', connected: false });
+  setDisconnectedWallet();
 
   for (const status of ALL_STATUSES) {
     const invoice = invoiceFixture({
@@ -168,7 +190,7 @@ test('the pay page is axe-clean in every invoice status', async () => {
 });
 
 test('the invoice detail page is axe-clean in every invoice status', async () => {
-  bundle.useWalletStore.setState({ publicKey: null, balance: '0.00', connected: false });
+  setDisconnectedWallet();
 
   for (const status of ALL_STATUSES) {
     const invoice = invoiceFixture({ status });
@@ -323,6 +345,7 @@ test('the QR code carries a text alternative naming what it encodes', async () =
 });
 
 test('the pay button names the amount it is about to send', async () => {
+  setConnectedWallet();
   const { container, unmount } = await render(
     React.createElement(bundle.PaymentButton, {
       destination: SELLER,
@@ -488,7 +511,7 @@ test('the result panel is a focus target but not a tab stop', async () => {
 
 test('the landing page has no result panel until an invoice is created', async () => {
   primeApi(invoiceFixture());
-  bundle.useWalletStore.setState({ publicKey: SELLER, balance: '100.00', connected: true });
+  setConnectedWallet();
 
   const { container, unmount } = await render(React.createElement(bundle.HomePage));
 
@@ -506,7 +529,7 @@ test('the landing page has no result panel until an invoice is created', async (
 });
 
 test('every core route exposes the main landmark the skip link targets', async () => {
-  bundle.useWalletStore.setState({ publicKey: SELLER, balance: '100.00', connected: true });
+  setConnectedWallet();
 
   const routes = [
     ['landing', bundle.HomePage],
@@ -546,7 +569,7 @@ test('the dashboard announces its result count in a live region', async () => {
     invoiceFixture({ id: `inv_${index}`, status })
   );
   primeApi(invoiceFixture(), invoices);
-  bundle.useWalletStore.setState({ publicKey: SELLER, balance: '100.00', connected: true });
+  setConnectedWallet();
 
   const { container, unmount } = await render(React.createElement(bundle.DashboardPage));
 
@@ -562,7 +585,7 @@ test('the dashboard announces its result count in a live region', async () => {
 
 test('the pay page renders the async result region', async () => {
   primeApi(invoiceFixture({ status: 'PAID' }));
-  bundle.useWalletStore.setState({ publicKey: null, balance: '0.00', connected: false });
+  setDisconnectedWallet();
 
   const { container, unmount } = await render(React.createElement(bundle.PayPage));
 
