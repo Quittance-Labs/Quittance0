@@ -152,3 +152,24 @@ test('status lookup is case insensitive, as the dashboard filter needs', () => {
     assert.deepEqual(statusText(status.toLowerCase()), statusText(status));
   }
 });
+
+test('a rejected verify keeps the canonical message across every status', () => {
+  // describeVerifyError is the pay page's error-mapping helper. Its result must
+  // not depend on the invoice status — a rejected hash always resolves through
+  // the same canonical code table, never a status-specific string. The expiry
+  // status description is aligned to that table too, so the two never read two
+  // different sentences for the same state.
+  const { describeVerifyError } = require('../lib/payment-page-state');
+
+  const error = {
+    response: { data: { code: 'MEMO_MISMATCH', error: 'Memo mismatch' } },
+  };
+
+  for (const status of ALL_STATUSES) {
+    assert.equal(
+      describeVerifyError(error, 'Verification failed'),
+      'Memo mismatch',
+      `${status} changed the verification message`
+    );
+  }
+});
