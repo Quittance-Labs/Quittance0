@@ -43,6 +43,7 @@ export default function RootLayout({
           region keeps it distinguishable from the pages' own status regions.
         */}
         <Toaster position="top-right" richColors closeButton />
+        <WalletSessionSync />
         <ApiStatusBanner />
         <FreighterNetworkListener />
         {children}

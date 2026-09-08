@@ -14,6 +14,8 @@ import { Wallet, Loader2 } from 'lucide-react';
 import { invoiceApi } from '@/lib/api';
 import { showFreighterInstallPrompt, showFreighterWrongNetworkPrompt } from '@/components/FreighterInstallPrompt';
 import { describeVerifyError, normalizePayerDetails } from '@/lib/payment-page-state';
+import { useWalletStore } from '@/lib/store';
+import { walletGate } from '@/lib/freighter-availability';
 
 interface PaymentButtonProps {
   destination: string;
@@ -49,8 +51,19 @@ export default function PaymentButton({
   onError,
 }: PaymentButtonProps) {
   const [loading, setLoading] = useState(false);
+  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
+  const gate = walletGate(
+    { freighterAvailable, connected, publicKey, network },
+    EXPECTED_WALLET_NETWORK
+  );
 
   const handlePayment = async () => {
+    if (!gate.ready) {
+      showFreighterInstallPrompt(gate);
+      onError?.(gate.message);
+      return;
+    }
+
     if (invoiceStatus !== 'PENDING') {
       const message = invoiceStatus === 'EXPIRED'
         ? 'This invoice has expired and cannot be paid'
@@ -115,7 +128,10 @@ export default function PaymentButton({
           // Surface the shared rejection message rather than a generic warning.
           toast.warning('Payment sent but verification failed', {
             id: PAY_TOAST_ID,
-            description: describeVerifyError(error, 'Refresh the page or wait for status to update'),
+            description: resolveVerificationError(
+              error,
+              'Refresh the page or wait for status to update'
+            ),
           });
         }
       } else {
@@ -156,12 +172,15 @@ export default function PaymentButton({
       type="button"
       onClick={handlePayment}
       disabled={loading || !destination || !amount || invoiceStatus !== 'PENDING'}
+      aria-disabled={!gate.ready}
       aria-busy={loading}
-      data-payment-state={loading ? 'processing' : 'ready'}
+      data-payment-state={loading ? 'processing' : gate.status}
       aria-label={
         loading
           ? `Processing payment of ${amount} ${assetCode}`
-          : `Pay ${amount} ${assetCode} with Freighter`
+          : gate.ready
+            ? `Pay ${amount} ${assetCode} with Freighter`
+            : gate.message
       }
       className="btn btn-primary w-full flex items-center justify-center gap-2 text-lg py-4"
     >

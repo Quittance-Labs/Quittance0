@@ -4,10 +4,15 @@ import { formatAmount, formatDate } from '@/lib/utils';
 import { describeAmount } from '@/lib/a11y';
 import { Check, Download, ExternalLink, FileText, Mail } from 'lucide-react';
 import AssetLogo from './AssetLogo';
-import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
+import { openInvoicePDF, emailPaymentProof } from '@/lib/export';
+import { canSendProofEmail, getProofMailtoRecipient } from '@/lib/mailto-delivery';
 import { toast } from 'sonner';
 import type { PayPageInvoice } from './pay-page.types';
+import { buildHorizonTxUrl } from '@/lib/explorer-tx-link';
 import { getExplorerTransactionUrl } from '@/lib/stellar';
+// The receipt renders a settled (paid / expired / cancelled) record. It shares
+// the same status vocabulary as PaymentStatus and the verification rejection
+// table, so the proof view and the pay page never disagree on wording.
 
 interface PaymentReceiptProps {
   invoice: PayPageInvoice;
@@ -20,11 +25,12 @@ export default function PaymentReceipt({ invoice }: PaymentReceiptProps) {
   };
 
   const handleEmailProof = () => {
-    if (!invoice.customerEmail) {
-      toast.error('No client email on this invoice');
-      return;
+    try {
+      emailPaymentProof(invoice as any);
+      toast.success('Opening email client');
+    } catch (err: any) {
+      toast.error(err?.message || 'No recipient email on this invoice');
     }
-    shareInvoiceByEmail(invoice as any);
   };
 
   const handleDownload = () => {
@@ -79,7 +85,8 @@ Stellar Blockchain Payment System
   };
 
   const amountLabel = describeAmount(formatAmount(invoice.amount, 7), invoice.assetCode);
-  const canEmail = Boolean(invoice.customerEmail);
+  const canEmail = canSendProofEmail(invoice as any);
+  const proofRecipient = getProofMailtoRecipient(invoice as any);
   const emailReasonId = 'receipt-email-reason';
 
   return (
@@ -235,6 +242,7 @@ Stellar Blockchain Payment System
           onClick={canEmail ? handleEmailProof : undefined}
           aria-disabled={!canEmail}
           aria-describedby={canEmail ? undefined : emailReasonId}
+          aria-label={canEmail && proofRecipient ? `Email payment proof to ${proofRecipient}` : 'Email Proof'}
           className="btn btn-secondary w-full flex items-center justify-center gap-2"
         >
           <Mail className="w-5 h-5" aria-hidden="true" />
@@ -247,7 +255,10 @@ Stellar Blockchain Payment System
         )}
 
         <a
-          href={getExplorerTransactionUrl(invoice.paymentTxHash || '')}
+          href={
+            buildHorizonTxUrl(invoice.paymentTxHash, 'public') ??
+            getExplorerTransactionUrl(invoice.paymentTxHash || '')
+          }
           target="_blank"
           rel="noopener noreferrer"
           className="btn btn-outline w-full flex items-center justify-center gap-2"

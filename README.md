@@ -39,6 +39,22 @@ Identity is the **wallet**. Email is an **optional delivery channel**, not a log
 
 ---
 
+## Wallet session contract
+
+Freighter is the only wallet gate for create and pay. The frontend stores one
+session snapshot in `frontend/lib/store.ts`: extension availability, public key,
+active Freighter network, network passphrase, balance, and connection state.
+`WalletSessionSync` refreshes that snapshot on every route and watches Freighter
+for account or network changes without reloading the page.
+
+Landing, dashboard, create, pay, and invoice-detail all use the same gate matrix:
+install Freighter when the extension is missing, connect Freighter when no public
+key is available, switch networks when Freighter is not on
+`NEXT_PUBLIC_STELLAR_NETWORK`, and continue only when the wallet is connected on
+the expected network.
+
+---
+
 ## Payment verification contract
 
 An invoice becomes `PAID` only when **all four checks pass** against Horizon:
@@ -87,6 +103,15 @@ Rejections return a stable `code` alongside the human-readable `error`:
 The client mirror lets the pay page reject malformed input before a round trip
 and show the exact message the server would return. A test asserts the two
 tables stay identical — if you add a code, add it in **both** files.
+
+Those codes are also how the app keeps every page on one copy of the wording.
+`frontend/lib/verification.js` exposes `messageForCode(code)`; the API layer
+(`api-runtime.js` / `apiErrorMessage`) and the pay page (`describeVerifyError`)
+resolve a stable `code` to that message before falling back to server text, so
+the pay page, invoice detail, dashboard, and monitoring banners all read
+identically for the same rejection. `VERIFICATION_CODES` and `messageForCode`
+are exported from `backend/src/services/payment-verification.ts` as well, so a
+test pins the two layers together.
 
 Amounts compare at Stellar's 7-decimal (stroop) precision, so `100` and
 `100.0000000` match while a partial payment does not.
@@ -293,7 +318,6 @@ parity between memory and Postgres stays pinned by the same assertions.
 | `NEXT_PUBLIC_STELLAR_NETWORK` | `TESTNET` |
 | `NEXT_PUBLIC_HORIZON_URL` | `https://horizon-testnet.stellar.org` |
 | `NEXT_PUBLIC_APP_URL` | `https://YOUR-APP.vercel.app` |
-| `NEXT_PUBLIC_USE_MOCK` | `false` |
 
 4. Run `npm run deploy:check` locally with the same variables before deploying.
 5. Deploy. A missing/invalid production API URL fails closed in the UI with an

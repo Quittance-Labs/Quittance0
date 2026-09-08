@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   FREIGHTER_INSTALL_URL,
+  FREIGHTER_CONNECT_REQUIRED_MESSAGE,
   FREIGHTER_REQUIRED_MESSAGE,
   FREIGHTER_WRONG_NETWORK_MESSAGE,
   detectFreighter,
@@ -10,10 +11,13 @@ const {
 
 test('detectFreighter reports an installed extension', async () => {
   assert.equal(await detectFreighter(async () => true), true);
+  assert.equal(await detectFreighter(async () => ({ isConnected: true })), true);
 });
 
 test('detectFreighter reports a missing extension', async () => {
   assert.equal(await detectFreighter(async () => false), false);
+  assert.equal(await detectFreighter(async () => ({ isConnected: false })), false);
+  assert.equal(await detectFreighter(async () => ({ error: 'not found' })), false);
 });
 
 test('detectFreighter treats extension API failures as missing', async () => {

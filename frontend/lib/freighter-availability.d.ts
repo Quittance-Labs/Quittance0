@@ -3,7 +3,7 @@ export const FREIGHTER_REQUIRED_MESSAGE: string;
 export function FREIGHTER_WRONG_NETWORK_MESSAGE(targetNetwork?: string): string;
 
 export function detectFreighter(
-  checkConnection: () => Promise<boolean>
+  checkConnection: () => Promise<boolean | { isConnected?: boolean; error?: unknown }>
 ): Promise<boolean>;
 
 export function isNetworkMatching(

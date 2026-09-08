@@ -2,8 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { 
-  checkWalletConnection, 
-  requestWalletAccess, 
+  EXPECTED_WALLET_NETWORK,
+  checkWalletConnection,
+  getExplorerAccountUrl,
+  getFreighterNetwork,
+  requestWalletAccess,
   getUserPublicKey,
   getAccountBalance,
   describeStellarNetworkError,
@@ -82,7 +85,10 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
 
       const allowed = await requestWalletAccess();
       if (allowed) {
-        const key = await getUserPublicKey();
+        const [key, walletNetwork] = await Promise.all([
+          getUserPublicKey(),
+          getFreighterNetwork(),
+        ]);
         if (key) {
           const netDetails = await getFreighterNetwork();
           const netName = netDetails?.network || null;
@@ -123,7 +129,7 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
   };
 
   const toggleMonitoring = () => {
-    if (!publicKey) return;
+    if (!publicKey || !gate.ready) return;
 
     if (monitoringActive) {
       paymentMonitor.stopMonitoring(publicKey);
@@ -177,6 +183,14 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
             <span className="sr-only">Balance: </span>
             {balance} XLM
           </span>
+          <span className="text-xs text-gray-500">
+            {networkLabel(network)}
+          </span>
+          {!gate.ready && (
+            <span className="text-xs font-medium text-amber-700">
+              Switch network
+            </span>
+          )}
         </div>
 
         {/* Address */}
@@ -207,6 +221,7 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
           // A toggle, so its state belongs in aria-pressed rather than in a
           // label that changes out from under the user.
           aria-pressed={monitoringActive}
+          aria-disabled={!gate.ready}
           aria-label="Monitor this wallet for incoming payments"
           className={`p-2 rounded-lg transition-colors ${
             monitoringActive
@@ -240,7 +255,7 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
       aria-busy={loading}
       // The text label is hidden below `sm`, so the name comes from aria-label
       // and does not vanish on a phone.
-      aria-label={loading ? 'Connecting to Freighter wallet' : 'Connect Freighter wallet'}
+      aria-label={loading ? 'Connecting to Freighter wallet' : gate.message}
       className="btn btn-primary flex items-center gap-2"
     >
       {loading ? (

@@ -3,7 +3,7 @@
 import { QRCodeSVG } from 'qrcode.react';
 import { Copy, Check } from 'lucide-react';
 import { useState } from 'react';
-import { copyToClipboard } from '@/lib/utils';
+import { copyWithFeedback } from '@/lib/clipboard-feedback';
 import { toast } from 'sonner';
 
 interface QRCodeDisplayProps {
@@ -28,7 +28,7 @@ export default function QRCodeDisplay({
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
-    const success = await copyToClipboard(value);
+    const success = await copyWithFeedback(value);
     if (success) {
       setCopied(true);
       toast.success('Copied to clipboard!');

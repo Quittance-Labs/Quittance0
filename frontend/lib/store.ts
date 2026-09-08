@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { walletStorageKey } from './wallet-storage-key';
 
 export interface WalletState {
   publicKey: string | null;
@@ -19,6 +20,8 @@ export interface WalletState {
   setIsWrongNetwork: (isWrong: boolean) => void;
   disconnect: () => void;
 }
+
+const EXPECTED_NETWORK = (process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET').toUpperCase();
 
 export const useWalletStore = create<WalletState>()(
   persist(
@@ -63,4 +66,3 @@ export const useWalletStore = create<WalletState>()(
     }
   )
 );
-
