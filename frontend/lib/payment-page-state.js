@@ -35,6 +35,7 @@ const PAY_STATES = Object.freeze({
 
 const TERMINAL_STATES = Object.freeze([PAY_STATES.PAID, PAY_STATES.EXPIRED]);
 const { effectiveInvoiceStatus, hasInvoiceExpired } = require('./invoice-lifecycle');
+const { messageForCode } = require('./verification');
 
 const asInvoice = (statusOrInvoice) =>
   statusOrInvoice && typeof statusOrInvoice === 'object'
@@ -198,11 +199,19 @@ function normalizePayerDetails(details) {
  * Turns a failed verification into something worth showing a payer.
  *
  * The backend's own message is the most specific thing available — "Memo
- * mismatch" tells a payer far more than "Verification failed" — so it is
- * preferred, with the transport message and a generic fallback behind it.
+ * mismatch" tells a payer far more than "Verification failed" — so the stable
+ * rejection code is preferred and resolved through the canonical message table;
+ * the transport message and a generic fallback sit behind it.
  */
 function describeVerifyError(error, fallback = 'Verification failed') {
-  return error?.response?.data?.error || error?.message || fallback;
+  const data = (error && error.response && error.response.data) || {};
+
+  const canonical = messageForCode(data.code);
+  if (canonical) {
+    return canonical;
+  }
+
+  return data.error || error?.message || fallback;
 }
 
 /** True when a transaction hash looks like one, before any request is made. */

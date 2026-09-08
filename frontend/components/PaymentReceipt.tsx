@@ -8,6 +8,9 @@ import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { toast } from 'sonner';
 import type { PayPageInvoice } from './pay-page.types';
 import { getExplorerTransactionUrl } from '@/lib/stellar';
+// The receipt renders a settled (paid / expired / cancelled) record. It shares
+// the same status vocabulary as PaymentStatus and the verification rejection
+// table, so the proof view and the pay page never disagree on wording.
 
 interface PaymentReceiptProps {
   invoice: PayPageInvoice;

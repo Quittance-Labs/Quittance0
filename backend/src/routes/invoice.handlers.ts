@@ -12,7 +12,7 @@ import { sendFailure, sendSuccess, sendVerificationFailure } from '../types/api'
 import type { InvoiceStorage, StoredInvoice } from '../storage/invoice-storage';
 import { STELLAR_NETWORK } from '../config/stellar';
 import {
-  VERIFICATION_MESSAGES,
+  failure,
   checkInvoiceIsPayable,
   checkPayerInfo,
   checkTxHash,
@@ -228,12 +228,8 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           txDetails = await stellar.getTransaction(hashCheck.value);
         } catch (error: any) {
           logError('Verify payment lookup error:', error);
-          return sendVerificationFailure(
-            res,
-            404,
-            'TRANSACTION_NOT_FOUND',
-            VERIFICATION_MESSAGES.TRANSACTION_NOT_FOUND
-          );
+          const notFound = failure('TRANSACTION_NOT_FOUND');
+          return sendVerificationFailure(res, 404, notFound.code, notFound.error);
         }
 
         const verification = verifyHorizonPayment({

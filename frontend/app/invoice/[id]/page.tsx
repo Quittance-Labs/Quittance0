@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+// `apiErrorMessage` resolves stable verification codes to their canonical
+// message, so the invoice error banner never shows divergent copy.
 import { apiErrorMessage, invoiceApi, isApiUnavailableError } from '@/lib/api';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import PaymentStatus from '@/components/PaymentStatus';
