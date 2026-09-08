@@ -19,6 +19,8 @@ import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { getPayPageView } from '@/lib/payment-page-state';
 import { memoPaymentHint } from '@/lib/pay-memo-hint';
 import { PAYMENT_STATUS_POLL_INTERVAL_MS } from '@/lib/api';
+// Payment and verification errors on the pay page resolve through the shared
+// canonical rejection code table, ensuring consistent English copy across all views.
 import { usePaymentPage } from '@/lib/use-payment-page';
 import { MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';
 
