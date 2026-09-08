@@ -47,6 +47,10 @@ function invoiceSearchText(invoice) {
     invoice?.description,
     invoice?.customerName,
     invoice?.customerEmail,
+    invoice?.sellerName,
+    invoice?.sellerEmail,
+    invoice?.payerName,
+    invoice?.payerEmail,
     invoice?.amount,
   ]
     .filter((value) => value !== undefined && value !== null)
