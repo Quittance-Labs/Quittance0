@@ -34,7 +34,9 @@ const PAY_STATES = Object.freeze({
 });
 
 const TERMINAL_STATES = Object.freeze([PAY_STATES.PAID, PAY_STATES.EXPIRED]);
+const { isTerminalPayState } = require('./pay-terminal-guard.ts');
 const { effectiveInvoiceStatus, hasInvoiceExpired } = require('./invoice-lifecycle');
+const { messageForCode } = require('./verification');
 
 const asInvoice = (statusOrInvoice) =>
   statusOrInvoice && typeof statusOrInvoice === 'object'
@@ -114,11 +116,11 @@ function paymentReducer(state, event) {
     }
 
     case 'PAY_STARTED':
-      if (TERMINAL_STATES.includes(state.status)) return state;
+      if (isTerminalPayState(state.status)) return state;
       return { ...state, status: PAY_STATES.PAYING, error: null };
 
     case 'PAY_SENT':
-      if (TERMINAL_STATES.includes(state.status)) return state;
+      if (isTerminalPayState(state.status)) return state;
       return {
         ...state,
         status: PAY_STATES.VERIFYING,
@@ -127,11 +129,11 @@ function paymentReducer(state, event) {
       };
 
     case 'PAY_FAILED':
-      if (TERMINAL_STATES.includes(state.status)) return state;
+      if (isTerminalPayState(state.status)) return state;
       return { ...state, status: PAY_STATES.ERROR, error: event.error ?? 'Payment failed' };
 
     case 'VERIFY_STARTED':
-      if (TERMINAL_STATES.includes(state.status)) return state;
+      if (isTerminalPayState(state.status)) return state;
       return { ...state, status: PAY_STATES.VERIFYING, error: null };
 
     case 'VERIFY_SUCCEEDED':
@@ -143,11 +145,11 @@ function paymentReducer(state, event) {
       };
 
     case 'VERIFY_FAILED':
-      if (TERMINAL_STATES.includes(state.status)) return state;
+      if (isTerminalPayState(state.status)) return state;
       return { ...state, status: PAY_STATES.ERROR, error: event.error ?? 'Verification failed' };
 
     case 'RESET':
-      if (TERMINAL_STATES.includes(state.status)) return state;
+      if (isTerminalPayState(state.status)) return state;
       return { ...state, status: PAY_STATES.IDLE, error: null };
 
     default:
@@ -163,7 +165,7 @@ function paymentReducer(state, event) {
  */
 function shouldPoll(state) {
   if (!state?.invoice) return false;
-  if (TERMINAL_STATES.includes(state.status)) return false;
+  if (isTerminalPayState(state.status)) return false;
   return effectiveInvoiceStatus(state.invoice) === 'PENDING';
 }
 
@@ -198,11 +200,19 @@ function normalizePayerDetails(details) {
  * Turns a failed verification into something worth showing a payer.
  *
  * The backend's own message is the most specific thing available — "Memo
- * mismatch" tells a payer far more than "Verification failed" — so it is
- * preferred, with the transport message and a generic fallback behind it.
+ * mismatch" tells a payer far more than "Verification failed" — so the stable
+ * rejection code is preferred and resolved through the canonical message table;
+ * the transport message and a generic fallback sit behind it.
  */
 function describeVerifyError(error, fallback = 'Verification failed') {
-  return error?.response?.data?.error || error?.message || fallback;
+  const data = (error && error.response && error.response.data) || {};
+
+  const canonical = messageForCode(data.code);
+  if (canonical) {
+    return canonical;
+  }
+
+  return data.error || error?.message || fallback;
 }
 
 /** True when a transaction hash looks like one, before any request is made. */
@@ -286,6 +296,7 @@ function describePaymentState(state) {
 module.exports = {
   PAY_STATES,
   TERMINAL_STATES,
+  isTerminalPayState,
   isExpiredInvoice,
   shouldShowPaymentControls,
   getPayPageView,
