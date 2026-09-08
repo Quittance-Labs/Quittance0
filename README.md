@@ -302,7 +302,6 @@ parity between memory and Postgres stays pinned by the same assertions.
 | `NEXT_PUBLIC_STELLAR_NETWORK` | `TESTNET` |
 | `NEXT_PUBLIC_HORIZON_URL` | `https://horizon-testnet.stellar.org` |
 | `NEXT_PUBLIC_APP_URL` | `https://YOUR-APP.vercel.app` |
-| `NEXT_PUBLIC_USE_MOCK` | `false` |
 
 4. Run `npm run deploy:check` locally with the same variables before deploying.
 5. Deploy. A missing/invalid production API URL fails closed in the UI with an
