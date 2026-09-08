@@ -33,6 +33,9 @@ export interface DashboardData {
 }
 
 export declare const INVOICE_FILTERS: readonly string[];
+export declare const DASHBOARD_SORT_OPTIONS: readonly string[];
+
+export type DashboardSortBy = 'newest' | 'oldest' | 'amount-desc' | 'amount-asc' | 'status' | string;
 
 export function belongsToSeller(
   invoice: DashboardInvoice | null | undefined,
@@ -49,6 +52,16 @@ export function invoiceSearchText(invoice: DashboardInvoice): string;
 export function searchInvoices(
   invoices: DashboardInvoice[] | null | undefined,
   query: string | null | undefined
+): DashboardInvoice[];
+
+export function filterInvoicesByStatus(
+  invoices: DashboardInvoice[] | null | undefined,
+  statusFilter: string | null | undefined
+): DashboardInvoice[];
+
+export function sortInvoices(
+  invoices: DashboardInvoice[] | null | undefined,
+  sortBy?: DashboardSortBy
 ): DashboardInvoice[];
 
 export function exportableInvoices(
@@ -84,3 +97,4 @@ export function revenueEntries(
 ): Array<[string, number | string]>;
 
 export function hasAnyInvoices(stats: DashboardStats | null | undefined): boolean;
+

@@ -49,13 +49,16 @@ class StellarService {
     }));
   }
 
-  /**
-   * Verify a payment transaction against the shared verification contract
-   * (issue #224): memo, destination, amount, asset, and network.
-   *
-   * Returns a result rather than throwing so callers can surface the same
-   * rejection code and message as the invoice verify endpoints.
-   */
+/**
+ * Verify a payment transaction against the shared verification contract
+ * (issue #224): memo, destination, amount, asset, and network.
+ *
+ * Returns a result rather than throwing so callers can surface the same
+ * rejection code and message as the invoice verify endpoints. The codes and
+ * their user-facing wording come from `payment-verification.ts` — the same
+ * canonical table the pay page mirrors — so every rejection reads identically
+ * no matter which entry point produced it.
+ */
   async verifyPayment(
     txHash: string,
     expected: ExpectedPayment,

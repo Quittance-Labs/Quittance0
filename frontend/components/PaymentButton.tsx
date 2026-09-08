@@ -6,7 +6,8 @@ import { toast } from 'sonner';
 import { Wallet, Loader2 } from 'lucide-react';
 import { invoiceApi } from '@/lib/api';
 import { showFreighterInstallPrompt } from '@/components/FreighterInstallPrompt';
-import { describeVerifyError, normalizePayerDetails } from '@/lib/payment-page-state';
+import { normalizePayerDetails } from '@/lib/payment-page-state';
+import { resolveVerificationError } from '@/lib/verification';
 
 interface PaymentButtonProps {
   destination: string;
@@ -98,7 +99,10 @@ export default function PaymentButton({
           // Surface the shared rejection message rather than a generic warning.
           toast.warning('Payment sent but verification failed', {
             id: PAY_TOAST_ID,
-            description: describeVerifyError(error, 'Refresh the page or wait for status to update'),
+            description: resolveVerificationError(
+              error,
+              'Refresh the page or wait for status to update'
+            ),
           });
         }
       } else {
