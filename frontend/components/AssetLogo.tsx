@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import { getAssetByCode } from '@/lib/assets';
+import { normalizeAssetCode } from '@/lib/asset-code-display';
 
 interface AssetLogoProps {
   code: string;

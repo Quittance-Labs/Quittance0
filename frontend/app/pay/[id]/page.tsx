@@ -13,17 +13,23 @@ import PaymentResultPanel from '@/components/PaymentResultPanel';
 import QRCodeDisplay from '@/components/QRCodeDisplay';
 import PaymentButton from '@/components/PaymentButton';
 import WalletConnect from '@/components/WalletConnect';
+import FreighterInstallPrompt from '@/components/FreighterInstallPrompt';
 import ApiErrorState from '@/components/ApiErrorState';
 import { copyToClipboard, formatAmount } from '@/lib/utils';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
-import { getPayPageView } from '@/lib/payment-page-state';
+import { getPayPageView, getPayPageWalletGate } from '@/lib/payment-page-state';
 import { PAYMENT_STATUS_POLL_INTERVAL_MS } from '@/lib/api';
+// Payment and verification errors on the pay page resolve through the shared
+// canonical rejection code table, ensuring consistent English copy across all views.
 import { usePaymentPage } from '@/lib/use-payment-page';
 import { MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';
+import { useWalletStore } from '@/lib/store';
+import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
 
 export default function PaymentPage() {
   const id = useParams().id as string;
   const page = usePaymentPage(id);
+  const walletSession = useWalletStore();
 
   if (page.loading) {
     return (
@@ -75,6 +81,11 @@ export default function PaymentPage() {
 
   const invoice = page.invoice;
   const view = getPayPageView(invoice);
+  const walletPaymentGate = getPayPageWalletGate(
+    invoice,
+    walletSession,
+    EXPECTED_WALLET_NETWORK
+  );
   const copy = async (value: string, label: string) => {
     if (await copyToClipboard(value)) toast.success(`${label} copied`);
   };
@@ -83,8 +94,16 @@ export default function PaymentPage() {
     toast.success('Opening payment proof');
   };
   const email = () => {
-    if (!invoice.customerEmail) return toast.error('No client email on this invoice');
-    shareInvoiceByEmail(invoice);
+    try {
+      if (invoice.status === 'PAID') {
+        emailPaymentProof(invoice);
+      } else {
+        shareInvoiceByEmail(invoice);
+      }
+      toast.success('Opening email client');
+    } catch (err: any) {
+      toast.error(err?.message || 'No recipient email on this invoice');
+    }
   };
 
   const amountLabel = describeAmount(formatAmount(invoice.amount, 7), invoice.assetCode);
@@ -96,8 +115,6 @@ export default function PaymentPage() {
       <div className="orb orb-3"></div>
       <PayPageHeader
         wallet={page.wallet}
-        onConnect={page.setWallet}
-        onDisconnect={() => page.setWallet(null)}
       />
       <div className="max-w-4xl mx-auto relative z-10">
         <main id={MAIN_CONTENT_ID} tabIndex={-1} className="pt-20">
@@ -133,6 +150,9 @@ export default function PaymentPage() {
             <div className="space-y-6">
               <PayAmountBlock invoice={invoice} />
               <PayMemoBlock invoice={invoice} onCopy={copy} />
+              <p className="text-xs text-gray-600">
+                {memoPaymentHint(invoice.memo)}
+              </p>
             </div>
             <div className="space-y-6">
               {view.showProof && (
@@ -185,8 +205,16 @@ export default function PaymentPage() {
                       />
                     </div>
                     <div className="flex justify-center mb-4">
-                      <WalletConnect onConnect={page.setWallet} />
+                      <WalletConnect />
                     </div>
+                    {!walletPaymentGate.ready && walletPaymentGate.action !== 'none' && (
+                      <FreighterInstallPrompt
+                        gate={walletPaymentGate}
+                        action={<WalletConnect />}
+                        compact
+                        className="mb-4"
+                      />
+                    )}
                     <PaymentButton
                       destination={invoice.sellerPublicKey}
                       amount={String(invoice.amount)}

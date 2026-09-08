@@ -1,4 +1,6 @@
 // Stellar Asset Configuration
+import { decimalsForAsset } from './asset-decimals';
+
 export interface StellarAsset {
   code: string;
   name: string;

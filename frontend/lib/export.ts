@@ -3,8 +3,29 @@ import {
   assertPaymentProofAvailable,
   canExportPaymentProof,
 } from './payment-proof-policy.js';
+import {
+  buildInvoiceMailto,
+  buildProofMailto,
+  canSendInvoiceEmail,
+  canSendProofEmail,
+  getInvoiceMailtoRecipient,
+  getProofMailtoRecipient,
+  openInvoiceMailto,
+  openProofMailto,
+} from './mailto-delivery.js';
 
-export { assertPaymentProofAvailable, canExportPaymentProof };
+export {
+  assertPaymentProofAvailable,
+  canExportPaymentProof,
+  buildInvoiceMailto,
+  buildProofMailto,
+  canSendInvoiceEmail,
+  canSendProofEmail,
+  getInvoiceMailtoRecipient,
+  getProofMailtoRecipient,
+  openInvoiceMailto,
+  openProofMailto,
+};
 
 const HTML_ESCAPE_CHARACTERS: Record<string, string> = {
   '&': '&amp;',
@@ -365,35 +386,11 @@ export function openInvoicePDF(invoice: Invoice) {
   }
 }
 
-export function shareInvoiceByEmail(invoice: Invoice) {
-  assertPaymentProofAvailable(invoice);
-  if (!invoice.customerEmail) {
-    throw new Error('Client email is required to send this invoice');
-  }
-
-  const subject = `Invoice #${invoice.id.substring(0, 8).toUpperCase()} - ${invoice.amount} ${invoice.assetCode}`;
-  const isPaid = invoice.status === 'PAID';
-  
-  let body = `Invoice Details:\n`;
-  body += `Invoice ID: ${invoice.id}\n`;
-  body += `Amount: ${invoice.amount} ${invoice.assetCode}\n`;
-  body += `Status: ${invoice.status}\n`;
-  
-  if (invoice.customerName) body += `Client: ${invoice.customerName}\n`;
-  if (invoice.description) body += `Description: ${invoice.description}\n`;
-  
-  if (isPaid && invoice.paymentTxHash) {
-    body += `\nPayment Information:\n`;
-    body += `Payment Date: ${format(new Date(invoice.paidAt!), 'PPpp')}\n`;
-    body += `Transaction Hash: ${invoice.paymentTxHash}\n`;
-    if (invoice.payerPublicKey) body += `Payer Address: ${invoice.payerPublicKey}\n`;
-    body += `Verified on Stellar Blockchain\n`;
-  } else {
-    body += `\nQuittance: ${window.location.origin}/pay/${invoice.id}\n`;
-  }
-  
-  body += `\nPowered by Quittance`;
-  
-  const mailtoLink = `mailto:${invoice.customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  window.location.href = mailtoLink;
+export function shareInvoiceByEmail(invoice: Invoice, baseUrl?: string): string {
+  return openInvoiceMailto(invoice, baseUrl);
 }
+
+export function emailPaymentProof(invoice: Invoice, baseUrl?: string): string {
+  return openProofMailto(invoice, baseUrl);
+}
+
