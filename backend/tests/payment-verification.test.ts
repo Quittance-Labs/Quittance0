@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   VERIFICATION_MESSAGES,
+  VERIFICATION_CODES,
+  messageForCode,
   STROOP_PRECISION,
   amountsMatch,
   checkInvoiceIsPayable,
@@ -254,6 +256,30 @@ describe('verifyHorizonPayment — rejections', () => {
     assert.equal(codeOf(result), 'ASSET_MISMATCH');
   });
 
+  it('settles a valid USDC credit payment with matching issuer and amount', () => {
+    const result = verifyHorizonPayment(
+      input({
+        expected: expected({ assetCode: 'USDC', assetIssuer: USDC_ISSUER, amount: 50 }),
+        operations: [
+          paymentOp({
+            asset_type: 'credit_alphanum4',
+            asset_code: 'USDC',
+            asset_issuer: USDC_ISSUER,
+            amount: '50.0000000',
+          }),
+        ],
+      }),
+    );
+
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.value.from, PAYER);
+      assert.equal(result.value.amount, '50.0000000');
+      assert.equal(result.value.assetCode, 'USDC');
+      assert.equal(result.value.assetIssuer, USDC_ISSUER);
+    }
+  });
+
   it('rejects a transaction with no payment operation', () => {
     assert.equal(
       codeOf(verifyHorizonPayment(input({ operations: [{ type: 'create_account' }] }))),
@@ -409,5 +435,14 @@ describe('shared contract', () => {
     const clientVerification = require('../../frontend/lib/verification.js');
 
     assert.deepEqual(clientVerification.VERIFICATION_MESSAGES, VERIFICATION_MESSAGES);
+  });
+
+  it('every rejection code resolves to a non-empty message', () => {
+    assert.deepEqual(Object.keys(VERIFICATION_MESSAGES), VERIFICATION_CODES);
+    for (const code of VERIFICATION_CODES) {
+      assert.equal(typeof VERIFICATION_MESSAGES[code], 'string');
+      assert.ok(VERIFICATION_MESSAGES[code].length > 0, `${code} has no message`);
+      assert.equal(messageForCode(code), VERIFICATION_MESSAGES[code]);
+    }
   });
 });

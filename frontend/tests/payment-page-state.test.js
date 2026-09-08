@@ -4,6 +4,7 @@ const {
   PAY_STATES,
   describeVerifyError,
   getPayPageView,
+  getPayPageWalletGate,
   initialPaymentState,
   isExpiredInvoice,
   isLikelyTransactionHash,
@@ -61,6 +62,54 @@ test('paid, pending, and expired components are mutually exclusive', () => {
   });
   assert.equal(getPayPageView(paid).showProof, true);
   assert.equal(getPayPageView(expired).showPaymentControls, false);
+});
+
+test('the Freighter payment gate requires a payable invoice first', () => {
+  const gate = getPayPageWalletGate(paid, {
+    freighterAvailable: true,
+    connected: true,
+    publicKey: 'G'.padEnd(56, 'A'),
+    network: 'TESTNET',
+  }, 'TESTNET');
+
+  assert.equal(gate.status, 'invoice_unavailable');
+  assert.equal(gate.ready, false);
+});
+
+test('the Freighter payment gate blocks disconnected wallets with shared copy', () => {
+  const gate = getPayPageWalletGate(pending, {
+    freighterAvailable: true,
+    connected: false,
+    publicKey: null,
+    network: 'TESTNET',
+  }, 'TESTNET');
+
+  assert.equal(gate.status, 'disconnected');
+  assert.match(gate.message, /wallet is your Quittance identity/);
+});
+
+test('the Freighter payment gate blocks wrong network sessions', () => {
+  const gate = getPayPageWalletGate(pending, {
+    freighterAvailable: true,
+    connected: true,
+    publicKey: 'G'.padEnd(56, 'A'),
+    network: 'PUBLIC',
+  }, 'TESTNET');
+
+  assert.equal(gate.status, 'wrong_network');
+  assert.match(gate.message, /Switch Freighter to Testnet/);
+});
+
+test('the Freighter payment gate opens for a connected wallet on the expected network', () => {
+  const gate = getPayPageWalletGate(pending, {
+    freighterAvailable: true,
+    connected: true,
+    publicKey: 'G'.padEnd(56, 'A'),
+    network: 'TESTNET',
+  }, 'TESTNET');
+
+  assert.equal(gate.status, 'ready');
+  assert.equal(gate.ready, true);
 });
 
 // -------------------------------------------------------------- initial state
@@ -276,6 +325,32 @@ test('the backend message is preferred over the transport message', () => {
   };
 
   assert.equal(describeVerifyError(error), 'Memo mismatch');
+});
+
+test('a stable verification code resolves to its canonical message', () => {
+  // The pay page surfaces verify rejections through describeVerifyError. A code
+  // in the failure envelope must render the canonical copy, not the raw text.
+  const { VERIFICATION_MESSAGES } = require('../lib/verification');
+
+  for (const code of Object.keys(VERIFICATION_MESSAGES)) {
+    const error = {
+      response: { data: { code, error: 'Server said no' } },
+    };
+
+    assert.equal(
+      describeVerifyError(error, 'Verification failed'),
+      VERIFICATION_MESSAGES[code],
+      `${code} did not resolve to its canonical pay-page message`
+    );
+  }
+});
+
+test('the canonical message wins even when the server text differs', () => {
+  const error = {
+    response: { data: { code: 'DESTINATION_MISMATCH', error: 'other wording' } },
+  };
+
+  assert.equal(describeVerifyError(error), 'Payment destination mismatch');
 });
 
 test('the transport message is used when the backend said nothing', () => {

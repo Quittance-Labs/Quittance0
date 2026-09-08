@@ -55,7 +55,10 @@ export function formatDate(date: string | Date): string {
 }
 
 /**
- * Calculate time remaining
+ * Calculate time remaining until an invoice expires.
+ *
+ * The "Expired" label mirrors the canonical `INVOICE_EXPIRED` rejection
+ * wording from verification.js so countdowns and rejection banners agree.
  */
 export function getTimeRemaining(expiresAt: string | Date): string {
   const now = new Date().getTime();
@@ -123,7 +126,8 @@ export function isValidEmail(email: string): boolean {
  * Format currency
  */
 export function formatCurrency(amount: number, currency: string = 'XLM'): string {
-  return `${formatAmount(amount, 7)} ${currency}`;
+  const code = (currency || 'XLM').toUpperCase();
+  return `${formatAmount(amount, 7)} ${code}`;
 }
 
 export default {

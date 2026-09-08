@@ -8,7 +8,8 @@ import { Clock, ExternalLink, Copy, Check, Mail, Download, X, Hash } from 'lucid
 import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import AssetLogo from './AssetLogo';
-import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
+import { openInvoicePDF, shareInvoiceByEmail, emailPaymentProof } from '@/lib/export';
+import { canSendProofEmail } from '@/lib/mailto-delivery';
 import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
 import { describeAmount, statusBadgeLabel, statusText } from '@/lib/a11y';
 import { invoiceApi } from '@/lib/api';
@@ -90,8 +91,13 @@ export default function InvoiceCard({ invoice, userWallet, onCancel }: InvoiceCa
     toast.success('Opening payment proof');
   };
 
-  const handleEmailShare = () => {
-    shareInvoiceByEmail(invoice as any);
+  const handleEmailProof = () => {
+    try {
+      emailPaymentProof(invoice as any);
+      toast.success('Opening email client');
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not open email client');
+    }
   };
 
   const isSeller = !invoice.sellerPublicKey || !userWallet || invoice.sellerPublicKey === userWallet;
@@ -99,7 +105,7 @@ export default function InvoiceCard({ invoice, userWallet, onCancel }: InvoiceCa
   // Ids are scoped to the invoice: the dashboard renders many of these cards.
   const headingId = `invoice-${invoice.id}-heading`;
   const emailReasonId = `invoice-${invoice.id}-email-reason`;
-  const canEmail = Boolean(invoice.customerEmail);
+  const canEmail = canSendProofEmail(invoice as any);
   const amountLabel = describeAmount(formatAmount(invoice.amount), invoice.assetCode);
 
   return (
@@ -113,9 +119,9 @@ export default function InvoiceCard({ invoice, userWallet, onCancel }: InvoiceCa
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
             {/* The heading already names the asset — the logo would repeat it. */}
-            <AssetLogo code={invoice.assetCode} size={24} showName={false} decorative />
+            <AssetLogo code={invoice.assetCode || 'XLM'} size={24} showName={false} decorative />
             <h3 id={headingId} className="text-lg font-bold text-gray-900">
-              {formatAmount(invoice.amount)} <span className="text-cyan-700">{invoice.assetCode}</span>
+              {formatAmount(invoice.amount)} <span className="text-cyan-700">{invoice.assetCode || 'XLM'}</span>
               <span className="sr-only"> invoice</span>
             </h3>
           </div>
@@ -231,7 +237,7 @@ export default function InvoiceCard({ invoice, userWallet, onCancel }: InvoiceCa
         {status === 'PAID' && (
           <>
             <button
-              onClick={canEmail ? handleEmailShare : undefined}
+              onClick={canEmail ? handleEmailProof : undefined}
               aria-disabled={!canEmail}
               aria-describedby={canEmail ? undefined : emailReasonId}
               aria-label={`Email payment proof for the ${amountLabel} invoice`}
@@ -241,7 +247,7 @@ export default function InvoiceCard({ invoice, userWallet, onCancel }: InvoiceCa
             </button>
             {!canEmail && (
               <span id={emailReasonId} className="sr-only">
-                Unavailable: this invoice has no client email.
+                Unavailable: this invoice has no client or payer email.
               </span>
             )}
           </>

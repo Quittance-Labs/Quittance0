@@ -352,6 +352,16 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       assert.equal(res.body.data.paymentAvailable, true);
     });
 
+    it('normalizes lowercase assetCode to uppercase on creation', async () => {
+      const res = await call(
+        handlers().createInvoice,
+        createReq({ body: invoiceBody({ assetCode: 'xlm' }) })
+      );
+
+      assert.equal(res.statusCode, 201);
+      assert.equal(res.body.data.invoice.assetCode, 'XLM');
+    });
+
     it('accepts seller-selected expiry only within the 1-30 day contract', async () => {
       const invoice = await createInvoice({ expiresInDays: 30 });
       const lifetime = new Date(invoice.expiresAt).getTime() - new Date(invoice.createdAt).getTime();
@@ -449,6 +459,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       );
 
       assert.equal(res.statusCode, 400);
+      assert.equal(res.body.code, 'MISSING_TX_HASH');
       assert.equal(res.body.error, 'Transaction hash is required');
     });
 
@@ -466,6 +477,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       );
 
       assert.equal(res.statusCode, 400);
+      assert.equal(res.body.code, 'MEMO_MISMATCH');
       assert.equal(res.body.error, 'Memo mismatch');
     });
 
@@ -483,6 +495,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       );
 
       assert.equal(res.statusCode, 400);
+      assert.equal(res.body.code, 'DESTINATION_MISMATCH');
       assert.equal(res.body.error, 'Payment destination mismatch');
     });
 
@@ -500,6 +513,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       );
 
       assert.equal(res.statusCode, 400);
+      assert.equal(res.body.code, 'AMOUNT_MISMATCH');
       assert.equal(res.body.error, 'Amount mismatch');
     });
 
@@ -516,6 +530,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       const res = await call(handlers().verifyPayment, req);
 
       assert.equal(res.statusCode, 400);
+      assert.equal(res.body.code, 'INVOICE_ALREADY_PAID');
       assert.equal(res.body.error, 'Invoice has already been paid');
     });
 

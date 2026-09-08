@@ -17,7 +17,7 @@ class MemoryStorage {
       sellerName: data.sellerName,
       sellerEmail: data.sellerEmail,
       amount: data.amount!,
-      assetCode: data.assetCode || 'XLM',
+      assetCode: (data.assetCode || 'XLM').toUpperCase(),
       assetIssuer: data.assetIssuer,
       memo: data.memo!,
       description: data.description,

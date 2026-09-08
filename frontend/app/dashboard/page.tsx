@@ -5,10 +5,13 @@ import { invoiceApi, describeApiError } from '@/lib/api';
 import InvoiceCard from '@/components/InvoiceCard';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
+import FreighterInstallPrompt from '@/components/FreighterInstallPrompt';
 import AssetLogo from '@/components/AssetLogo';
 import { useWalletStore } from '@/lib/store';
+import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
+import { walletGate } from '@/lib/freighter-availability';
 import Link from 'next/link';
-import { Loader2, Plus, TrendingUp, DollarSign, FileText, Download } from 'lucide-react';
+import { Loader2, Plus, TrendingUp, DollarSign, FileText, Download, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadInvoiceCSV } from '@/lib/export';
 import {
@@ -17,14 +20,19 @@ import {
   hasAnyInvoices as hasAnyInvoicesIn,
   revenueEntries,
   searchInvoices,
+  sortInvoices,
+  DashboardSortBy,
 } from '@/lib/dashboard-history';
 import ApiErrorState from '@/components/ApiErrorState';
+// Shared resolver so the dashboard banner and invoice cards map stable
+// verification codes to the same canonical message as the other pages.
 import { apiErrorMessage } from '@/lib/api';
 import { dashboardEmptyMessage } from '@/lib/dashboard-empty-copy';
 import { DASHBOARD_RESULTS_ID, MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';
+import { NETWORK_DISPLAY_NAME } from '@/lib/stellar';
 
 export default function DashboardPage() {
-  const { publicKey, connected } = useWalletStore();
+  const { publicKey, connected, isWrongNetwork } = useWalletStore();
   // Loaded data is tagged with the wallet it belongs to, so a response for a
   // previous seller can never be rendered under the current one.
   const [loaded, setLoaded] = useState<{ owner: string | null; invoices: any[]; stats: any }>({
@@ -34,6 +42,7 @@ export default function DashboardPage() {
   });
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<DashboardSortBy>('newest');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -41,10 +50,11 @@ export default function DashboardPage() {
 
   const { invoices, stats } = dashboardDataFor(
     loaded,
-    connected ? publicKey : null,
+    gate.ready ? publicKey : null,
     lifecycleNow
   );
   const filteredInvoices = searchInvoices(invoices, searchQuery);
+  const sortedInvoices = sortInvoices(filteredInvoices, sortBy);
   const hasAnyInvoices = hasAnyInvoicesIn(stats);
   const revenueByAsset = revenueEntries(stats);
 
@@ -54,7 +64,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (!connected || !publicKey) {
+    if (!gate.ready || !publicKey) {
       setLoaded({ owner: null, invoices: [], stats: null });
       setLoading(false);
       return;
@@ -95,7 +105,7 @@ export default function DashboardPage() {
     return () => {
       active = false;
     };
-  }, [filter, connected, publicKey, reloadKey]);
+  }, [filter, gate.ready, publicKey, reloadKey]);
 
   const handleInvoiceCancelled = (cancelledId: string) => {
     setLoaded((prev) => {
@@ -118,7 +128,7 @@ export default function DashboardPage() {
   };
 
   const handleExportCSV = () => {
-    const paidInvoices = exportableInvoices(filteredInvoices);
+    const paidInvoices = exportableInvoices(sortedInvoices);
     if (paidInvoices.length === 0) {
       toast.error('No paid invoices to export');
       return;
@@ -127,7 +137,7 @@ export default function DashboardPage() {
     toast.success(`Exported ${paidInvoices.length} paid invoices to CSV`);
   };
 
-  const paidCount = filteredInvoices.filter((inv) => inv.status === 'PAID').length;
+  const paidCount = sortedInvoices.filter((inv) => inv.status === 'PAID').length;
   const canExport = paidCount > 0;
 
   /*
@@ -141,9 +151,9 @@ export default function DashboardPage() {
     if (loading) return 'Loading your invoices.';
     const scope = filter === 'all' ? '' : ` ${statusText(filter).label.toLowerCase()}`;
     const suffix = searchQuery ? ` matching “${searchQuery}”` : '';
-    if (filteredInvoices.length === 0) return `No${scope} invoices${suffix}.`;
-    return `${filteredInvoices.length}${scope} invoice${
-      filteredInvoices.length === 1 ? '' : 's'
+    if (sortedInvoices.length === 0) return `No${scope} invoices${suffix}.`;
+    return `${sortedInvoices.length}${scope} invoice${
+      sortedInvoices.length === 1 ? '' : 's'
     }${suffix}.`;
   })();
 
@@ -160,9 +170,7 @@ export default function DashboardPage() {
             {!connected ? (
               <WalletConnect />
             ) : (
-              <UserProfile userWallet={publicKey} onDisconnect={() => {
-                window.location.reload();
-              }} />
+              <UserProfile userWallet={publicKey} />
             )}
             <Link href="/" className="btn btn-primary flex items-center gap-2">
               <Plus className="w-5 h-5" aria-hidden="true" />
@@ -176,14 +184,29 @@ export default function DashboardPage() {
       <main id={MAIN_CONTENT_ID} tabIndex={-1} className="pt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 relative z-10">
         <h1 className="sr-only">Invoice dashboard</h1>
+        {connected && isWrongNetwork && (
+          <div
+            role="alert"
+            className="mb-6 p-4 bg-amber-50 border border-amber-300 rounded-xl flex items-center gap-3 text-sm text-amber-900"
+          >
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" aria-hidden="true" />
+            <div>
+              <p className="font-semibold">Wrong Stellar Network</p>
+              <p className="mt-0.5 text-xs text-amber-800">
+                Your wallet is connected to a different network. Please switch to {NETWORK_DISPLAY_NAME} in Freighter for accurate invoice tracking.
+              </p>
+            </div>
+          </div>
+        )}
         {!connected || !publicKey ? (
           <div className="card text-center py-16 max-w-lg mx-auto">
             <FileText className="w-16 h-16 text-gray-500 mx-auto mb-4" aria-hidden="true" />
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Connect your wallet</h2>
-            <p className="text-gray-600 mb-6">{dashboardEmptyMessage(false)}</p>
-            <div className="flex justify-center">
-              <WalletConnect />
-            </div>
+            <FreighterInstallPrompt
+              gate={gate}
+              action={<WalletConnect />}
+              className="mt-4"
+            />
+            <p className="text-gray-600 mt-6">{dashboardEmptyMessage(false)}</p>
           </div>
         ) : (
           <>
@@ -274,7 +297,7 @@ export default function DashboardPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-2xl font-bold text-gray-900">0.00</p>
+                    <p className="text-2xl font-bold text-gray-900">0.00 <span className="text-sm font-normal text-gray-500">XLM</span></p>
                   )}
                 </div>
               </div>
@@ -324,25 +347,45 @@ export default function DashboardPage() {
               Toggle buttons in a named group. aria-pressed carries the selected
               state, which was previously only a background colour.
             */}
-            <div
-              role="group"
-              aria-label="Filter invoices by status"
-              className="bg-white rounded-lg border border-gray-200 mb-6 p-2 flex gap-2 flex-wrap"
-            >
-              {['all', 'pending', 'paid', 'expired', 'cancelled'].map((status) => (
-                <button
-                  key={status}
-                  onClick={() => setFilter(status)}
-                  aria-pressed={filter === status}
-                  className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
-                    filter === status
-                      ? 'bg-cyan-700 text-white'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
+            <div className="bg-white rounded-lg border border-gray-200 mb-6 p-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div
+                role="group"
+                aria-label="Filter invoices by status"
+                className="flex gap-2 flex-wrap"
+              >
+                {['all', 'pending', 'paid', 'expired', 'cancelled'].map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => setFilter(status)}
+                    aria-pressed={filter === status}
+                    className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                      filter === status
+                        ? 'bg-cyan-700 text-white'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 px-2">
+                <label htmlFor="dashboard-sort" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                  Sort:
+                </label>
+                <select
+                  id="dashboard-sort"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as DashboardSortBy)}
+                  className="input text-sm py-1.5 px-3 cursor-pointer"
+                  aria-label="Sort invoices"
                 >
-                  {status.charAt(0).toUpperCase() + status.slice(1)}
-                </button>
-              ))}
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="amount-desc">Amount: High to Low</option>
+                  <option value="amount-asc">Amount: Low to High</option>
+                  <option value="status">Status</option>
+                </select>
+              </div>
             </div>
 
             <p
@@ -364,7 +407,7 @@ export default function DashboardPage() {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-12 h-12 animate-spin text-cyan-700" aria-hidden="true" />
               </div>
-            ) : filteredInvoices.length === 0 ? (
+            ) : sortedInvoices.length === 0 ? (
               <div className="card text-center py-12">
                 <FileText className="w-16 h-16 text-gray-500 mx-auto mb-4" aria-hidden="true" />
                 <h3 className="text-xl font-semibold text-gray-700 mb-2">
@@ -419,7 +462,7 @@ export default function DashboardPage() {
                   Invoices
                 </h2>
                 <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 list-none p-0">
-                  {filteredInvoices.map((invoice) => (
+                  {sortedInvoices.map((invoice) => (
                     <li key={invoice.id}>
                       <InvoiceCard
                         invoice={invoice as any}

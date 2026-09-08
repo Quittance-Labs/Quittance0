@@ -3,10 +3,17 @@
 import { useState } from 'react';
 import { apiErrorMessage, invoiceApi, isApiUnavailableError } from '@/lib/api';
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react';
 import { STELLAR_ASSETS, getAssetByCode } from '@/lib/assets';
+import { useWalletStore } from '@/lib/store';
+import { NETWORK_DISPLAY_NAME } from '@/lib/stellar';
+import { showFreighterWrongNetworkPrompt } from './FreighterInstallPrompt';
 import AssetLogo from './AssetLogo';
 import ApiErrorState from './ApiErrorState';
+import { useWalletStore } from '@/lib/store';
+import { walletGate } from '@/lib/freighter-availability';
+import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
+import { showFreighterInstallPrompt } from './FreighterInstallPrompt';
 
 interface InvoiceFormProps {
   onSuccess?: (invoice: any) => void;
@@ -14,6 +21,7 @@ interface InvoiceFormProps {
 }
 
 export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps) {
+  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState('');
   const [assetCode, setAssetCode] = useState('XLM');
@@ -24,12 +32,23 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   const [customerEmail, setCustomerEmail] = useState('');
   const [apiError, setApiError] = useState<string | null>(null);
   const [expiresInDays, setExpiresInDays] = useState(7);
+  const { isWrongNetwork } = useWalletStore();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!userWallet) {
-      toast.error('Connect your wallet first');
+    const sellerWallet = userWallet || publicKey || undefined;
+    const gate = walletGate(
+      { freighterAvailable, connected, publicKey: sellerWallet, network },
+      EXPECTED_WALLET_NETWORK
+    );
+    if (!gate.ready) {
+      showFreighterInstallPrompt(gate);
+      return;
+    }
+
+    if (isWrongNetwork) {
+      showFreighterWrongNetworkPrompt(NETWORK_DISPLAY_NAME);
       return;
     }
 
@@ -54,11 +73,12 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       const selectedAsset = getAssetByCode(assetCode);
       // Creates a pending invoice owned by the connected seller wallet
       const result = await invoiceApi.create({
-        amount: parseFloat(amount),
+        amount: parsedAmount,
         assetCode: assetCode,
         assetIssuer: selectedAsset?.issuer,
         expiresInDays,
-        sellerPublicKey: userWallet,
+        sellerPublicKey: sellerWallet,
+        network: EXPECTED_WALLET_NETWORK,
         sellerName: sellerName.trim() || undefined,
         sellerEmail: sellerEmail.trim() || undefined,
         description: description || undefined,
@@ -98,6 +118,21 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       <h3 id="invoice-form-heading" className="sr-only">
         Invoice details
       </h3>
+
+      {isWrongNetwork && (
+        <div
+          role="alert"
+          className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2.5 text-xs text-amber-900"
+        >
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
+          <div>
+            <p className="font-semibold">Wrong Stellar Network</p>
+            <p className="mt-0.5 text-amber-800">
+              Your wallet is connected to a different network. Please switch to {NETWORK_DISPLAY_NAME} in Freighter before creating invoices.
+            </p>
+          </div>
+        </div>
+      )}
 
       {apiError && <ApiErrorState message={apiError} compact />}
       <div>
@@ -148,7 +183,9 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
           </div>
         </div>
         <p id="invoice-amount-hint" className="field-hint">
-          The amount your client pays, in the selected asset.
+          {assetCode === 'USDC'
+            ? 'The amount your client pays in USDC (requires a USDC trustline on Stellar).'
+            : 'The amount your client pays, in the selected asset.'}
         </p>
       </div>
 

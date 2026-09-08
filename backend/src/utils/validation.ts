@@ -5,11 +5,15 @@ import {
   MIN_INVOICE_EXPIRY_DAYS,
 } from '../domain/invoice-expiry';
 import { NATIVE_ASSET_CODE, requiresIssuer } from './asset-helpers';
+import { SUPPORTED_STELLAR_NETWORKS } from '../config/stellar';
 
 // Schemas used identically by both servers. Zod validates the create+verify
 // payloads before they ever reach the InvoiceStorage layer, so the memory
 // and Postgres backends receive the same seller name/email, assetCode +
 // assetIssuer, customer name/email, expiresInDays and metadata fields.
+// Rejections are serialized through the shared failure envelope
+// (`{ success:false, error }`) from types/api.ts, matching the verify path's
+// `code` + `error` shape so every client reads one consistent contract.
 // Stellar public key validation
 export const stellarPublicKeySchema = z.string()
   .length(56)
@@ -26,13 +30,14 @@ export const stellarPublicKeySchema = z.string()
 export const createInvoiceSchema = z
   .object({
     amount: z.number().positive().max(1000000000),
-    assetCode: z.string().default('XLM').optional(),
+    assetCode: z.string().default('XLM').transform((val) => val.toUpperCase()).optional(),
     assetIssuer: stellarPublicKeySchema.optional(),
     description: z.string().max(500).optional(),
     customerName: z.string().max(255).optional(),
     customerEmail: z.string().email().optional(),
     sellerName: z.string().max(255).optional(),
     sellerEmail: z.string().email().optional(),
+    network: z.enum(SUPPORTED_STELLAR_NETWORKS).optional(),
     expiresInDays: z.number()
       .int()
       .min(MIN_INVOICE_EXPIRY_DAYS)

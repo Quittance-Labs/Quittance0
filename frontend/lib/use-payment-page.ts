@@ -1,11 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { apiErrorMessage, invoiceApi, isApiUnavailableError, PAYMENT_STATUS_POLL_INTERVAL_MS } from './api';
+import { apiErrorMessage, invoiceApi, isApiUnavailableError, PAYMENT_STATUS_POLL_INTERVAL_MS, resolveVerificationError } from './api';
 import { checkTxHash } from './verification';
 import {
   PAY_STATES,
-  describeVerifyError,
   initialPaymentState,
   normalizePayerDetails,
   paymentReducer,
@@ -13,12 +12,13 @@ import {
 } from './payment-page-state';
 import type { PayPageInvoice, PayPagePaymentInfo } from '@/components/pay-page.types';
 import { toast } from 'sonner';
+import { useWalletStore } from './store';
 
 export function usePaymentPage(id: string) {
   const [payment, dispatch] = useReducer(paymentReducer, undefined, () => initialPaymentState(null));
   const [loading, setLoading] = useState(true);
   const [paymentInfo, setPaymentInfo] = useState<PayPagePaymentInfo | null>(null);
-  const [wallet, setWallet] = useState<string | null>(null);
+  const { publicKey, connected } = useWalletStore();
   const [txHash, setTxHash] = useState('');
   const [payerName, setPayerName] = useState('');
   const [payerEmail, setPayerEmail] = useState('');
@@ -98,7 +98,7 @@ export function usePaymentPage(id: string) {
       void load();
     } catch (error) {
       if (request !== generation.current) return;
-      const message = describeVerifyError(error);
+      const message = resolveVerificationError(error);
       if (isApiUnavailableError(error)) setLoadError(apiErrorMessage(error));
       dispatch({ type: 'VERIFY_FAILED', error: message });
       toast.error(message);
@@ -111,8 +111,7 @@ export function usePaymentPage(id: string) {
     loading,
     loadError,
     paymentInfo,
-    wallet,
-    setWallet,
+    wallet: connected ? publicKey : null,
     txHash,
     setTxHash,
     payerName,

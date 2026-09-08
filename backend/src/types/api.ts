@@ -74,9 +74,18 @@ export function sendVerificationFailure(
   res.status(status).json({ success: false, code, error });
 }
 
+/** Build a verification failure envelope with a stable code and its message. */
+export function verificationFailureBody(
+  code: VerificationCode,
+  error: string
+): VerificationFailureBody {
+  return { success: false, code, error };
+}
+
 export default {
   apiSuccess,
   apiFailure,
   sendSuccess,
   sendFailure,
+  verificationFailureBody,
 };

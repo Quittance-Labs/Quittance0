@@ -4,11 +4,12 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Network configuration
+export const SUPPORTED_STELLAR_NETWORKS = ['TESTNET', 'PUBLIC'] as const;
 const configuredNetwork = (process.env.STELLAR_NETWORK || 'TESTNET').toUpperCase();
-if (configuredNetwork !== 'TESTNET' && configuredNetwork !== 'PUBLIC') {
+if (!SUPPORTED_STELLAR_NETWORKS.includes(configuredNetwork as any)) {
   throw new Error('STELLAR_NETWORK must be TESTNET or PUBLIC');
 }
-export const STELLAR_NETWORK: 'TESTNET' | 'PUBLIC' = configuredNetwork;
+export const STELLAR_NETWORK = configuredNetwork as typeof SUPPORTED_STELLAR_NETWORKS[number];
 export const STELLAR_HORIZON_URL = 
   process.env.STELLAR_HORIZON_URL || 
   (STELLAR_NETWORK === 'TESTNET' 
@@ -19,6 +20,11 @@ export const NETWORK_PASSPHRASE =
   STELLAR_NETWORK === 'TESTNET' 
     ? StellarSdk.Networks.TESTNET 
     : StellarSdk.Networks.PUBLIC;
+
+export const STELLAR_EXPLORER_BASE =
+  STELLAR_NETWORK === 'TESTNET'
+    ? 'https://stellar.expert/explorer/testnet'
+    : 'https://stellar.expert/explorer/public';
 
 /**
  * The SDK refuses a plaintext Horizon URL unless `allowHttp` is set.
