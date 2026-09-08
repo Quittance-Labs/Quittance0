@@ -13,6 +13,7 @@ import { paymentMonitor } from '@/lib/payment-monitor';
 import { Wallet, LogOut, Loader2, ExternalLink, Bell, BellOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatAddress } from '@/lib/utils';
+import { buildHorizonAccountUrl } from '@/lib/explorer-account-link';
 import { showFreighterInstallPrompt } from '@/components/FreighterInstallPrompt';
 import { buildHorizonAccountUrl } from '@/lib/explorer-account-link';
 
@@ -110,9 +111,10 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
   };
 
   const openExplorer = () => {
-    const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET' ? 'testnet' : 'public';
-    const url = buildHorizonAccountUrl(publicKey, network);
-    window.open(url ?? `https://stellar.expert/explorer/${network}/account/${publicKey}`, '_blank');
+    const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET' ? 'TESTNET' : 'PUBLIC';
+    if (publicKey) {
+      window.open(buildHorizonAccountUrl(publicKey, network), '_blank');
+    }
   };
 
   if (connected && publicKey) {
