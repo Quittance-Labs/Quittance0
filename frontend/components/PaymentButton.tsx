@@ -6,8 +6,8 @@ import { toast } from 'sonner';
 import { Wallet, Loader2 } from 'lucide-react';
 import { invoiceApi } from '@/lib/api';
 import { showFreighterInstallPrompt } from '@/components/FreighterInstallPrompt';
-import { describeVerifyError, normalizePayerDetails } from '@/lib/payment-page-state';
-import { shortenTxHash } from '@/lib/short-tx-hash';
+import { normalizePayerDetails } from '@/lib/payment-page-state';
+import { resolveVerificationError } from '@/lib/verification';
 
 interface PaymentButtonProps {
   destination: string;
@@ -90,7 +90,7 @@ export default function PaymentButton({
           await invoiceApi.verify(invoiceId, txHash, payer.value);
           toast.success('Payment verified', {
             id: PAY_TOAST_ID,
-            description: `TX: ${shortenTxHash(txHash, 8, 8) ?? txHash}`,
+            description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
           });
         } catch (error) {
           // The payment is on the ledger even though verification did not
@@ -99,13 +99,16 @@ export default function PaymentButton({
           // Surface the shared rejection message rather than a generic warning.
           toast.warning('Payment sent but verification failed', {
             id: PAY_TOAST_ID,
-            description: describeVerifyError(error, 'Refresh the page or wait for status to update'),
+            description: resolveVerificationError(
+              error,
+              'Refresh the page or wait for status to update'
+            ),
           });
         }
       } else {
         toast.success('Payment successful', {
           id: PAY_TOAST_ID,
-          description: `TX: ${shortenTxHash(txHash, 8, 8) ?? txHash}`,
+          description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
         });
       }
 

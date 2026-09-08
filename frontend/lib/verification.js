@@ -7,6 +7,8 @@
  * messages here identical to the backend module.
  */
 
+const { rejectionLabel: _rejectionLabel } = require('./verify-rejection-label.ts');
+
 const VERIFICATION_MESSAGES = {
   MISSING_TX_HASH: 'Transaction hash is required',
   INVALID_TX_HASH: 'Transaction hash must be 64 hexadecimal characters',
@@ -85,6 +87,17 @@ const checkPayerInfo = (input) => {
 };
 
 /**
+ * Resolve a stable rejection code to its canonical user-facing message.
+ *
+ * This is the single place the frontend maps a code from an error envelope to
+ * English copy. Every page surface — pay page, invoice detail, dashboard, and
+ * the shared API error layer — routes through it, so a code always renders the
+ * same actionable sentence no matter which endpoint rejected it.
+ */
+const messageForCode = (code) =>
+  (code && VERIFICATION_MESSAGES[code]) || undefined;
+
+/**
  * Turn a failed verify request into the shared message.
  *
  * Prefers the code the server sent so the wording stays identical even when the
@@ -93,8 +106,9 @@ const checkPayerInfo = (input) => {
 const resolveVerificationError = (error, fallback = 'Verification failed') => {
   const data = (error && error.response && error.response.data) || {};
 
-  if (data.code && VERIFICATION_MESSAGES[data.code]) {
-    return VERIFICATION_MESSAGES[data.code];
+  const canonical = messageForCode(data.code);
+  if (canonical) {
+    return canonical;
   }
 
   return data.error || (error && error.message) || fallback;
@@ -102,10 +116,12 @@ const resolveVerificationError = (error, fallback = 'Verification failed') => {
 
 module.exports = {
   VERIFICATION_MESSAGES,
+  messageForCode,
   failure,
   isValidTxHash,
   normalizeTransactionHash,
   checkTxHash,
   checkPayerInfo,
   resolveVerificationError,
+  rejectionLabel: _rejectionLabel,
 };
