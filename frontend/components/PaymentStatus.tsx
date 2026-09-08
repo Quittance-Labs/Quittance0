@@ -8,6 +8,7 @@ import { statusLabel } from '@/lib/invoice-status-label';
 interface PaymentStatusProps {
   status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
   txHash?: string;
+  assetCode?: string;
   /** Removes the large card/icon treatment when embedded in payment details. */
   compact?: boolean;
 }

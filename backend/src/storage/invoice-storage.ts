@@ -18,7 +18,9 @@ export interface StoredInvoice {
   sellerName?: string;
   sellerEmail?: string;
   amount: number;
+  /** Asset code for the invoice (e.g., 'XLM' or 'USDC'). */
   assetCode: string;
+  /** Issuer public key for credit assets (omitted for native XLM). */
   assetIssuer?: string;
   memo: string;
   description?: string;

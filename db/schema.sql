@@ -80,6 +80,7 @@ ALTER TABLE invoices ALTER COLUMN expires_at SET NOT NULL;
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_invoices_seller ON invoices(seller_public_key);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+CREATE INDEX IF NOT EXISTS idx_invoices_asset_code ON invoices(asset_code);
 CREATE INDEX IF NOT EXISTS idx_invoices_memo ON invoices(memo);
 CREATE INDEX IF NOT EXISTS idx_invoices_created_at ON invoices(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_invoices_seller_created_at ON invoices(seller_public_key, created_at DESC);

@@ -357,7 +357,7 @@ export function generateInvoicePDF(invoice: Invoice): string {
     <ol style="margin: 0; padding-left: 20px; font-size: 12px;">
       <li>Ctrl+P (Windows) or Cmd+P (Mac)</li>
       <li>"Destination" → "Save as PDF"</li>
-      <li>Click "Save" / "Print"</li>
+      <li>Click "Print"</li>
     </ol>
     <button onclick="window.print()" style="background: white; color: #06b6d4; border: none; padding: 8px 16px; border-radius: 4px; margin-top: 10px; cursor: pointer; font-weight: bold; font-size: 12px;">
       Save as PDF

@@ -72,7 +72,7 @@ export class InvoiceService {
       input.sellerName || null,
       input.sellerEmail || null,
       input.amount,
-      input.assetCode || 'XLM',
+      (input.assetCode || 'XLM').toUpperCase(),
       input.assetIssuer || null,
       memo,
       input.description || null,

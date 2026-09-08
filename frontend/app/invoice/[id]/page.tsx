@@ -12,6 +12,7 @@ import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
 import FreighterInstallPrompt from '@/components/FreighterInstallPrompt';
 import PaymentReceipt from '@/components/PaymentReceipt';
+import AssetLogo from '@/components/AssetLogo';
 import { formatAmount, formatDate, getTimeRemaining } from '@/lib/utils';
 import { MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';
 import { ArrowLeft, Share2, Loader2, X, Mail } from 'lucide-react';
@@ -275,12 +276,13 @@ export default function InvoiceDetailPage() {
                     reader equivalent, rather than an `aria-label` on the
                     <dd> — ARIA prohibits naming a <dd>, and axe reports it.
                   */}
-                  <dd className="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-cyan-700 to-blue-700 bg-clip-text text-transparent">
+                  <dd className="flex items-center gap-3 text-4xl sm:text-5xl font-bold bg-gradient-to-r from-cyan-700 to-blue-700 bg-clip-text text-transparent">
+                    <AssetLogo code={invoice.assetCode || 'XLM'} size={32} showName={false} decorative />
                     <span aria-hidden="true">
-                      {formatAmount(invoice.amount, 7)} <span className="text-2xl">{invoice.assetCode}</span>
+                      {formatAmount(invoice.amount, 7)} <span className="text-2xl">{invoice.assetCode || 'XLM'}</span>
                     </span>
                     <span className="sr-only">
-                      {describeAmount(formatAmount(invoice.amount, 7), invoice.assetCode)}
+                      {describeAmount(formatAmount(invoice.amount, 7), invoice.assetCode || 'XLM')}
                     </span>
                   </dd>
                 </div>

@@ -39,12 +39,18 @@ export const STELLAR_ASSETS: StellarAsset[] = [
 
 // Get asset by code
 export const getAssetByCode = (code: string): StellarAsset | undefined => {
-  const asset = STELLAR_ASSETS.find(asset => asset.code === code);
-  if (asset && asset.decimals !== decimalsForAsset(asset.code)) {
-    // Keep decimals consistent with the canonical lookup table.
-    return { ...asset, decimals: decimalsForAsset(asset.code) };
-  }
-  return asset;
+  return STELLAR_ASSETS.find(asset => asset.code.toUpperCase() === code.toUpperCase());
+};
+
+// Check if asset is native XLM
+export const isNativeAsset = (code: string): boolean => {
+  return code.toUpperCase() === 'XLM';
+};
+
+// Get asset issuer address if applicable
+export const getAssetIssuer = (code: string): string | undefined => {
+  const asset = getAssetByCode(code);
+  return asset?.issuer;
 };
 
 // Format asset display name

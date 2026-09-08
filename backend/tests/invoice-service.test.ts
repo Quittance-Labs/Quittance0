@@ -356,4 +356,21 @@ describe('InvoiceService (Postgres) seller scoping', () => {
       /Invoice not found or already processed/
     );
   });
+
+  it('supports multi-asset invoice creation with USDC and assetIssuer', async () => {
+    const db = new FakeInvoiceDb();
+    const service = new InvoiceService(db);
+    const created = await service.createInvoice(
+      input(SELLER_A, {
+        amount: 100,
+        assetCode: 'USDC',
+        assetIssuer: USDC_ISSUER,
+      })
+    );
+
+    assert.equal(created.assetCode, 'USDC');
+    assert.equal(created.assetIssuer, USDC_ISSUER);
+    assert.equal(db.rows[0].asset_code, 'USDC');
+    assert.equal(db.rows[0].asset_issuer, USDC_ISSUER);
+  });
 });
