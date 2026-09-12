@@ -74,6 +74,18 @@ export function sendVerificationFailure(
   res.status(status).json({ success: false, code, error });
 }
 
+/**
+ * The envelope a verification rejection is returned in.
+ *
+ * `success` is the literal `false` rather than `boolean` so this discriminates
+ * from a success envelope at the type level instead of only at runtime.
+ */
+export interface VerificationFailureBody {
+  success: false;
+  code: VerificationCode;
+  error: string;
+}
+
 /** Build a verification failure envelope with a stable code and its message. */
 export function verificationFailureBody(
   code: VerificationCode,
