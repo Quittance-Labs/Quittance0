@@ -25,6 +25,7 @@ const VERIFICATION_MESSAGES = {
   AMOUNT_MISMATCH: 'Amount mismatch',
   ASSET_MISMATCH: 'Asset mismatch',
   NETWORK_MISMATCH: 'Transaction is on a different Stellar network',
+  TX_HASH_ALREADY_USED: 'Transaction already settled another invoice',
 };
 
 const MAX_PAYER_FIELD_LENGTH = 255;

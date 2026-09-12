@@ -68,4 +68,10 @@ cd backend && npm test
 - `tests/payment-verification.test.ts` — the full check order and every
   rejection
 - `tests/invoice-payment-loop.test.ts` — create → pay → verify → `PAID` against
-  the real Express app with a stubbed Horizon
+  the real Express app with a stubbed Horizon, including a concurrent
+  double-POST of one verification
+- `tests/payment-attribution.test.ts` — hash-to-invoice claims, memo
+  uniqueness, and the one-transaction-one-invoice rule
+
+Which invoice a transaction settles, and what a second caller sees, is covered
+separately in [VERIFY-IDEMPOTENCY.md](./VERIFY-IDEMPOTENCY.md).

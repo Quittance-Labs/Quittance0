@@ -2,6 +2,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { calculateInvoiceStats } from './invoice-stats';
 import type { InvoiceStats } from './invoice-stats';
 import { isPendingInvoiceExpired } from '../domain/invoice-expiry';
+import {
+  MemoCollisionError,
+  PaymentClaimError,
+  PaymentClaimIndex,
+} from '../domain/payment-attribution';
+import type { PaymentClaim } from '../domain/payment-attribution';
 import type { StoredInvoice } from './invoice-storage';
 
 type Invoice = StoredInvoice;
@@ -9,6 +15,8 @@ type Invoice = StoredInvoice;
 class MemoryStorage {
   private invoices: Map<string, Invoice> = new Map();
   private invoicesByMemo: Map<string, string> = new Map(); // memo -> invoice id
+  // Which invoice each transaction hash settled; see domain/payment-attribution.ts.
+  private readonly paymentClaims = new PaymentClaimIndex();
 
   createInvoice(data: Partial<Invoice>): Invoice {
     const invoice: Invoice = {
@@ -29,6 +37,13 @@ class MemoryStorage {
       metadata: data.metadata,
     };
 
+    // The memo index is keyed by memo, so a second invoice carrying the same
+    // memo would overwrite the first one's entry and leave it unreachable by
+    // the payment monitor. Refuse instead, and let creation draw another memo.
+    if (this.invoicesByMemo.has(invoice.memo)) {
+      throw new MemoCollisionError(invoice.memo);
+    }
+
     this.invoices.set(invoice.id, invoice);
     this.invoicesByMemo.set(invoice.memo, invoice.id);
 
@@ -47,6 +62,16 @@ class MemoryStorage {
     this.markExpiredInvoices();
     const id = this.invoicesByMemo.get(memo);
     return id ? this.invoices.get(id) : undefined;
+  }
+
+  /** Read-only memo lookup, without the expiry sweep getInvoiceByMemo runs. */
+  hasMemo(memo: string): boolean {
+    return this.invoicesByMemo.has(memo);
+  }
+
+  /** Read-only claim lookup, for diagnostics and tests. */
+  getPaymentClaim(txHash: string): PaymentClaim | undefined {
+    return this.paymentClaims.peek(txHash);
   }
 
   // Update invoice
@@ -84,6 +109,16 @@ class MemoryStorage {
     const invoice = this.invoices.get(id);
     if (!invoice || invoice.status !== 'PENDING') return undefined;
     if (new Date(invoice.expiresAt).getTime() <= now.getTime()) return undefined;
+
+    // One transaction settles one invoice. The claim below reads and records in
+    // the same synchronous step, so a second caller holding the same hash gets a
+    // decision here rather than a second PAID transition. A replay against this
+    // same invoice falls back to the "already processed" contract above.
+    const decision = this.paymentClaims.claim(txHash, id, now);
+    if (decision.kind === 'conflict') {
+      throw new PaymentClaimError(txHash, id, decision.claim.invoiceId);
+    }
+    if (decision.kind === 'replay') return undefined;
 
     return this.updateInvoice(id, {
       status: 'PAID',
@@ -135,6 +170,7 @@ class MemoryStorage {
   clear() {
     this.invoices.clear();
     this.invoicesByMemo.clear();
+    this.paymentClaims.clear();
     console.log('🗑️ Memory storage cleared');
   }
 
