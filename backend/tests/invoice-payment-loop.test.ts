@@ -28,7 +28,17 @@ import type { Application } from 'express';
 
 const SELLER = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
 const PAYER = 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H';
-const TX_HASH = 'a'.repeat(64);
+/**
+ * A distinct transaction hash per verification, as Stellar guarantees: a hash
+ * belongs to exactly one transaction, and one transaction settles one invoice
+ * (domain/payment-attribution.ts). Reusing one constant across these tests
+ * modelled a transaction that cannot exist.
+ */
+let txSequence = 0;
+function nextTxHash(): string {
+  txSequence += 1;
+  return txSequence.toString(16).padStart(64, '0');
+}
 
 /** Whatever the current stub should answer with, swapped per test. */
 let horizonResponder: (path: string) => { status: number; body: unknown };
@@ -81,7 +91,9 @@ function paymentOn(overrides: {
   assetCode?: string;
 }) {
   return (path: string) => {
-    if (path.startsWith(`/transactions/${TX_HASH}/operations`)) {
+    // Match the path instead of comparing it with one constant, so each test
+    // can use its own hash.
+    if (/^\/transactions\/[0-9a-f]{64}\/operations$/.test(path)) {
       return {
         status: 200,
         body: {
@@ -102,11 +114,11 @@ function paymentOn(overrides: {
       };
     }
 
-    if (path.startsWith(`/transactions/${TX_HASH}`)) {
+    if (/^\/transactions\/[0-9a-f]{64}$/.test(path)) {
       return {
         status: 200,
         body: {
-          hash: TX_HASH,
+          hash: path.split('/')[2],
           successful: true,
           ledger: 1_000_000,
           memo: overrides.memo,
@@ -180,15 +192,16 @@ describe('invoice payment loop', () => {
     const invoice = await createInvoice(port);
     assert.equal(invoice.status, 'PENDING');
 
+    const txHash = nextTxHash();
     horizonResponder = paymentOn({ memo: invoice.memo });
 
     const verified = await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, {
-      txHash: TX_HASH,
+      txHash,
     });
 
     assert.equal(verified.status, 200, JSON.stringify(verified.body));
     assert.equal(verified.body.data.status, 'PAID');
-    assert.equal(verified.body.data.paymentTxHash, TX_HASH);
+    assert.equal(verified.body.data.paymentTxHash, txHash);
 
     const fetched = await jsonRequest(port, 'GET', `/api/invoices/${invoice.id}`);
     assert.equal(fetched.body.data.status, 'PAID');
@@ -199,7 +212,7 @@ describe('invoice payment loop', () => {
     horizonResponder = paymentOn({ memo: invoice.memo });
 
     const verified = await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, {
-      txHash: TX_HASH,
+      txHash: nextTxHash(),
       payerName: 'Ada Lovelace',
       payerEmail: 'ada@example.com',
     });
@@ -214,7 +227,7 @@ describe('invoice payment loop', () => {
     horizonResponder = paymentOn({ memo: 'someone-elses-memo' });
 
     const verified = await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, {
-      txHash: TX_HASH,
+      txHash: nextTxHash(),
     });
 
     assert.equal(verified.status, 400);
@@ -230,7 +243,7 @@ describe('invoice payment loop', () => {
     horizonResponder = paymentOn({ memo: invoice.memo, to: PAYER });
 
     const verified = await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, {
-      txHash: TX_HASH,
+      txHash: nextTxHash(),
     });
 
     assert.equal(verified.status, 400);
@@ -243,7 +256,7 @@ describe('invoice payment loop', () => {
     horizonResponder = paymentOn({ memo: invoice.memo, amount: '24.9999999' });
 
     const verified = await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, {
-      txHash: TX_HASH,
+      txHash: nextTxHash(),
     });
 
     assert.equal(verified.status, 400);
@@ -260,7 +273,7 @@ describe('invoice payment loop', () => {
     });
 
     const verified = await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, {
-      txHash: TX_HASH,
+      txHash: nextTxHash(),
     });
 
     assert.equal(verified.status, 400);
@@ -273,12 +286,12 @@ describe('invoice payment loop', () => {
     horizonResponder = paymentOn({ memo: invoice.memo });
 
     const first = await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, {
-      txHash: TX_HASH,
+      txHash: nextTxHash(),
     });
     assert.equal(first.status, 200);
 
     const second = await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, {
-      txHash: TX_HASH,
+      txHash: nextTxHash(),
     });
 
     assert.equal(second.status, 400);
@@ -303,7 +316,7 @@ describe('invoice payment loop', () => {
     };
 
     const verified = await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, {
-      txHash: TX_HASH,
+      txHash: nextTxHash(),
       payerEmail: 'not-an-email',
     });
 
@@ -317,7 +330,7 @@ describe('invoice payment loop', () => {
       port,
       'POST',
       '/api/invoices/00000000-0000-0000-0000-000000000000/verify',
-      { txHash: TX_HASH }
+      { txHash: nextTxHash() }
     );
 
     assert.equal(verified.status, 404);
@@ -327,7 +340,7 @@ describe('invoice payment loop', () => {
     const invoice = await createInvoice(port, 12);
     horizonResponder = paymentOn({ memo: invoice.memo, amount: '12.0000000' });
 
-    await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, { txHash: TX_HASH });
+    await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, { txHash: nextTxHash() });
 
     const stats = await jsonRequest(
       port,
@@ -348,5 +361,55 @@ describe('invoice payment loop', () => {
       summary.revenue_by_asset.XLM >= 12,
       'the paid amount should appear under its own asset code'
     );
+  });
+
+  it('marks the invoice PAID exactly once when two verifications race', async () => {
+    const invoice = await createInvoice(port);
+    const txHash = nextTxHash();
+    horizonResponder = paymentOn({ memo: invoice.memo });
+
+    // Both requests read PENDING, both await Horizon, both reach attribution.
+    // One wins the claim; the other must read the same terminal state, not
+    // write a second transition over it.
+    const [first, second] = await Promise.all([
+      jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, { txHash }),
+      jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, { txHash }),
+    ]);
+
+    const statuses = [first.status, second.status].sort();
+    assert.deepEqual(statuses, [200, 400], JSON.stringify([first.body, second.body]));
+
+    const rejected = first.status === 400 ? first : second;
+    assert.equal(rejected.body.code, 'INVOICE_ALREADY_PAID');
+
+    const fetched = await jsonRequest(port, 'GET', `/api/invoices/${invoice.id}`);
+    assert.equal(fetched.body.data.status, 'PAID');
+    assert.equal(fetched.body.data.paymentTxHash, txHash);
+  });
+
+  it('refuses to settle a second invoice with another invoice\'s transaction hash', async () => {
+    const settled = await createInvoice(port);
+    const txHash = nextTxHash();
+    horizonResponder = paymentOn({ memo: settled.memo });
+
+    const first = await jsonRequest(port, 'POST', `/api/invoices/${settled.id}/verify`, {
+      txHash,
+    });
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+
+    // Same hash, second invoice. A transaction carries one memo, so the memo
+    // check is what turns this away; the hash-to-invoice claim is the backstop
+    // for the case the memo check cannot see, which is two invoices holding the
+    // same memo (refused at creation, covered in payment-attribution.test.ts).
+    const other = await createInvoice(port);
+    const second = await jsonRequest(port, 'POST', `/api/invoices/${other.id}/verify`, {
+      txHash,
+    });
+
+    assert.equal(second.status, 400);
+    assert.equal(second.body.code, 'MEMO_MISMATCH');
+
+    const fetched = await jsonRequest(port, 'GET', `/api/invoices/${other.id}`);
+    assert.equal(fetched.body.data.status, 'PENDING');
   });
 });

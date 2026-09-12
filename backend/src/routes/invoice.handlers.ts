@@ -16,8 +16,10 @@ import {
   checkInvoiceIsPayable,
   checkPayerInfo,
   checkTxHash,
+  messageForCode,
   verifyHorizonPayment,
 } from '../services/payment-verification';
+import { PaymentClaimError } from '../domain/payment-attribution';
 import { simulationAllowed } from '../config/runtime';
 import { createRequestId } from '../utils/request-correlation-id';
 
@@ -288,6 +290,12 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
             payerCheck.value
           );
         } catch (error) {
+          if (error instanceof PaymentClaimError) {
+            // A transaction that already settled another invoice must not settle
+            // this one as well. 409, not 400: the request is well formed and it
+            // is the server's recorded state that refuses it.
+            return sendVerificationFailure(res, 409, error.code, messageForCode(error.code));
+          }
           // The payment lookup can cross expiresAt after the first status read.
           // Re-read so that race still returns the public expiry contract.
           const latest = await storage.getInvoiceById(id);

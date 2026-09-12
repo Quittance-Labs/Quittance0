@@ -1,3 +1,4 @@
+import { MemoCollisionError } from '../domain/payment-attribution';
 import { generateInvoiceMemo } from '../utils/memo';
 import { generatePublicInvoiceId } from '../utils/memory-public-id';
 import { CreateInvoiceInput } from '../utils/validation';
@@ -7,8 +8,22 @@ import type { StoredInvoice } from '../storage/invoice-storage';
 import type { InvoiceStats } from '../storage/invoice-stats';
 import type { PayerInfo } from '../storage/invoice-storage';
 
+/**
+ * How many times invoice creation re-draws a memo before giving up.
+ *
+ * A collision means another live invoice already holds that memo, which is how
+ * one on-chain payment could otherwise be made to satisfy two invoices. Against
+ * a per-millisecond random suffix a second draw is already generous; the point
+ * of the bound is to fail loudly instead of looping.
+ */
+const MEMO_DRAW_ATTEMPTS = 3;
+
 export class InvoiceMemoryService {
-  constructor(private readonly storage: MemoryStorage = memoryStorage) {}
+  constructor(
+    private readonly storage: MemoryStorage = memoryStorage,
+    /** Injectable so the collision path is testable without waiting for one. */
+    private readonly nextMemo: () => string = generateInvoiceMemo
+  ) {}
 
   async createInvoice(input: CreateInvoiceInput): Promise<StoredInvoice> {
     if (!input.sellerPublicKey) {
@@ -16,7 +31,7 @@ export class InvoiceMemoryService {
     }
 
     const id = generatePublicInvoiceId();
-    const memo = generateInvoiceMemo();
+    const memo = this.drawUnusedMemo();
     const expiresAt = calculateInvoiceExpiry(input.expiresInDays);
 
     const invoice = this.storage.createInvoice({
@@ -36,6 +51,29 @@ export class InvoiceMemoryService {
 
     console.log('✅ Invoice created:', invoice.id);
     return invoice;
+  }
+
+  /**
+   * Draw a memo no live invoice holds. Throws rather than returning a memo that
+   * is already taken: two invoices sharing one memo cannot be told apart by the
+   * payment monitor, so this is a refusal to create, not a warning.
+   */
+  private drawUnusedMemo(): string {
+    let candidate = this.nextMemo();
+
+    for (
+      let attempt = 1;
+      attempt < MEMO_DRAW_ATTEMPTS && this.storage.hasMemo(candidate);
+      attempt++
+    ) {
+      candidate = this.nextMemo();
+    }
+
+    if (this.storage.hasMemo(candidate)) {
+      throw new MemoCollisionError(candidate);
+    }
+
+    return candidate;
   }
 
   async getInvoiceById(id: string): Promise<StoredInvoice | null> {
