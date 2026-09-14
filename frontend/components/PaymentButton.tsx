@@ -8,6 +8,7 @@ import {
   getFreighterNetwork,
   isWrongNetwork,
   NETWORK_DISPLAY_NAME,
+  EXPECTED_WALLET_NETWORK,
 } from '@/lib/stellar';
 import { toast } from 'sonner';
 import { Wallet, Loader2 } from 'lucide-react';

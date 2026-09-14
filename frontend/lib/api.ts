@@ -1,6 +1,18 @@
 import axios from 'axios';
+import {
+  ApiUnavailableError,
+  apiErrorMessage,
+  isApiUnavailableError,
+  resolveApiConfig,
+  toApiError,
+} from './api-runtime';
+import { resolveVerificationError } from './verification';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+export const API_CONFIG = resolveApiConfig(
+  process.env.NEXT_PUBLIC_API_URL,
+  process.env.NODE_ENV
+);
+export const PAYMENT_STATUS_POLL_INTERVAL_MS = 3000;
 
 const api = axios.create({
   baseURL: API_CONFIG.baseUrl,

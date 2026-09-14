@@ -29,6 +29,7 @@ import { MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';
 import { useWalletStore } from '@/lib/store';
 import { EXPECTED_WALLET_NETWORK, NETWORK_DISPLAY_NAME } from '@/lib/stellar';
 import { detectDevice } from '@/lib/mobile-detection';
+import { memoPaymentHint } from '@/lib/pay-memo-hint';
 
 export default function PaymentPage() {
   const id = useParams().id as string;
@@ -287,23 +288,24 @@ export default function PaymentPage() {
                         </div>
                       )}
                       {!(isWrongNetwork && walletPaymentGate.ready) && (
-                      <PaymentButton
-                        destination={invoice.sellerPublicKey}
-                        amount={String(invoice.amount)}
-                        memo={invoice.memo}
-                        assetCode={invoice.assetCode}
-                        assetIssuer={invoice.assetIssuer}
-                        invoiceId={invoice.id}
-                        payerName={page.payerName}
-                        payerEmail={page.payerEmail}
-                        invoiceStatus={view.expired ? 'EXPIRED' : invoice.status}
-                        onStart={() => page.dispatch({ type: 'PAY_STARTED' })}
-                        onSuccess={(txHash) => {
-                          page.dispatch({ type: 'PAY_SENT', txHash });
-                          void page.reload();
-                        }}
-                        onError={(error) => page.dispatch({ type: 'PAY_FAILED', error })}
-                      />
+                        <PaymentButton
+                          destination={invoice.sellerPublicKey}
+                          amount={String(invoice.amount)}
+                          memo={invoice.memo}
+                          assetCode={invoice.assetCode}
+                          assetIssuer={invoice.assetIssuer}
+                          invoiceId={invoice.id}
+                          payerName={page.payerName}
+                          payerEmail={page.payerEmail}
+                          invoiceStatus={view.expired ? 'EXPIRED' : invoice.status}
+                          onStart={() => page.dispatch({ type: 'PAY_STARTED' })}
+                          onSuccess={(txHash) => {
+                            page.dispatch({ type: 'PAY_SENT', txHash });
+                            void page.reload();
+                          }}
+                          onError={(error) => page.dispatch({ type: 'PAY_FAILED', error })}
+                        />
+                      )}
                       {isMobile && showDesktopWalletAnyway && (
                         <div className="mt-4 text-center">
                           <button
