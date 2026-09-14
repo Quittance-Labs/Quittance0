@@ -8,16 +8,19 @@ import paymentMonitorService from './services/payment-monitor.service';
 import { configuredFrontendOrigins, corsOptions } from './config/runtime';
 import postgresInvoiceStorage from './storage/postgres-invoice-storage';
 import bodyLimitMiddleware from './middleware/body-limit';
+import { correlationMiddleware } from './middleware/correlation-id';
 
 dotenv.config();
 
 const app: Application = express();
 const PORT = process.env.PORT || 3001;
 
+app.use(correlationMiddleware);
 app.use(cors(corsOptions()));
 
 app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
+app.use(bodyLimitMiddleware);
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);

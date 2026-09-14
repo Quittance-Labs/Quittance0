@@ -14,6 +14,8 @@ import {
   PaymentMonitorCheckpointStore,
   PostgresPaymentMonitorCheckpointStore,
 } from './payment-monitor-checkpoint';
+import { logEvent, logReference } from '../observability/log-events';
+import { createRequestId } from '../utils/request-correlation-id';
 
 export interface PaymentPageSource {
   getPaymentsPage(account: string, cursor: string, limit: number): Promise<PaymentPageRecord[]>;
@@ -277,6 +279,15 @@ export class PaymentMonitorService {
       undefined,
       { settledAt }
     );
+    const monitorReqId = createRequestId();
+    logEvent('info', 'invoice.paid', { requestId: monitorReqId, service: 'api' }, {
+      invoiceRef: logReference(invoice.id),
+      sellerRef: logReference(invoice.sellerPublicKey),
+      txRef: logReference(payment.txHash),
+      assetCode: invoice.assetCode,
+      network: STELLAR_NETWORK,
+      storage: this.database ? 'postgres' : 'in-memory',
+    });
   }
 
   private async saveTransaction(payment: PaymentRecord, invoiceId: string) {

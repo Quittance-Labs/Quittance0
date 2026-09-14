@@ -1,5 +1,7 @@
 import * as StellarSdk from '@stellar/stellar-sdk';
-import { server, NETWORK_PASSPHRASE, getSellerKeypair } from '../config/stellar';
+import { server, NETWORK_PASSPHRASE, getSellerKeypair, STELLAR_NETWORK } from '../config/stellar';
+import { logEvent } from '../observability/log-events';
+import { createRequestId } from '../utils/request-correlation-id';
 import {
   checkTxHash,
   failure,
@@ -96,6 +98,7 @@ class StellarService {
    * Get transaction details
    */
   async getTransaction(txHash: string): Promise<any> {
+    const startTime = Date.now();
     try {
       const transaction = await server.transactions().transaction(txHash).call();
       const operations = await server.operations().forTransaction(txHash).call();
@@ -106,6 +109,15 @@ class StellarService {
       };
     } catch (error: any) {
       console.error('Error fetching transaction:', error);
+      const is404 = error?.response?.status === 404 || error?.message?.includes('404');
+      const errorCode = is404 ? 'TRANSACTION_NOT_FOUND' : (error?.code || 'HORIZON_ERROR');
+      logEvent('warn', 'horizon.request.failed', { requestId: createRequestId(), service: 'api' }, {
+        operation: 'getTransaction',
+        errorCode,
+        network: STELLAR_NETWORK,
+        attempt: 1,
+        durationMs: Date.now() - startTime,
+      });
       throw new Error(`Transaction not found: ${error.message}`);
     }
   }

@@ -8,6 +8,7 @@ import {
   verifyConcurrencyLock,
 } from '../middleware/rate-limit';
 import { createInvoiceCeilingMiddleware } from '../middleware/invoice-ceiling';
+import { correlationMiddleware } from '../middleware/correlation-id';
 
 export interface InvoiceRouterOptions extends InvoiceHandlerOptions {
   enableRateLimiting?: boolean;
@@ -33,6 +34,7 @@ export interface InvoiceRouterOptions extends InvoiceHandlerOptions {
 export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
   const handlers = createInvoiceHandlers(options);
   const router = Router();
+  router.use(correlationMiddleware);
 
   const enableRateLimiting =
     options.enableRateLimiting ??
