@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 export async function resolve(specifier, context, nextResolve) {
   if (specifier === 'date-fns') {
     return {
@@ -15,4 +18,27 @@ export async function resolve(specifier, context, nextResolve) {
   }
 
   return nextResolve(specifier, context);
+}
+
+export async function load(url, context, nextLoad) {
+  try {
+    return await nextLoad(url, context);
+  } catch (err) {
+    if (url.endsWith('.ts')) {
+      try {
+        const { transform } = await import('../frontend/node_modules/sucrase/dist/index.js');
+        const filePath = fileURLToPath(url);
+        const raw = fs.readFileSync(filePath, 'utf8');
+        const { code } = transform(raw, { transforms: ['typescript'] });
+        return {
+          format: 'module',
+          shortCircuit: true,
+          source: code,
+        };
+      } catch {
+        throw err;
+      }
+    }
+    throw err;
+  }
 }

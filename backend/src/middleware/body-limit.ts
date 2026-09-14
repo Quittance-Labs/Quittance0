@@ -22,3 +22,6 @@ export const bodyLimitErrorHandler: ErrorRequestHandler = (
   }
   next(err);
 };
+
+export default bodyLimitErrorHandler;
+

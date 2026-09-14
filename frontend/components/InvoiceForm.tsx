@@ -6,14 +6,11 @@ import { toast } from 'sonner';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { STELLAR_ASSETS, getAssetByCode } from '@/lib/assets';
 import { useWalletStore } from '@/lib/store';
-import { NETWORK_DISPLAY_NAME } from '@/lib/stellar';
-import { showFreighterWrongNetworkPrompt } from './FreighterInstallPrompt';
+import { NETWORK_DISPLAY_NAME, EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
+import { showFreighterWrongNetworkPrompt, showFreighterInstallPrompt } from './FreighterInstallPrompt';
 import AssetLogo from './AssetLogo';
 import ApiErrorState from './ApiErrorState';
-import { useWalletStore } from '@/lib/store';
 import { walletGate } from '@/lib/freighter-availability';
-import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
-import { showFreighterInstallPrompt } from './FreighterInstallPrompt';
 
 interface InvoiceFormProps {
   onSuccess?: (invoice: any) => void;
@@ -21,7 +18,7 @@ interface InvoiceFormProps {
 }
 
 export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps) {
-  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
+  const { publicKey, connected, network, freighterAvailable, isWrongNetwork } = useWalletStore();
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState('');
   const [assetCode, setAssetCode] = useState('XLM');
@@ -32,7 +29,6 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   const [customerEmail, setCustomerEmail] = useState('');
   const [apiError, setApiError] = useState<string | null>(null);
   const [expiresInDays, setExpiresInDays] = useState(7);
-  const { isWrongNetwork } = useWalletStore();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,7 +48,8 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       return;
     }
 
-    if (!amount || parseFloat(amount) <= 0) {
+    const parsedAmount = parseFloat(amount);
+    if (!amount || isNaN(parsedAmount) || parsedAmount <= 0) {
       toast.error('Enter a valid amount');
       return;
     }

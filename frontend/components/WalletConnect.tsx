@@ -10,7 +10,6 @@ import {
   getUserPublicKey,
   getAccountBalance,
   describeStellarNetworkError,
-  getFreighterNetwork,
   isWrongNetwork as checkIsWrongNetwork,
   NETWORK_DISPLAY_NAME,
 } from '@/lib/stellar';
@@ -20,6 +19,7 @@ import { Wallet, LogOut, Loader2, ExternalLink, Bell, BellOff, AlertTriangle } f
 import { toast } from 'sonner';
 import { formatAddress } from '@/lib/utils';
 import { showFreighterInstallPrompt, showFreighterWrongNetworkPrompt } from '@/components/FreighterInstallPrompt';
+import { networkLabel, walletGate } from '@/lib/freighter-availability';
 
 interface WalletConnectProps {
   onConnect?: (publicKey: string) => void;
@@ -35,11 +35,17 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
     isWrongNetwork,
     network,
     networkPassphrase,
+    freighterAvailable,
     setWallet,
     setNetwork,
     setIsWrongNetwork,
+    syncSession,
     disconnect,
   } = useWalletStore();
+  const gate = walletGate(
+    { freighterAvailable, connected, publicKey, network },
+    EXPECTED_WALLET_NETWORK
+  );
 
   const loadBalance = useCallback(async (key: string, netName?: string | null, netPass?: string | null) => {
     try {

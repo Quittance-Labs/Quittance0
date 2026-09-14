@@ -27,6 +27,8 @@ import {
 import { cutoverDrainMode, simulationAllowed } from '../config/runtime';
 import { createRequestId } from '../utils/request-correlation-id';
 import { verifySellerSignature } from '../utils/signature-verification';
+import { checkInvoiceVerifyLimit } from '../middleware/rate-limit';
+import { cacheVerificationResult } from '../middleware/verify-cache';
 
 /** Kept explicit so clients can tune polling without duplicating backend policy. */
 export const PAYMENT_STATUS_POLL_INTERVAL_MS = 3000;
@@ -347,18 +349,6 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
       try {
         const { id } = req.params;
         const { network } = req.body || {};
-
-        // Per-invoice rate limit check (prevents Horizon amplification)
-        const invoiceLimit = await checkInvoiceVerifyLimit(id);
-        if (!invoiceLimit.allowed) {
-          res.set('Retry-After', (invoiceLimit.retryAfter || 60).toString());
-          return sendVerificationFailure(
-            res,
-            429,
-            'VERIFY_RATE_LIMIT_EXCEEDED',
-            'Too many verification attempts for this invoice'
-          );
-        }
 
         const hashCheck = checkTxHash(req.body?.txHash);
         if (!hashCheck.ok) {

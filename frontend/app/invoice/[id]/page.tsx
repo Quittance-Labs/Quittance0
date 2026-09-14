@@ -21,7 +21,7 @@ import { useWalletStore } from '@/lib/store';
 import ApiErrorState from '@/components/ApiErrorState';
 import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
 import { invoiceSharePath } from '@/lib/invoice-share-path';
-import { useWalletStore } from '@/lib/store';
+import { shareInvoiceByEmail } from '@/lib/export';
 import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
 import { walletGate } from '@/lib/freighter-availability';
 
@@ -29,12 +29,11 @@ export default function InvoiceDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
-  const { publicKey: storePublicKey, connected } = useWalletStore();
+  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
 
   const [invoice, setInvoice] = useState<any>(null);
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lifecycleNow, setLifecycleNow] = useState(() => Date.now());
   // Cancelling reloads the invoice and swaps the status panel out from under
@@ -94,7 +93,7 @@ export default function InvoiceDetailPage() {
     }
   };
 
-  const activeWallet = userWallet || (connected ? storePublicKey : null);
+  const activeWallet = publicKey || null;
 
   const handleCancel = async () => {
     if (!window.confirm('Cancel this invoice?')) return;

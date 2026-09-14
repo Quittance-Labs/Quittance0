@@ -99,6 +99,7 @@ const readResultString = (value: any, keys: string[]): string | null => {
 export interface FreighterNetwork {
   network: string | null;
   networkPassphrase: string | null;
+  networkUrl?: string;
 }
 
 export interface FreighterSession {
@@ -121,9 +122,10 @@ export const checkWalletConnection = async (): Promise<boolean> => {
  */
 export const requestWalletAccess = async (): Promise<boolean> => {
   try {
+    const connected = await checkWalletConnection();
+    if (!connected) return false;
     const allowed = await setAllowed();
-    if (readResultBoolean(allowed, 'isAllowed')) return true;
-    return readResultBoolean(await isAllowed(), 'isAllowed');
+    return readResultBoolean(allowed, 'isAllowed');
   } catch (error) {
     console.error('Error requesting wallet access:', error);
     return false;
@@ -131,7 +133,7 @@ export const requestWalletAccess = async (): Promise<boolean> => {
 };
 
 /**
- * Get user's public key from wallet
+ * Get the user's public key from Freighter
  */
 export const getUserPublicKey = async (): Promise<string | null> => {
   try {
@@ -150,91 +152,10 @@ export const getUserPublicKey = async (): Promise<string | null> => {
   }
 };
 
-export const getFreighterNetwork = async (): Promise<FreighterNetwork> => {
-  const getNetwork = (FreighterApi as any).getNetwork;
-  if (typeof getNetwork !== 'function') {
-    return { network: null, networkPassphrase: null };
-  }
-
-  try {
-    const result = await getNetwork();
-    if (result?.error) return { network: null, networkPassphrase: null };
-    return {
-      network: readResultString(result?.network ?? result, ['network']),
-      networkPassphrase: readResultString(result?.networkPassphrase, ['networkPassphrase']),
-    };
-  } catch (error) {
-    console.error('Error getting Freighter network:', error);
-    return { network: null, networkPassphrase: null };
-  }
-};
-
-export const readFreighterSession = async (): Promise<FreighterSession> => {
-  const freighterAvailable = await checkWalletConnection();
-  if (!freighterAvailable) {
-    return {
-      freighterAvailable: false,
-      connected: false,
-      publicKey: null,
-      network: null,
-      networkPassphrase: null,
-    };
-  }
-
-  const [allowed, publicKey, network] = await Promise.all([
-    isAllowed().then((value) => readResultBoolean(value, 'isAllowed')).catch(() => false),
-    getUserPublicKey(),
-    getFreighterNetwork(),
-  ]);
-
-  return {
-    freighterAvailable: true,
-    connected: allowed && Boolean(publicKey),
-    publicKey,
-    network: network.network,
-    networkPassphrase: network.networkPassphrase,
-  };
-};
-
-export const stopFreighterWalletWatcher = (
-  onChange: (session: FreighterSession) => void,
-  intervalMs = 1000
-): (() => void) => {
-  const WatchWalletChanges = (FreighterApi as any).WatchWalletChanges;
-  if (typeof WatchWalletChanges !== 'function') return () => {};
-
-  const watcher = new WatchWalletChanges(intervalMs);
-  watcher.watch((change: any) => {
-    onChange({
-      freighterAvailable: true,
-      connected: Boolean(change?.address || change?.publicKey),
-      publicKey: change?.address || change?.publicKey || null,
-      network: change?.network || null,
-      networkPassphrase: change?.networkPassphrase || null,
-    });
-  });
-
-  return () => watcher.stop();
-};
-
-export const assertFreighterReady = async (): Promise<FreighterSession> => {
-  const session = await readFreighterSession();
-  if (!session.freighterAvailable) throw new Error(FREIGHTER_REQUIRED_MESSAGE);
-  if (!session.connected || !session.publicKey) throw new Error(FREIGHTER_CONNECT_REQUIRED_MESSAGE);
-  if (!networkMatches(session.network, EXPECTED_WALLET_NETWORK)) {
-    throw new Error(wrongNetworkMessage(EXPECTED_WALLET_NETWORK, session.network));
-  }
-  return session;
-};
-
 /**
  * Query current network and passphrase from Freighter
  */
-export const getFreighterNetwork = async (): Promise<{
-  network: string;
-  networkPassphrase: string;
-  networkUrl?: string;
-} | null> => {
+export const getFreighterNetwork = async (): Promise<FreighterNetwork | null> => {
   try {
     const connected = await checkWalletConnection();
     if (!connected) return null;
@@ -272,6 +193,64 @@ export const getFreighterNetwork = async (): Promise<{
   }
 };
 
+export const readFreighterSession = async (): Promise<FreighterSession> => {
+  const freighterAvailable = await checkWalletConnection();
+  if (!freighterAvailable) {
+    return {
+      freighterAvailable: false,
+      connected: false,
+      publicKey: null,
+      network: null,
+      networkPassphrase: null,
+    };
+  }
+
+  const [allowed, publicKey, network] = await Promise.all([
+    isAllowed().then((value) => readResultBoolean(value, 'isAllowed')).catch(() => false),
+    getUserPublicKey(),
+    getFreighterNetwork(),
+  ]);
+
+  return {
+    freighterAvailable: true,
+    connected: allowed && Boolean(publicKey),
+    publicKey,
+    network: network?.network || null,
+    networkPassphrase: network?.networkPassphrase || null,
+  };
+};
+
+export const stopFreighterWalletWatcher = (
+  onChange: (session: FreighterSession) => void,
+  intervalMs = 1000
+): (() => void) => {
+  const WatchWalletChanges = (FreighterApi as any).WatchWalletChanges;
+  if (typeof WatchWalletChanges !== 'function') return () => {};
+
+  const watcher = new WatchWalletChanges(intervalMs);
+  watcher.watch((change: any) => {
+    onChange({
+      freighterAvailable: true,
+      connected: Boolean(change?.address || change?.publicKey),
+      publicKey: change?.address || change?.publicKey || null,
+      network: change?.network || null,
+      networkPassphrase: change?.networkPassphrase || null,
+    });
+  });
+
+  return () => watcher.stop();
+};
+
+export const assertFreighterReady = async (): Promise<FreighterSession> => {
+  const session = await readFreighterSession();
+  if (!session.freighterAvailable) throw new Error(FREIGHTER_REQUIRED_MESSAGE);
+  if (!session.connected || !session.publicKey) throw new Error(FREIGHTER_CONNECT_REQUIRED_MESSAGE);
+  if (!networkMatches(session.network, EXPECTED_WALLET_NETWORK)) {
+    throw new Error(wrongNetworkMessage(EXPECTED_WALLET_NETWORK, session.network));
+  }
+  return session;
+};
+
 /**
  * Check if the given network or passphrase matches our expected network
  */
@@ -307,7 +286,7 @@ export const isWrongNetwork = (
  * Watch Freighter network changes on an interval
  */
 export const watchFreighterNetwork = (
-  callback: (details: { network: string; networkPassphrase: string; isWrongNetwork: boolean } | null) => void,
+  callback: (details: (FreighterNetwork & { isWrongNetwork: boolean }) | null) => void,
   intervalMs = 2500
 ): (() => void) => {
   let active = true;

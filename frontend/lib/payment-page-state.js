@@ -37,6 +37,7 @@ const TERMINAL_STATES = Object.freeze([PAY_STATES.PAID, PAY_STATES.EXPIRED]);
 const { isTerminalPayState } = require('./pay-terminal-guard.ts');
 const { effectiveInvoiceStatus, hasInvoiceExpired } = require('./invoice-lifecycle');
 const { walletGate } = require('./freighter-availability');
+const { messageForCode } = require('./verification');
 
 const asInvoice = (statusOrInvoice) =>
   statusOrInvoice && typeof statusOrInvoice === 'object'
