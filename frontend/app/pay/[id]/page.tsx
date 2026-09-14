@@ -301,11 +301,30 @@ export default function PaymentPage() {
                       )}
                     </section>
                   )}
+                  {page.networkError && (
+                    <div className="card text-center py-8 border-amber-300 bg-amber-50">
+                      <AlertTriangle className="w-12 h-12 text-amber-600 mx-auto mb-4" aria-hidden="true" />
+                      <h3 className="text-xl font-semibold text-amber-800 mb-2">Connection Problem</h3>
+                      <p className="text-sm text-amber-700 max-w-md mx-auto mb-4">
+                        {page.networkError}
+                      </p>
+                      <p className="text-xs text-amber-600 mb-4">
+                        This is likely a temporary Horizon or API issue. Your payment is processing and this check will retry automatically.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => { page.clearNetworkError(); void page.reload(); }}
+                        className="btn btn-primary text-sm"
+                      >
+                        Retry Now
+                      </button>
+                    </div>
+                  )}
                   <PayMonitorPanel
                     active={page.monitoring}
-                    intervalMs={
+                    intervalMs={{
                       page.paymentInfo?.statusPollingIntervalMs ?? PAYMENT_STATUS_POLL_INTERVAL_MS
-                    }
+                    }}
                   />
                   <PayVerifyPanel
                     txHash={page.txHash}
