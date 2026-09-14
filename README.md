@@ -360,6 +360,12 @@ Templates: `frontend/env.example.txt`, `frontend/env.mvp.local`.
 Recommended host for `server-mvp.ts` (in-memory). `backend/vercel.json` now has
 an optional serverless MVP entrypoint, but Render is the documented demo path
 because it exposes normal liveness/readiness checks and predictable logs.
+For complete details across Render, Fly.io, Railway, and Kubernetes, see [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md).
+
+### Liveness vs Readiness Check Contract
+
+- **Liveness (`/api/health` or `/health`)**: Monitors process status. Probed by platforms to decide container restarts. Responds immediately (200 OK) without touching external APIs or databases, preventing cold-start restart loops.
+- **Readiness (`/api/ready` or `/ready`)**: Monitors deployment configuration and service readiness. Probed by platforms to gate traffic routing. Fails fast (503 Service Unavailable) if critical variables (`FRONTEND_URL`, `STELLAR_NETWORK`, `STELLAR_HORIZON_URL`, `ALLOW_SIMULATE`) are missing or misconfigured. In-memory demo deploy is never blocked on PostgreSQL. Optional Horizon connectivity ping can be enabled via `HEALTH_HORIZON_PING=true`.
 
 ### Manual Web Service
 
@@ -367,7 +373,7 @@ because it exposes normal liveness/readiness checks and predictable logs.
 2. **Root Directory:** `backend`  
 3. **Build:** `npm ci && npm run build`
 4. **Start:** `npm run start:mvp:prod`
-5. Health check path: `/api/ready` (`/api/health` remains liveness)
+5. **Health check path:** `/api/ready` (Render uses this to gate traffic and deploy transitions; `/api/health` remains liveness)
 6. Environment variables:
 
 | Variable | Value |
@@ -378,6 +384,7 @@ because it exposes normal liveness/readiness checks and predictable logs.
 | `FRONTEND_URL` | `https://YOUR-APP.vercel.app` (exact frontend origin) |
 | `FRONTEND_URLS` | Optional comma-separated preview/custom origins |
 | `ALLOW_SIMULATE` | `false` |
+| `HEALTH_HORIZON_PING` | `false` (optional, default false) |
 
 `PORT` is set by Render automatically.
 
