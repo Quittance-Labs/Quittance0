@@ -12,9 +12,11 @@ import { Request, Response } from 'express';
 import { buildQuittanceProof, serializeQuittanceProof, checkQuittanceProofInvariants } from '../services/quittance-proof.service';
 import { sendSuccess, sendFailure } from '../types/api';
 import { createRequestId } from '../utils/request-correlation-id';
+import { logEvent, logReference } from '../observability/log-events';
+import { getRequestId } from '../middleware/correlation-id';
 
 export async function getQuittanceProof(req: Request, res: Response): Promise<void> {
-  const requestId = createRequestId();
+  const requestId = getRequestId(req);
   try {
     const { id } = req.params;
     const network = req.query.network as string | undefined;
@@ -60,7 +62,12 @@ export async function getQuittanceProof(req: Request, res: Response): Promise<vo
       return sendFailure(res, 500, 'Proof generation failed: invariant violation');
     }
 
-    // Return the canonical JSON proof
+    logEvent('info', 'proof.downloaded', { requestId, service: 'api' }, {
+      invoiceRef: logReference(invoice.id),
+      txRef: logReference(invoice.paymentTxHash),
+      proofFormat: 'text',
+    });
+
     sendSuccess(res, 200, {
       ...proof,
     });
@@ -71,19 +78,17 @@ export async function getQuittanceProof(req: Request, res: Response): Promise<vo
 }
 
 export async function getQuittanceProofPDF(req: Request, res: Response): Promise<void> {
-  const requestId = createRequestId();
+  const requestId = getRequestId(req);
   try {
     const { id } = req.params;
     const network = req.query.network as string | undefined;
 
-    // Fetch invoice from storage
     const invoice = await req.app.get('invoiceStorage').getInvoiceById(id);
 
     if (!invoice) {
       return sendFailure(res, 404, 'Invoice not found');
     }
 
-    // Build the canonical quittance proof
     const result = buildQuittanceProof(
       {
         id: invoice.id,
@@ -108,7 +113,6 @@ export async function getQuittanceProofPDF(req: Request, res: Response): Promise
 
     const proof = result.proof;
 
-    // Verify invariants
     const serialized = serializeQuittanceProof(proof);
     const violations = checkQuittanceProofInvariants(serialized);
 
@@ -116,10 +120,14 @@ export async function getQuittanceProofPDF(req: Request, res: Response): Promise
       return sendFailure(res, 500, 'PDF generation failed: invariant violation');
     }
 
-    // Generate HTML for PDF (same format as client-side, but server-rendered)
     const html = generateProofHTML(proof, invoice);
 
-    // Set headers for browser print/PDF save
+    logEvent('info', 'proof.downloaded', { requestId, service: 'api' }, {
+      invoiceRef: logReference(invoice.id),
+      txRef: logReference(invoice.paymentTxHash),
+      proofFormat: 'pdf',
+    });
+
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.set('Content-Disposition', `inline; filename="quittance-${invoice.id}.html"`);
     res.send(html);

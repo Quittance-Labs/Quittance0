@@ -90,13 +90,70 @@ export function buildLogRecord(
   return record;
 }
 
+export type LogSink = (record: StructuredLogRecord) => void;
+
+let activeSink: LogSink | null = null;
+
+/**
+ * Configure a custom sink for emitted log records, primarily for testing.
+ * Pass null to restore default console output.
+ */
+export function setLogSink(sink: LogSink | null): void {
+  activeSink = sink;
+}
+
 export function emitLog(record: StructuredLogRecord): void {
+  if (activeSink) {
+    activeSink(record);
+    return;
+  }
   const output = JSON.stringify(record);
   if (record.level === 'error') console.error(output);
   else if (record.level === 'warn') console.warn(output);
   else console.log(output);
 }
 
+/**
+ * Build and emit a structured log record adhering to the event taxonomy.
+ */
+export function logEvent(
+  level: LogLevel,
+  event: LogEventName,
+  context: LogContext,
+  fields: Record<string, unknown> = {},
+  now?: Date
+): StructuredLogRecord {
+  const record = buildLogRecord(level, event, context, fields, now);
+  emitLog(record);
+  return record;
+}
+
+/**
+ * Log client or server payment attempts.
+ */
+export function logPaymentAttempt(
+  stage: 'started' | 'submitted' | 'rejected',
+  context: LogContext,
+  fields: {
+    invoiceId: string;
+    txHash?: string;
+    errorCode?: string;
+    network?: string;
+    durationMs?: number;
+  }
+): StructuredLogRecord {
+  const eventName = `payment.attempt.${stage}` as LogEventName;
+  const level: LogLevel = stage === 'rejected' ? 'warn' : 'info';
+  return logEvent(level, eventName, context, {
+    invoiceRef: logReference(fields.invoiceId),
+    txRef: fields.txHash ? logReference(fields.txHash) : undefined,
+    errorCode: fields.errorCode,
+    network: fields.network || process.env.STELLAR_NETWORK || 'TESTNET',
+    durationMs: fields.durationMs,
+  });
+}
+
 export function requiredLogFields(event: LogEventName): readonly string[] {
   return EVENT_FIELDS[event];
 }
+

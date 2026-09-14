@@ -17,6 +17,7 @@ import { SELLER_PUBLIC_KEY } from './config/stellar';
 import { configuredFrontendOrigins, corsOptions } from './config/runtime';
 import { healthHandler, readinessHandler } from './health';
 import bodyLimitMiddleware from './middleware/body-limit';
+import { correlationMiddleware } from './middleware/correlation-id';
 
 dotenv.config();
 
@@ -33,13 +34,13 @@ paymentMonitorService.configure({
 const app: Application = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
+app.use(correlationMiddleware);
 app.use(cors(corsOptions()));
 
 app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
+app.use(bodyLimitMiddleware);
 
-// Request logging
 app.use((req: Request, res: Response, next: NextFunction) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
