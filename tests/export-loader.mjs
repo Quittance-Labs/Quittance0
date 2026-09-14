@@ -14,5 +14,9 @@ export async function resolve(specifier, context, nextResolve) {
     return nextResolve(new URL('../frontend/lib/explorer-tx-link.ts', import.meta.url).href, context);
   }
 
+  if (specifier === 'jspdf') {
+    return nextResolve(new URL('../frontend/node_modules/jspdf/dist/jspdf.node.min.js', import.meta.url).href, context);
+  }
+
   return nextResolve(specifier, context);
 }
