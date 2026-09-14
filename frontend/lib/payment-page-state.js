@@ -181,6 +181,10 @@ function paymentReducer(state, event) {
       if (isTerminalPayState(state.status)) return state;
       return { ...state, status: PAY_STATES.IDLE, error: null };
 
+    // A copy confirmation is feedback, not session state.
+    case 'COPIED':
+      return state;
+
     default:
       return state;
   }

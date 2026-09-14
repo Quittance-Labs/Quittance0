@@ -138,4 +138,5 @@ module.exports = {
   networkLabel,
   networkMatches,
   walletGate,
+  wrongNetworkMessage,
 };

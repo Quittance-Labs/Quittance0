@@ -21,6 +21,7 @@ import { useWalletStore } from '@/lib/store';
 import ApiErrorState from '@/components/ApiErrorState';
 import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
 import { invoiceSharePath } from '@/lib/invoice-share-path';
+import { shareInvoiceByEmail } from '@/lib/export';
 import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
 import { walletGate } from '@/lib/freighter-availability';
 

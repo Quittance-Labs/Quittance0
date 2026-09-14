@@ -27,6 +27,11 @@ export function walletGate(
 
 export function networkLabel(network?: string | null): string;
 
+export function wrongNetworkMessage(
+  expectedNetwork?: string | null,
+  actualNetwork?: string | null
+): string;
+
 export function networkMatches(
   networkOrPassphrase?: string | null,
   expected?: string

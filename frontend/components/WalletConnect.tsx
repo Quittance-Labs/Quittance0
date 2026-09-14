@@ -10,7 +10,6 @@ import {
   getUserPublicKey,
   getAccountBalance,
   describeStellarNetworkError,
-  getFreighterNetwork,
   isWrongNetwork as checkIsWrongNetwork,
   NETWORK_DISPLAY_NAME,
 } from '@/lib/stellar';
