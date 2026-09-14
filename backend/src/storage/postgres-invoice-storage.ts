@@ -1,7 +1,7 @@
 import invoiceService, { InvoiceService } from '../services/invoice.service';
 import { CreateInvoiceInput } from '../utils/validation';
 import type { InvoiceStats } from './invoice-stats';
-import type { InvoiceStorage, PayerInfo, StoredInvoice } from './invoice-storage';
+import type { InvoiceStorage, PayerInfo, StoredInvoice, MarkAsPaidOptions } from './invoice-storage';
 
 /**
  * PostgreSQL storage backend. Same contract as the in-memory backend, but the
@@ -43,9 +43,10 @@ export class PostgresInvoiceStorage implements InvoiceStorage {
     id: string,
     txHash: string,
     payerPublicKey: string,
-    payerInfo?: PayerInfo
+    payerInfo?: PayerInfo,
+    options?: MarkAsPaidOptions
   ): Promise<StoredInvoice> {
-    return this.service.markAsPaid(id, txHash, payerPublicKey, payerInfo);
+    return this.service.markAsPaid(id, txHash, payerPublicKey, payerInfo, options);
   }
 
   async getInvoiceStats(sellerPublicKey: string): Promise<InvoiceStats[]> {

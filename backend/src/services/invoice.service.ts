@@ -4,17 +4,9 @@ import { generateInvoiceMemo } from '../utils/memo';
 import { CreateInvoiceInput } from '../utils/validation';
 import type { InvoiceStats } from '../storage/invoice-stats';
 import { calculateInvoiceExpiry } from '../domain/invoice-expiry';
+import type { SettlementContext, LatePaymentWarningCode } from '../../../shared/invoice';
+import type { MarkAsPaidOptions } from '../storage/invoice-storage';
 
-// PostgreSQL invoice service. Kept behaviourally identical to
-// InvoiceMemoryService so callers that go through the shared InvoiceStorage
-// interface cannot tell which backend is running. Invariants mirrored on both
-// sides: (1) markAsPaid only succeeds when status is PENDING AND expires_at
-// is strictly after now(), (2) cancelInvoice only succeeds when status is
-// PENDING, (3) every read path calls markExpiredInvoices first so expired
-// rows transition before being reported, (4) list + stats are scoped to the
-// caller's seller_public_key, (5) credit assets always carry their
-// asset_issuer because createInvoiceSchema already rejected anything less.
-/** Minimal database surface used by this service (pg Pool or a test double). */
 export interface Queryable {
   query(text: string, params?: any[]): Promise<{ rows: any[]; rowCount?: number | null }>;
 }
@@ -39,6 +31,11 @@ export interface Invoice {
   createdAt: Date;
   paidAt?: Date;
   expiresAt: Date;
+  cancelledAt?: Date;
+  settlementContext?: SettlementContext;
+  settledAt?: Date;
+  priorStatus?: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
+  latePaymentWarningCode?: LatePaymentWarningCode;
   metadata?: any;
 }
 
@@ -129,13 +126,26 @@ export class InvoiceService {
     invoiceId: string,
     txHash: string,
     payerPublicKey: string,
-    payerInfo?: { payerName?: string; payerEmail?: string }
+    payerInfo?: { payerName?: string; payerEmail?: string },
+    options?: MarkAsPaidOptions
   ): Promise<Invoice> {
+    const hasContext = Boolean(options?.settlementContext);
+    const paidAt = options?.now ?? new Date();
+    const settledAt = options?.settledAt ?? paidAt;
+    const settlementContext = options?.settlementContext ?? 'ON_TIME';
+    const priorStatus = options?.priorStatus ?? null;
+    const latePaymentWarningCode = options?.latePaymentWarningCode ?? null;
+
+    const whereClause = hasContext
+      ? `WHERE id = $1 AND (status IN ('PENDING', 'EXPIRED', 'CANCELLED') OR (status = 'PAID' AND payment_tx_hash = $2))`
+      : `WHERE id = $1 AND status = 'PENDING' AND expires_at > NOW()`;
+
     const query = `
       UPDATE invoices 
-      SET status = 'PAID', payment_tx_hash = $2, payer_public_key = $3, paid_at = NOW(),
-          payer_name = $4, payer_email = $5
-      WHERE id = $1 AND status = 'PENDING' AND expires_at > NOW()
+      SET status = 'PAID', payment_tx_hash = $2, payer_public_key = $3,
+          payer_name = $4, payer_email = $5, paid_at = $6,
+          settled_at = $7, settlement_context = $8, prior_status = $9, late_payment_warning_code = $10
+      ${whereClause}
       RETURNING *
     `;
 
@@ -146,6 +156,11 @@ export class InvoiceService {
         payerPublicKey,
         payerInfo?.payerName || null,
         payerInfo?.payerEmail || null,
+        paidAt,
+        settledAt,
+        settlementContext,
+        priorStatus,
+        latePaymentWarningCode,
       ]);
 
       if (result.rows.length === 0) {
@@ -157,6 +172,7 @@ export class InvoiceService {
       await this.logPaymentEvent(invoiceId, 'PAYMENT_CONFIRMED', {
         txHash,
         payerPublicKey,
+        settlementContext,
       });
 
       return this.mapRowToInvoice(result.rows[0]);
@@ -214,7 +230,7 @@ export class InvoiceService {
 
     const query = `
       UPDATE invoices 
-      SET status = 'CANCELLED'
+      SET status = 'CANCELLED', cancelled_at = NOW()
       WHERE id = $1 AND status = 'PENDING'
       RETURNING *
     `;
@@ -347,6 +363,11 @@ export class InvoiceService {
       createdAt: row.created_at,
       paidAt: row.paid_at,
       expiresAt: row.expires_at,
+      cancelledAt: row.cancelled_at,
+      settlementContext: row.settlement_context,
+      settledAt: row.settled_at,
+      priorStatus: row.prior_status,
+      latePaymentWarningCode: row.late_payment_warning_code,
       metadata: row.metadata,
     };
   }

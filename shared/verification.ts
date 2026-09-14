@@ -96,3 +96,19 @@ export const VERIFICATION_CODES: VerificationCode[] = Object.keys(
 export function messageForCode(code: VerificationCode): string {
   return VERIFICATION_MESSAGES[code];
 }
+
+/** User-facing message for every late payment warning code. */
+export const LATE_PAYMENT_WARNINGS: Record<
+  'PAYMENT_RECEIVED_AFTER_EXPIRY' | 'PAYMENT_RECEIVED_AFTER_CANCEL',
+  string
+> = {
+  PAYMENT_RECEIVED_AFTER_EXPIRY: 'Payment was received after this invoice expired.',
+  PAYMENT_RECEIVED_AFTER_CANCEL: 'Payment was received after this invoice was cancelled.',
+};
+
+/** The canonical user-facing warning message for a late payment warning code. */
+export function warningForCode(
+  code: 'PAYMENT_RECEIVED_AFTER_EXPIRY' | 'PAYMENT_RECEIVED_AFTER_CANCEL'
+): string {
+  return LATE_PAYMENT_WARNINGS[code];
+}

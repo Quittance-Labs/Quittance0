@@ -36,6 +36,11 @@ CREATE TABLE IF NOT EXISTS invoices (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   paid_at TIMESTAMPTZ,
   expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '7 days',
+  cancelled_at TIMESTAMPTZ,
+  settlement_context VARCHAR(20) CHECK (settlement_context IN ('ON_TIME', 'AFTER_EXPIRY', 'AFTER_CANCEL')),
+  settled_at TIMESTAMPTZ,
+  prior_status VARCHAR(20),
+  late_payment_warning_code VARCHAR(50),
   metadata JSONB
 );
 
@@ -88,6 +93,13 @@ SET expires_at = COALESCE(created_at, NOW()) + INTERVAL '7 days'
 WHERE expires_at IS NULL;
 ALTER TABLE invoices ALTER COLUMN expires_at SET DEFAULT NOW() + INTERVAL '7 days';
 ALTER TABLE invoices ALTER COLUMN expires_at SET NOT NULL;
+
+-- Late payment and settlement context columns (issue #384)
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS settlement_context VARCHAR(20);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS settled_at TIMESTAMPTZ;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS prior_status VARCHAR(20);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS late_payment_warning_code VARCHAR(50);
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_invoices_seller ON invoices(seller_public_key);

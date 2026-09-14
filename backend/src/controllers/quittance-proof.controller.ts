@@ -60,11 +60,7 @@ export async function getQuittanceProof(req: Request, res: Response): Promise<vo
       return sendFailure(res, 500, 'Proof generation failed: invariant violation');
     }
 
-    // Return the canonical JSON proof
-    sendSuccess(res, 200, {
-      schemaVersion: proof.schemaVersion,
-      ...proof,
-    });
+    sendSuccess(res, 200, proof);
   } catch (error: any) {
     console.error(`[${requestId}] Quittance proof error:`, error);
     sendFailure(res, 500, error.message || 'Failed to generate proof');

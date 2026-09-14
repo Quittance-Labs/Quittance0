@@ -14,11 +14,16 @@ export interface PayPageInvoice {
   status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
   createdAt: string;
   expiresAt: string;
+  cancelledAt?: string;
   paidAt?: string;
   paymentTxHash?: string;
   payerName?: string;
   payerEmail?: string;
   payerPublicKey?: string;
+  settlementContext?: 'ON_TIME' | 'AFTER_EXPIRY' | 'AFTER_CANCEL';
+  settledAt?: string;
+  priorStatus?: string;
+  latePaymentWarningCode?: string;
 }
 
 export interface PayPagePaymentInfo {

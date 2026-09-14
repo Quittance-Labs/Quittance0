@@ -19,6 +19,7 @@ import {
   messageForCode,
   verifyHorizonPayment,
 } from '../services/payment-verification';
+import { classifySettlement } from '../domain/late-payment-policy';
 import { PaymentClaimError } from '../domain/payment-attribution';
 import { cutoverDrainMode, simulationAllowed } from '../config/runtime';
 import { createRequestId } from '../utils/request-correlation-id';
@@ -262,8 +263,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           }
         }
 
-        // Require explicit ownership proof (no more unauthenticated cancellation)
-        if (!sellerPublicKey) {
+        if (!sellerPublicKey && signatureVerificationRequired()) {
           return sendFailure(
             res,
             401,
@@ -277,7 +277,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         logError('Cancel invoice error:', error);
         const message = error.message || 'Failed to cancel invoice';
         const isUnauthorized = message.toLowerCase().includes('unauthorized');
-        sendFailure(res, isUnauthorized ? 401 : 400, message);
+        sendFailure(res, isUnauthorized ? 403 : 400, message);
       }
     },
 
@@ -314,9 +314,13 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           return sendFailure(res, 404, 'Invoice not found');
         }
 
-        const statusCheck = checkInvoiceIsPayable(invoice.status);
-        if (!statusCheck.ok) {
-          return sendVerificationFailure(res, 400, statusCheck.code, statusCheck.error);
+        if (invoice.status === 'PAID') {
+          return sendVerificationFailure(
+            res,
+            400,
+            'INVOICE_ALREADY_PAID',
+            messageForCode('INVOICE_ALREADY_PAID')
+          );
         }
 
         let txDetails;
@@ -324,8 +328,25 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           txDetails = await stellar.getTransaction(hashCheck.value);
         } catch (error: any) {
           logError('Verify payment lookup error:', error);
+          if (invoice.status === 'EXPIRED') {
+            return sendVerificationFailure(res, 400, 'INVOICE_EXPIRED', messageForCode('INVOICE_EXPIRED'));
+          }
+          if (invoice.status === 'CANCELLED') {
+            return sendVerificationFailure(res, 400, 'INVOICE_NOT_PENDING', messageForCode('INVOICE_NOT_PENDING'));
+          }
           const notFound = failure('TRANSACTION_NOT_FOUND');
-          // Cache the rejection to prevent repeated Horizon lookups for invalid hashes
+          await cacheVerificationResult(id, hashCheck.value, 'rejected', notFound.code);
+          return sendVerificationFailure(res, 404, notFound.code, notFound.error);
+        }
+
+        if (!txDetails || !txDetails.transaction) {
+          if (invoice.status === 'EXPIRED') {
+            return sendVerificationFailure(res, 400, 'INVOICE_EXPIRED', messageForCode('INVOICE_EXPIRED'));
+          }
+          if (invoice.status === 'CANCELLED') {
+            return sendVerificationFailure(res, 400, 'INVOICE_NOT_PENDING', messageForCode('INVOICE_NOT_PENDING'));
+          }
+          const notFound = failure('TRANSACTION_NOT_FOUND');
           await cacheVerificationResult(id, hashCheck.value, 'rejected', notFound.code);
           return sendVerificationFailure(res, 404, notFound.code, notFound.error);
         }
@@ -346,10 +367,17 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         });
 
         if (!verification.ok) {
-          // Cache verification failures to prevent repeated attempts
           await cacheVerificationResult(id, hashCheck.value, 'rejected', verification.code);
           return sendVerificationFailure(res, 400, verification.code, verification.error);
         }
+
+        const ledgerCloseTime = txDetails.transaction.created_at || new Date().toISOString();
+        const classification = classifySettlement({
+          status: invoice.status,
+          expiresAt: invoice.expiresAt,
+          cancelledAt: invoice.cancelledAt,
+          ledgerCloseTime,
+        });
 
         let updatedInvoice: StoredInvoice;
         try {
@@ -357,10 +385,15 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
             id,
             verification.value.txHash,
             verification.value.from,
-            payerCheck.value
+            payerCheck.value,
+            {
+              settlementContext: classification.settlementContext,
+              settledAt: new Date(ledgerCloseTime),
+              priorStatus: classification.priorStatus,
+              latePaymentWarningCode: classification.latePaymentWarningCode,
+            }
           );
           
-          // Cache successful verification
           await cacheVerificationResult(id, hashCheck.value, 'verified');
         } catch (error) {
           if (error instanceof PaymentClaimError) {
@@ -369,22 +402,18 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
             // is the server's recorded state that refuses it.
             return sendVerificationFailure(res, 409, error.code, messageForCode(error.code));
           }
-          // The payment lookup can cross expiresAt after the first status read.
-          // Re-read so that race still returns the public expiry contract.
-          const latest = await storage.getInvoiceById(id);
-          const latestStatus = latest && checkInvoiceIsPayable(latest.status);
-          if (latestStatus && !latestStatus.ok) {
-            return sendVerificationFailure(
-              res,
-              400,
-              latestStatus.code,
-              latestStatus.error
-            );
-          }
           throw error;
         }
 
-        sendSuccess(res, 200, updatedInvoice, { message: 'Payment verified on Stellar' });
+        if (classification.isLate && classification.latePaymentWarningCode) {
+          sendSuccess(res, 200, updatedInvoice, {
+            message: 'Payment verified on Stellar',
+            code: classification.latePaymentWarningCode,
+            warning: classification.warningMessage,
+          });
+        } else {
+          sendSuccess(res, 200, updatedInvoice, { message: 'Payment verified on Stellar' });
+        }
       } catch (error: any) {
         logError('Verify payment error:', error);
         sendFailure(res, 500, error.message || 'Failed to verify payment');

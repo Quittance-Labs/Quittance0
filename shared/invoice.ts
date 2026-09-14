@@ -12,6 +12,14 @@
 
 export type InvoiceStatus = 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
 
+/** Immutable settlement context classifying when on-chain payment arrived. */
+export type SettlementContext = 'ON_TIME' | 'AFTER_EXPIRY' | 'AFTER_CANCEL';
+
+/** Stable warning code for exact late payments. */
+export type LatePaymentWarningCode =
+  | 'PAYMENT_RECEIVED_AFTER_EXPIRY'
+  | 'PAYMENT_RECEIVED_AFTER_CANCEL';
+
 /** ISO-8601 timestamp, as produced by JSON serialisation of a Date. */
 export type IsoTimestamp = string;
 
@@ -36,5 +44,10 @@ export interface InvoiceDto {
   createdAt: IsoTimestamp;
   paidAt?: IsoTimestamp;
   expiresAt: IsoTimestamp;
+  cancelledAt?: IsoTimestamp;
+  settlementContext?: SettlementContext;
+  settledAt?: IsoTimestamp;
+  priorStatus?: InvoiceStatus;
+  latePaymentWarningCode?: LatePaymentWarningCode;
   metadata?: unknown;
 }

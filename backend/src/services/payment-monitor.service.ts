@@ -4,6 +4,7 @@ import invoiceService, { InvoiceService, Queryable } from './invoice.service';
 import { SELLER_PUBLIC_KEY, STELLAR_NETWORK } from '../config/stellar';
 import { pool } from '../config/database';
 import { checkInvoiceIsPayable, verifyHorizonPayment } from './payment-verification';
+import { classifySettlement } from '../domain/late-payment-policy';
 import { monitorBackoffMs } from '../utils/monitor-retry-backoff';
 import {
   FilePaymentMonitorCheckpointStore,
@@ -218,8 +219,7 @@ export class PaymentMonitorService {
     const invoice = await this.invoices.getInvoiceByMemo(payment.memo);
     if (!invoice) return;
 
-    const payable = checkInvoiceIsPayable(invoice.status);
-    if (!payable.ok) return;
+    if (invoice.status === 'PAID') return;
 
     const isNative = payment.assetCode === 'XLM' && !payment.assetIssuer;
     const verification = verifyHorizonPayment({
@@ -260,8 +260,21 @@ export class PaymentMonitorService {
       return;
     }
 
+    const ledgerCloseTime = payment.createdAt;
+    const classification = classifySettlement({
+      status: invoice.status,
+      expiresAt: invoice.expiresAt,
+      cancelledAt: invoice.cancelledAt,
+      ledgerCloseTime,
+    });
+
     await this.saveTransaction(payment, invoice.id);
-    await this.invoices.markAsPaid(invoice.id, payment.txHash, payment.from);
+    await this.invoices.markAsPaid(invoice.id, payment.txHash, payment.from, undefined, {
+      settlementContext: classification.settlementContext,
+      settledAt: new Date(ledgerCloseTime),
+      priorStatus: classification.priorStatus,
+      latePaymentWarningCode: classification.latePaymentWarningCode,
+    });
   }
 
   private async saveTransaction(payment: PaymentRecord, invoiceId: string) {

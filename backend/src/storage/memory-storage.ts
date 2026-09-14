@@ -103,7 +103,7 @@ class MemoryStorage {
     if (sellerPublicKey && invoice.sellerPublicKey !== sellerPublicKey) {
       throw new Error('Unauthorized: only the seller can cancel this invoice');
     }
-    return this.updateInvoice(id, { status: 'CANCELLED' });
+    return this.updateInvoice(id, { status: 'CANCELLED', cancelledAt: new Date() });
   }
 
   // Mark as paid
@@ -111,13 +111,25 @@ class MemoryStorage {
     id: string,
     txHash: string,
     payerPublicKey: string,
-    payerInfo?: { payerName?: string; payerEmail?: string }
+    payerInfo?: { payerName?: string; payerEmail?: string },
+    options?: import('./invoice-storage').MarkAsPaidOptions
   ): Invoice | undefined {
     this.markExpiredInvoices();
-    const now = new Date();
+    const now = options?.now ?? new Date();
     const invoice = this.invoices.get(id);
-    if (!invoice || invoice.status !== 'PENDING') return undefined;
-    if (new Date(invoice.expiresAt).getTime() <= now.getTime()) return undefined;
+    if (!invoice) return undefined;
+
+    if (options?.settlementContext) {
+      if (invoice.status === 'PAID') {
+        if (invoice.paymentTxHash === txHash) {
+          return invoice;
+        }
+        return undefined;
+      }
+    } else {
+      if (invoice.status !== 'PENDING') return undefined;
+      if (new Date(invoice.expiresAt).getTime() <= now.getTime()) return undefined;
+    }
 
     // One transaction settles one invoice. The claim below reads and records in
     // the same synchronous step, so a second caller holding the same hash gets a
@@ -127,7 +139,18 @@ class MemoryStorage {
     if (decision.kind === 'conflict') {
       throw new PaymentClaimError(txHash, id, decision.claim.invoiceId);
     }
-    if (decision.kind === 'replay') return undefined;
+    if (decision.kind === 'replay') {
+      const existing = this.invoices.get(id);
+      if (existing?.status === 'PAID' && existing.paymentTxHash === txHash) {
+        return existing;
+      }
+      return undefined;
+    }
+
+    const settlementContext = options?.settlementContext ?? 'ON_TIME';
+    const settledAt = options?.settledAt ?? now;
+    const priorStatus = options?.priorStatus;
+    const latePaymentWarningCode = options?.latePaymentWarningCode;
 
     return this.updateInvoice(id, {
       status: 'PAID',
@@ -135,7 +158,11 @@ class MemoryStorage {
       payerPublicKey,
       payerName: payerInfo?.payerName,
       payerEmail: payerInfo?.payerEmail,
-      paidAt: new Date(),
+      paidAt: now,
+      settledAt,
+      settlementContext,
+      priorStatus,
+      latePaymentWarningCode,
     });
   }
 

@@ -133,8 +133,9 @@ function createFakePostgres() {
     if (sql.startsWith("UPDATE invoices SET status = 'PAID'")) {
       const row = rows.find(
         candidate => candidate.id === params[0] &&
-          candidate.status === 'PENDING' &&
-          new Date(candidate.expires_at).getTime() > Date.now()
+          (sql.includes("status IN ('PENDING', 'EXPIRED', 'CANCELLED')")
+            ? ['PENDING', 'EXPIRED', 'CANCELLED'].includes(candidate.status) || (candidate.status === 'PAID' && candidate.payment_tx_hash === params[1])
+            : candidate.status === 'PENDING' && new Date(candidate.expires_at).getTime() > Date.now())
       );
       if (!row) {
         return { rows: [], rowCount: 0 };
@@ -145,7 +146,11 @@ function createFakePostgres() {
         payer_public_key: params[2],
         payer_name: params[3],
         payer_email: params[4],
-        paid_at: new Date(),
+        paid_at: params[5] || new Date(),
+        settled_at: params[6] || null,
+        settlement_context: params[7] || null,
+        prior_status: params[8] || null,
+        late_payment_warning_code: params[9] || null,
       });
       return { rows: [clone(row)], rowCount: 1 };
     }
@@ -158,6 +163,7 @@ function createFakePostgres() {
         return { rows: [], rowCount: 0 };
       }
       row.status = 'CANCELLED';
+      row.cancelled_at = new Date();
       return { rows: [clone(row)], rowCount: 1 };
     }
 
@@ -172,11 +178,9 @@ function createFakePostgres() {
       return {
         rows: [
           {
-            // Postgres reports aggregates as strings.
             total_invoices: String(owned.length),
             paid_invoices: String(owned.filter(row => row.status === 'PAID').length),
             pending_invoices: String(owned.filter(row => row.status === 'PENDING').length),
-            actionable_invoices: String(owned.filter(row => row.status === 'PENDING').length),
             expired_invoices: String(owned.filter(row => row.status === 'EXPIRED').length),
             revenue_by_asset: revenue,
           },
@@ -185,10 +189,10 @@ function createFakePostgres() {
       };
     }
 
-    throw new Error(`Unhandled query in fake Postgres: ${sql}`);
+    throw new Error(`Unhandled fake Postgres query: ${text}`);
   };
 
-  return { query, events };
+  return { query };
 }
 
 function paymentTransaction(overrides: {
@@ -197,9 +201,10 @@ function paymentTransaction(overrides: {
   to: string;
   assetType?: string;
   assetCode?: string;
+  createdAt?: string;
 }) {
   return {
-    transaction: { memo: overrides.memo },
+    transaction: { memo: overrides.memo, created_at: overrides.createdAt },
     operations: [
       {
         type: 'payment',
@@ -532,6 +537,86 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       assert.equal(res.statusCode, 400);
       assert.equal(res.body.code, 'INVOICE_ALREADY_PAID');
       assert.equal(res.body.error, 'Invoice has already been paid');
+    });
+
+    it('verifies an expired invoice when valid payment settled after expiry', async () => {
+      const invoice = await createInvoice({ expiresInDays: 1 });
+      await storage.markExpiredInvoices(new Date(new Date(invoice.expiresAt).getTime() + 1));
+
+      const settledAt = new Date(new Date(invoice.expiresAt).getTime() + 60_000).toISOString();
+      transaction = paymentTransaction({
+        memo: invoice.memo,
+        amount: '42.5000000',
+        to: SELLER_A,
+        createdAt: settledAt,
+      });
+
+      const verify = await call(
+        handlers().verifyPayment,
+        createReq({ params: { id: invoice.id }, body: { txHash: TX_HASH } })
+      );
+
+      assert.equal(verify.statusCode, 200);
+      assert.equal(verify.body.success, true);
+      assert.equal(verify.body.code, 'PAYMENT_RECEIVED_AFTER_EXPIRY');
+      assert.ok(verify.body.warning?.includes('expired'));
+      assert.equal(verify.body.data.status, 'PAID');
+      assert.equal(verify.body.data.settlementContext, 'AFTER_EXPIRY');
+      assert.equal(verify.body.data.priorStatus, 'EXPIRED');
+    });
+
+    it('verifies a cancelled invoice when valid payment settled after cancellation', async () => {
+      const invoice = await createInvoice();
+      await call(
+        handlers().cancelInvoice,
+        createReq({ params: { id: invoice.id }, body: { sellerPublicKey: SELLER_A } })
+      );
+
+      const settledAt = new Date(Date.now() + 10_000).toISOString();
+      transaction = paymentTransaction({
+        memo: invoice.memo,
+        amount: '42.5000000',
+        to: SELLER_A,
+        createdAt: settledAt,
+      });
+
+      const verify = await call(
+        handlers().verifyPayment,
+        createReq({ params: { id: invoice.id }, body: { txHash: TX_HASH } })
+      );
+
+      assert.equal(verify.statusCode, 200);
+      assert.equal(verify.body.success, true);
+      assert.equal(verify.body.code, 'PAYMENT_RECEIVED_AFTER_CANCEL');
+      assert.ok(verify.body.warning?.includes('cancelled'));
+      assert.equal(verify.body.data.status, 'PAID');
+      assert.equal(verify.body.data.settlementContext, 'AFTER_CANCEL');
+      assert.equal(verify.body.data.priorStatus, 'CANCELLED');
+    });
+
+    it('verifies an expired invoice as on-time when on-chain payment settled before expiry', async () => {
+      const invoice = await createInvoice({ expiresInDays: 1 });
+      await storage.markExpiredInvoices(new Date(new Date(invoice.expiresAt).getTime() + 1000));
+
+      const settledAt = new Date(new Date(invoice.expiresAt).getTime() - 1000).toISOString();
+      transaction = paymentTransaction({
+        memo: invoice.memo,
+        amount: '42.5000000',
+        to: SELLER_A,
+        createdAt: settledAt,
+      });
+
+      const verify = await call(
+        handlers().verifyPayment,
+        createReq({ params: { id: invoice.id }, body: { txHash: TX_HASH } })
+      );
+
+      assert.equal(verify.statusCode, 200);
+      assert.equal(verify.body.success, true);
+      assert.equal(verify.body.code, undefined);
+      assert.equal(verify.body.data.status, 'PAID');
+      assert.equal(verify.body.data.settlementContext, 'ON_TIME');
+      assert.equal(verify.body.data.priorStatus, 'EXPIRED');
     });
 
     it('returns 404 when verifying an unknown invoice', async () => {

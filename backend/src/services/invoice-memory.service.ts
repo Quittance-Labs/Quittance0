@@ -6,7 +6,7 @@ import memoryStorage, { MemoryStorage, MemoryPaymentEvent } from '../storage/mem
 import { calculateInvoiceExpiry } from '../domain/invoice-expiry';
 import type { StoredInvoice } from '../storage/invoice-storage';
 import type { InvoiceStats } from '../storage/invoice-stats';
-import type { PayerInfo } from '../storage/invoice-storage';
+import type { PayerInfo, MarkAsPaidOptions } from '../storage/invoice-storage';
 
 /**
  * How many times invoice creation re-draws a memo before giving up.
@@ -25,55 +25,34 @@ export class InvoiceMemoryService {
     private readonly nextMemo: () => string = generateInvoiceMemo
   ) {}
 
-  async createInvoice(input: CreateInvoiceInput): Promise<StoredInvoice> {
-    if (!input.sellerPublicKey) {
-      throw new Error('Seller public key is required');
+  async createInvoice(data: CreateInvoiceInput): Promise<StoredInvoice> {
+    const expiresAt = calculateInvoiceExpiry(data.expiresInDays);
+
+    let lastError: unknown;
+    for (let attempt = 0; attempt < MEMO_DRAW_ATTEMPTS; attempt++) {
+      const memo = this.nextMemo();
+      try {
+        const id = generatePublicInvoiceId();
+        return this.storage.createInvoice({
+          ...data,
+          id,
+          memo,
+          expiresAt,
+        });
+      } catch (err) {
+        if (err instanceof MemoCollisionError) {
+          lastError = err;
+          continue;
+        }
+        throw err;
+      }
     }
 
-    const id = generatePublicInvoiceId();
-    const memo = this.drawUnusedMemo();
-    const expiresAt = calculateInvoiceExpiry(input.expiresInDays);
-
-    const invoice = this.storage.createInvoice({
-      id,
-      sellerPublicKey: input.sellerPublicKey,
-      sellerName: input.sellerName,
-      sellerEmail: input.sellerEmail,
-      amount: input.amount,
-      assetCode: (input.assetCode || 'XLM').toUpperCase(),
-      assetIssuer: input.assetIssuer,
-      memo,
-      description: input.description,
-      customerName: input.customerName,
-      customerEmail: input.customerEmail,
-      expiresAt,
-    });
-
-    console.log('✅ Invoice created:', invoice.id);
-    return invoice;
-  }
-
-  /**
-   * Draw a memo no live invoice holds. Throws rather than returning a memo that
-   * is already taken: two invoices sharing one memo cannot be told apart by the
-   * payment monitor, so this is a refusal to create, not a warning.
-   */
-  private drawUnusedMemo(): string {
-    let candidate = this.nextMemo();
-
-    for (
-      let attempt = 1;
-      attempt < MEMO_DRAW_ATTEMPTS && this.storage.hasMemo(candidate);
-      attempt++
-    ) {
-      candidate = this.nextMemo();
-    }
-
-    if (this.storage.hasMemo(candidate)) {
-      throw new MemoCollisionError(candidate);
-    }
-
-    return candidate;
+    throw new Error(
+      `Failed to generate unique memo after ${MEMO_DRAW_ATTEMPTS} attempts: ${
+        (lastError as Error)?.message ?? 'collision'
+      }`
+    );
   }
 
   async getInvoiceById(id: string): Promise<StoredInvoice | null> {
@@ -90,9 +69,10 @@ export class InvoiceMemoryService {
     invoiceId: string,
     txHash: string,
     payerPublicKey: string,
-    payerInfo?: PayerInfo
+    payerInfo?: PayerInfo,
+    options?: MarkAsPaidOptions
   ): Promise<StoredInvoice> {
-    const invoice = this.storage.markAsPaid(invoiceId, txHash, payerPublicKey, payerInfo);
+    const invoice = this.storage.markAsPaid(invoiceId, txHash, payerPublicKey, payerInfo, options);
 
     if (!invoice) {
       throw new Error('Invoice not found, expired, or already processed');
@@ -128,7 +108,7 @@ export class InvoiceMemoryService {
       throw new Error('Unauthorized: only the seller can cancel this invoice');
     }
 
-    const updated = this.storage.updateInvoice(invoiceId, { status: 'CANCELLED' });
+    const updated = this.storage.updateInvoice(invoiceId, { status: 'CANCELLED', cancelledAt: new Date() });
     if (!updated) {
       throw new Error('Invoice not found or already processed');
     }
@@ -145,6 +125,10 @@ export class InvoiceMemoryService {
 
   async getInvoiceCount(): Promise<number> {
     return this.storage.getInvoiceCount();
+  }
+
+  async logPaymentEvent(invoiceId: string, eventType: string, eventData: any): Promise<void> {
+    this.storage.logPaymentEvent(invoiceId, eventType, eventData);
   }
 }
 
