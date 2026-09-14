@@ -23,6 +23,7 @@ export function usePaymentPage(id: string) {
   const [payerName, setPayerName] = useState('');
   const [payerEmail, setPayerEmail] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [networkError, setNetworkError] = useState<string | null>(null);
   const generation = useRef(0);
 
   const load = useCallback(async () => {
@@ -77,7 +78,11 @@ export function usePaymentPage(id: string) {
         if (result.data.status === 'PAID') toast.success('Payment confirmed!');
       } catch (error) {
         console.error('Invoice status polling failed:', error);
-        if (isApiUnavailableError(error)) setLoadError(apiErrorMessage(error));
+        if (isApiUnavailableError(error)) {
+          setNetworkError(apiErrorMessage(error));
+        } else {
+          setNetworkError(null);
+        }
       }
     }, paymentInfo?.statusPollingIntervalMs ?? PAYMENT_STATUS_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
@@ -98,10 +103,16 @@ export function usePaymentPage(id: string) {
       void load();
     } catch (error) {
       if (request !== generation.current) return;
-      const message = resolveVerificationError(error);
-      if (isApiUnavailableError(error)) setLoadError(apiErrorMessage(error));
-      dispatch({ type: 'VERIFY_FAILED', error: message });
-      toast.error(message);
+      if (isApiUnavailableError(error)) {
+        const msg = apiErrorMessage(error);
+        setNetworkError(msg);
+        toast.error(msg);
+      } else {
+        const message = resolveVerificationError(error);
+        setNetworkError(null);
+        dispatch({ type: 'VERIFY_FAILED', error: message });
+        toast.error(message);
+      }
     }
   };
 
@@ -123,5 +134,7 @@ export function usePaymentPage(id: string) {
     dispatch,
     verify,
     reload: load,
+    networkError,
+    clearNetworkError: () => setNetworkError(null),
   };
 }
