@@ -22,7 +22,7 @@ import {
   type QuittanceProof,
   type QuittanceProofResult,
   QUITTANCE_PROOF_VERSION,
-} from './quittance-proof';
+} from './quittance-proof.ts';
 
 export {
   assertPaymentProofAvailable,

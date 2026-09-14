@@ -77,10 +77,65 @@ const isNetworkMatching = (networkOrPassphrase, expected = 'TESTNET') => {
   return false;
 };
 
+// The single answer to the question every create and pay surface asks: can
+// this wallet act, and if not, which prompt gets it there?
+//
+// Four components and the pay-page state module each assemble that answer
+// from the wallet store. One function keeps the banner, the toast and the
+// submit button from disagreeing about why a wallet cannot proceed, and an
+// unreported network counts as a mismatch: letting it through would enable a
+// payment the verifier then rejects for NETWORK_MISMATCH.
+const walletGate = (session, expectedNetwork = 'TESTNET') => {
+  const freighterAvailable = session ? session.freighterAvailable : undefined;
+  const connected = Boolean(session && session.connected && session.publicKey);
+
+  if (freighterAvailable === false) {
+    return {
+      status: 'missing',
+      ready: false,
+      title: 'Install Freighter',
+      message: FREIGHTER_REQUIRED_MESSAGE,
+      action: 'install',
+    };
+  }
+
+  if (!connected) {
+    return {
+      status: 'disconnected',
+      ready: false,
+      title: 'Connect Freighter',
+      message: FREIGHTER_CONNECT_REQUIRED_MESSAGE,
+      action: 'connect',
+    };
+  }
+
+  if (!networkMatches(session.network, expectedNetwork)) {
+    return {
+      status: 'wrong_network',
+      ready: false,
+      title: 'Wrong Stellar network',
+      message: wrongNetworkMessage(expectedNetwork, session.network),
+      action: 'switch_network',
+    };
+  }
+
+  return {
+    status: 'ready',
+    ready: true,
+    title: 'Freighter ready',
+    message: FREIGHTER_READY_MESSAGE,
+    action: 'none',
+  };
+};
+
 module.exports = {
   FREIGHTER_INSTALL_URL,
   FREIGHTER_REQUIRED_MESSAGE,
+  FREIGHTER_CONNECT_REQUIRED_MESSAGE,
   FREIGHTER_WRONG_NETWORK_MESSAGE,
   detectFreighter,
   isNetworkMatching,
+  networkLabel,
+  networkMatches,
+  walletGate,
 };

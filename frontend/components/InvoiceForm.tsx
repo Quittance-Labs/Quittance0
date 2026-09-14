@@ -10,10 +10,10 @@ import { NETWORK_DISPLAY_NAME } from '@/lib/stellar';
 import { showFreighterWrongNetworkPrompt } from './FreighterInstallPrompt';
 import AssetLogo from './AssetLogo';
 import ApiErrorState from './ApiErrorState';
-import { useWalletStore } from '@/lib/store';
 import { walletGate } from '@/lib/freighter-availability';
 import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
 import { showFreighterInstallPrompt } from './FreighterInstallPrompt';
+import { parseAmountInput } from '@/lib/parse-amount-input';
 
 interface InvoiceFormProps {
   onSuccess?: (invoice: any) => void;
@@ -52,7 +52,11 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       return;
     }
 
-    if (!amount || parseFloat(amount) <= 0) {
+    // One parser for the whole create path: it rejects what the API would
+    // reject (zero, negative, more than 7 decimals, out of range) instead of
+    // sending an amount the server has to turn down later.
+    const parsedAmount = parseAmountInput(amount);
+    if (parsedAmount === null) {
       toast.error('Enter a valid amount');
       return;
     }

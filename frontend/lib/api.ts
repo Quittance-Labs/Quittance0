@@ -1,6 +1,30 @@
 import axios from 'axios';
+import {
+  apiErrorMessage,
+  isApiUnavailableError,
+  resolveApiConfig,
+  toApiError,
+} from './api-runtime.js';
+import { resolveVerificationError } from './verification.js';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+/**
+ * The API origin, resolved once per build.
+ *
+ * resolveApiConfig keeps the localhost default for development and refuses
+ * a production deployment that forgot NEXT_PUBLIC_API_URL, so a misconfigured
+ * build says so in the banner instead of quietly sending requests to the
+ * developer's laptop.
+ */
+export const API_CONFIG = resolveApiConfig(
+  process.env.NEXT_PUBLIC_API_URL,
+  process.env.NODE_ENV
+);
+
+/**
+ * Polling fallback for the pay page, used only when the API did not send its
+ * own statusPollingIntervalMs. Matches the backend's interval.
+ */
+export const PAYMENT_STATUS_POLL_INTERVAL_MS = 3000;
 
 const api = axios.create({
   baseURL: API_CONFIG.baseUrl,

@@ -15,6 +15,7 @@ import {
   NETWORK_DISPLAY_NAME,
 } from '@/lib/stellar';
 import { useWalletStore } from '@/lib/store';
+import { networkLabel, walletGate } from '@/lib/freighter-availability';
 import { paymentMonitor } from '@/lib/payment-monitor';
 import { Wallet, LogOut, Loader2, ExternalLink, Bell, BellOff, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -32,6 +33,7 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
     publicKey,
     balance,
     connected,
+    freighterAvailable,
     isWrongNetwork,
     network,
     networkPassphrase,
@@ -40,6 +42,12 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
     setIsWrongNetwork,
     disconnect,
   } = useWalletStore();
+  // Connect, disconnect and the monitoring toggle all ask the same gate
+  // whether the wallet may act, so the button and the banner agree.
+  const gate = walletGate(
+    { freighterAvailable, connected, publicKey, network },
+    EXPECTED_WALLET_NETWORK
+  );
 
   const loadBalance = useCallback(async (key: string, netName?: string | null, netPass?: string | null) => {
     try {

@@ -22,6 +22,7 @@ import { copyToClipboard, formatAmount } from '@/lib/utils';
 import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { getPayPageView, getPayPageWalletGate } from '@/lib/payment-page-state';
 import { PAYMENT_STATUS_POLL_INTERVAL_MS } from '@/lib/api';
+import { memoPaymentHint } from '@/lib/pay-memo-hint';
 // Payment and verification errors on the pay page resolve through the shared
 // canonical rejection code table, ensuring consistent English copy across all views.
 import { usePaymentPage } from '@/lib/use-payment-page';
@@ -304,6 +305,7 @@ export default function PaymentPage() {
                         }}
                         onError={(error) => page.dispatch({ type: 'PAY_FAILED', error })}
                       />
+                      )}
                       {isMobile && showDesktopWalletAnyway && (
                         <div className="mt-4 text-center">
                           <button

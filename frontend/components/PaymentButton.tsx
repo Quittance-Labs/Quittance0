@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import {
+  EXPECTED_WALLET_NETWORK,
   sendPayment,
   checkWalletConnection,
   requestWalletAccess,

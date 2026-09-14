@@ -37,6 +37,10 @@ const TERMINAL_STATES = Object.freeze([PAY_STATES.PAID, PAY_STATES.EXPIRED]);
 const { isTerminalPayState } = require('./pay-terminal-guard.ts');
 const { effectiveInvoiceStatus, hasInvoiceExpired } = require('./invoice-lifecycle');
 const { walletGate } = require('./freighter-availability');
+// The canonical code -> message table. describeVerifyError resolves the
+// backend's stable rejection code through it, so a payer reads the same
+// sentence here as on every other surface.
+const { messageForCode } = require('./verification.js');
 
 const asInvoice = (statusOrInvoice) =>
   statusOrInvoice && typeof statusOrInvoice === 'object'
