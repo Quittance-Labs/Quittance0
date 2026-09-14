@@ -5,6 +5,24 @@
 
 const { assertPaymentProofAvailable, canExportPaymentProof } = require('./payment-proof-policy.js');
 
+/**
+ * Network-aware Stellar Explorer transaction URL builder.
+ * Reuses the canonical buildHorizonTxUrl so every mailto link
+ * surfaces the same explorer URL pattern the rest of the app uses.
+ */
+const { buildHorizonTxUrl } = require('./explorer-tx-link');
+
+/**
+ * Resolve the Stellar network for explorer links from the app env.
+ * Falls back to 'testnet' when unset (local/dev default).
+ */
+const getExplorerNetwork = () => {
+  const env = typeof process !== 'undefined' && process.env
+    ? process.env.NEXT_PUBLIC_STELLAR_NETWORK
+    : undefined;
+  return (env && env.toUpperCase() === 'TESTNET') ? 'testnet' : 'public';
+};
+
 function isValidEmailFormat(email) {
   if (typeof email !== 'string') return false;
   const trimmed = email.trim();
@@ -68,9 +86,17 @@ function buildInvoiceMailto(invoice, baseUrl) {
   const lines = [
     'Invoice Details:',
     `Invoice ID: ${invoice.id}`,
-    `Amount: ${invoice.amount} ${invoice.assetCode || 'XLM'}`,
-    `Status: ${invoice.status || 'PENDING'}`,
+    `Amount: ${invoice.amount} ${invoice.assetCode || 'XLM'}`, 
+    `Status: ${invoice.status || 'PENDING'}`, 
   ];
+
+  // Include seller wallet explorer link when available (issue #416)
+  if (invoice.sellerPublicKey) {
+    const accountExplorer = getExplorerNetwork() === 'testnet'
+      ? `https://stellar.expert/explorer/testnet/account/${invoice.sellerPublicKey}`
+      : `https://stellar.expert/explorer/public/account/${invoice.sellerPublicKey}`;
+    lines.push(`Seller Wallet: ${accountExplorer}`);
+  }
 
   if (invoice.customerName) {
     lines.push(`Client: ${invoice.customerName}`);
@@ -125,6 +151,10 @@ function buildProofMailto(invoice, baseUrl) {
   }
   if (invoice.paymentTxHash) {
     lines.push(`Transaction Hash: ${invoice.paymentTxHash}`);
+    const explorerUrl = buildHorizonTxUrl(invoice.paymentTxHash, getExplorerNetwork());
+    if (explorerUrl) {
+      lines.push(`Explorer: ${explorerUrl}`);
+    }
   }
   if (invoice.sellerPublicKey) {
     lines.push(`Seller Address: ${invoice.sellerPublicKey}`);
