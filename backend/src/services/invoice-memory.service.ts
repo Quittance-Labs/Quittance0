@@ -49,7 +49,9 @@ export class InvoiceMemoryService {
       expiresAt,
     });
 
-    console.log('✅ Invoice created:', invoice.id);
+    if (process.env.NODE_ENV !== 'test') {
+      console.log('Invoice created:', invoice.id);
+    }
     return invoice;
   }
 
@@ -99,7 +101,9 @@ export class InvoiceMemoryService {
       throw new Error('Invoice not found, expired, or already processed');
     }
 
-    console.log('✅ Invoice marked as paid:', invoiceId);
+    if (process.env.NODE_ENV !== 'test') {
+      console.log('Invoice marked as paid:', invoiceId);
+    }
     return invoice;
   }
 
