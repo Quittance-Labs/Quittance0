@@ -198,6 +198,34 @@ export function createVerifyRateLimiters(
 }
 
 /**
+ * The verify handler's own per-invoice budget.
+ *
+ * The router already applies the same window and limit as middleware, but the
+ * handler asks for this check directly so a flood against one invoice is
+ * refused with the verification code the pay page already renders
+ * (VERIFY_RATE_LIMIT_EXCEEDED) rather than the router's generic one. It keeps
+ * its own key space so the two counters cannot charge one request twice.
+ */
+export const VERIFY_PER_INVOICE_LIMIT = 10;
+export const VERIFY_PER_INVOICE_WINDOW_MS = 60_000;
+
+export function checkInvoiceVerifyLimit(
+  invoiceId: string,
+  store: MemoryRateLimiterStore = defaultLimiterStore
+): { allowed: boolean; retryAfter: number; remaining: number } {
+  const result = store.consume(
+    'verify_handler:target:' + (invoiceId || 'unknown'),
+    VERIFY_PER_INVOICE_LIMIT,
+    VERIFY_PER_INVOICE_WINDOW_MS
+  );
+  return {
+    allowed: result.allowed,
+    retryAfter: result.resetAfterSeconds,
+    remaining: result.remaining,
+  };
+}
+
+/**
  * Creates rate limiter for invoice listing.
  * Enforces 60 requests per minute per IP.
  */

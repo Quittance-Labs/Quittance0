@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildHorizonAccountUrl } = require('../lib/explorer-account-link');
+const { buildHorizonAccountUrl } = require('../lib/explorer-account-link.ts');
 const {
   validPublicKey,
   testnetNetwork,

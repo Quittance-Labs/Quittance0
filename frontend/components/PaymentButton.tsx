@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import {
+  EXPECTED_WALLET_NETWORK,
   sendPayment,
   checkWalletConnection,
   requestWalletAccess,
@@ -14,6 +15,7 @@ import { Wallet, Loader2 } from 'lucide-react';
 import { invoiceApi } from '@/lib/api';
 import { showFreighterInstallPrompt, showFreighterWrongNetworkPrompt } from '@/components/FreighterInstallPrompt';
 import { describeVerifyError, normalizePayerDetails } from '@/lib/payment-page-state';
+import { resolveVerificationError } from '@/lib/verification';
 import { useWalletStore } from '@/lib/store';
 import { walletGate } from '@/lib/freighter-availability';
 

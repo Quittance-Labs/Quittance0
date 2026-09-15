@@ -9,6 +9,8 @@ export interface WalletState {
   network: string | null;
   networkPassphrase: string | null;
   isWrongNetwork: boolean;
+  /** Whether the Freighter extension answered the last availability check. */
+  freighterAvailable?: boolean;
   setWallet: (
     publicKey: string,
     balance: string,
@@ -18,6 +20,19 @@ export interface WalletState {
   updateBalance: (balance: string) => void;
   setNetwork: (network: string | null, networkPassphrase?: string | null) => void;
   setIsWrongNetwork: (isWrong: boolean) => void;
+  /**
+   * Adopt a session read from Freighter. An undefined key leaves the current
+   * value alone; an explicit null clears it, so a disconnect is never mistaken
+   * for a reading that was merely absent.
+   */
+  syncSession: (session: {
+    publicKey?: string | null;
+    network?: string | null;
+    networkPassphrase?: string | null;
+    connected?: boolean;
+    balance?: string;
+    freighterAvailable?: boolean;
+  }) => void;
   disconnect: () => void;
 }
 
@@ -44,6 +59,23 @@ export const useWalletStore = create<WalletState>()(
       setNetwork: (network, networkPassphrase = null) =>
         set({ network, networkPassphrase }),
       setIsWrongNetwork: (isWrongNetwork) => set({ isWrongNetwork }),
+      syncSession: (session) =>
+        set((state) => ({
+          publicKey:
+            session.publicKey === undefined ? state.publicKey : session.publicKey,
+          network: session.network === undefined ? state.network : session.network,
+          networkPassphrase:
+            session.networkPassphrase === undefined
+              ? state.networkPassphrase
+              : session.networkPassphrase,
+          connected:
+            session.connected === undefined ? state.connected : session.connected,
+          balance: session.balance === undefined ? state.balance : session.balance,
+          freighterAvailable:
+            session.freighterAvailable === undefined
+              ? state.freighterAvailable
+              : session.freighterAvailable,
+        })),
       disconnect: () =>
         set({
           publicKey: null,

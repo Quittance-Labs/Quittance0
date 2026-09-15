@@ -1,3 +1,10 @@
+// The PDF creation date is rendered by jsPDF in the host's local time with
+// its UTC offset, so the same proof produced on two machines differed in that
+// one token and the golden comparison failed on every host outside the zone
+// the fixture was made in. The zone is pinned before anything renders; the
+// assertion below stays byte-for-byte.
+process.env.TZ = 'UTC';
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');

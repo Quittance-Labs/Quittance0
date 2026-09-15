@@ -228,51 +228,6 @@ export const assertFreighterReady = async (): Promise<FreighterSession> => {
 };
 
 /**
- * Query current network and passphrase from Freighter
- */
-export const getFreighterNetwork = async (): Promise<{
-  network: string;
-  networkPassphrase: string;
-  networkUrl?: string;
-} | null> => {
-  try {
-    const connected = await checkWalletConnection();
-    if (!connected) return null;
-
-    const [netResult, detailsResult] = await Promise.allSettled([
-      getNetwork(),
-      getNetworkDetails(),
-    ]);
-
-    const networkName = netResult.status === 'fulfilled' ? netResult.value : null;
-    const details = detailsResult.status === 'fulfilled' ? detailsResult.value : null;
-
-    const rawNetwork = networkName || details?.network || null;
-    let passphrase = details?.networkPassphrase || null;
-
-    if (!passphrase && rawNetwork) {
-      const upper = rawNetwork.toUpperCase();
-      if (upper === 'PUBLIC' || upper === 'MAINNET') {
-        passphrase = StellarSdk.Networks.PUBLIC;
-      } else if (upper === 'TESTNET') {
-        passphrase = StellarSdk.Networks.TESTNET;
-      }
-    }
-
-    if (!rawNetwork && !passphrase) return null;
-
-    return {
-      network: rawNetwork || (passphrase === StellarSdk.Networks.PUBLIC ? 'PUBLIC' : 'TESTNET'),
-      networkPassphrase: passphrase || (rawNetwork?.toUpperCase() === 'PUBLIC' ? StellarSdk.Networks.PUBLIC : StellarSdk.Networks.TESTNET),
-      networkUrl: details?.networkUrl,
-    };
-  } catch (error) {
-    console.error('Error getting Freighter network:', error);
-    return null;
-  }
-};
-
-/**
  * Check if the given network or passphrase matches our expected network
  */
 export const isWrongNetwork = (
@@ -307,7 +262,13 @@ export const isWrongNetwork = (
  * Watch Freighter network changes on an interval
  */
 export const watchFreighterNetwork = (
-  callback: (details: { network: string; networkPassphrase: string; isWrongNetwork: boolean } | null) => void,
+  callback: (
+    details: {
+      network: string | null;
+      networkPassphrase: string | null;
+      isWrongNetwork: boolean;
+    } | null
+  ) => void,
   intervalMs = 2500
 ): (() => void) => {
   let active = true;

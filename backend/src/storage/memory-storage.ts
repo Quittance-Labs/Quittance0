@@ -57,7 +57,9 @@ class MemoryStorage {
     this.invoices.set(invoice.id, invoice);
     this.invoicesByMemo.set(invoice.memo, invoice.id);
 
-    console.log('✅ Invoice created in memory:', invoice.id);
+    if (process.env.NODE_ENV !== 'test') {
+      console.log('Invoice created in memory:', invoice.id);
+    }
     return invoice;
   }
 
@@ -92,7 +94,9 @@ class MemoryStorage {
     const updated = { ...invoice, ...updates };
     this.invoices.set(id, updated);
 
-    console.log('✅ Invoice updated:', id);
+    if (process.env.NODE_ENV !== 'test') {
+      console.log('Invoice updated:', id);
+    }
     return updated;
   }
 
@@ -196,8 +200,8 @@ class MemoryStorage {
       }
     });
 
-    if (count > 0) {
-      console.log(`⏰ Marked ${count} invoices as expired`);
+    if (count > 0 && process.env.NODE_ENV !== 'test') {
+      console.log(`Marked ${count} invoices as expired`);
     }
 
     return count;
@@ -232,7 +236,9 @@ class MemoryStorage {
     this.invoicesByMemo.clear();
     this.paymentClaims.clear();
     this.paymentEvents = [];
-    console.log('🗑️ Memory storage cleared');
+    if (process.env.NODE_ENV !== 'test') {
+      console.log('Memory storage cleared');
+    }
   }
 
   // Get size

@@ -7,6 +7,7 @@ const {
   FREIGHTER_WRONG_NETWORK_MESSAGE,
   detectFreighter,
   isNetworkMatching,
+  walletGate,
 } = require('../lib/freighter-availability');
 
 test('detectFreighter reports an installed extension', async () => {
@@ -48,4 +49,68 @@ test('isNetworkMatching correctly compares network names and passphrases', () =>
   assert.equal(isNetworkMatching('PUBLIC', 'TESTNET'), false);
   assert.equal(isNetworkMatching(null, 'TESTNET'), false);
   assert.equal(isNetworkMatching(undefined, 'TESTNET'), false);
+});
+
+const SELLER_KEY = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
+
+test('walletGate asks for the extension when Freighter is not installed', () => {
+  const gate = walletGate(
+    { freighterAvailable: false, connected: false, publicKey: null, network: null },
+    'TESTNET'
+  );
+
+  assert.equal(gate.status, 'missing');
+  assert.equal(gate.ready, false);
+  assert.equal(gate.action, 'install');
+  assert.equal(gate.message, FREIGHTER_REQUIRED_MESSAGE);
+});
+
+test('walletGate asks the user to connect when the extension is installed but idle', () => {
+  const gate = walletGate(
+    { freighterAvailable: true, connected: false, publicKey: null, network: 'TESTNET' },
+    'TESTNET'
+  );
+
+  assert.equal(gate.status, 'disconnected');
+  assert.equal(gate.action, 'connect');
+  assert.equal(gate.message, FREIGHTER_CONNECT_REQUIRED_MESSAGE);
+});
+
+test('walletGate blocks a connected wallet on the other network and names both', () => {
+  const gate = walletGate(
+    { freighterAvailable: true, connected: true, publicKey: SELLER_KEY, network: 'PUBLIC' },
+    'TESTNET'
+  );
+
+  assert.equal(gate.status, 'wrong_network');
+  assert.equal(gate.ready, false);
+  assert.equal(gate.action, 'switch_network');
+  assert.match(gate.message, /Testnet/);
+  assert.match(gate.message, /Mainnet/);
+});
+
+test('walletGate treats an unreported network as a mismatch, not a pass', () => {
+  const gate = walletGate(
+    { freighterAvailable: true, connected: true, publicKey: SELLER_KEY, network: null },
+    'TESTNET'
+  );
+
+  assert.equal(gate.ready, false);
+  assert.equal(gate.status, 'wrong_network');
+});
+
+test('walletGate is ready on the expected network', () => {
+  const gate = walletGate(
+    { freighterAvailable: true, connected: true, publicKey: SELLER_KEY, network: 'TESTNET' },
+    'TESTNET'
+  );
+
+  assert.equal(gate.status, 'ready');
+  assert.equal(gate.ready, true);
+  assert.equal(gate.action, 'none');
+  assert.match(gate.message, /correct Stellar network/);
+});
+
+test('walletGate tolerates a missing session', () => {
+  assert.equal(walletGate(undefined, 'TESTNET').status, 'disconnected');
 });

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { invoiceApi, describeApiError } from '@/lib/api';
+import { invoiceApi } from '@/lib/api';
 import InvoiceCard from '@/components/InvoiceCard';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
@@ -32,7 +32,14 @@ import { DASHBOARD_RESULTS_ID, MAIN_CONTENT_ID, describeAmount, statusText } fro
 import { NETWORK_DISPLAY_NAME } from '@/lib/stellar';
 
 export default function DashboardPage() {
-  const { publicKey, connected, isWrongNetwork } = useWalletStore();
+  const { publicKey, connected, network, freighterAvailable, isWrongNetwork } =
+    useWalletStore();
+  // One gate for the whole page: the rows it may show, the stats it may
+  // count and the empty state it may explain all key off this.
+  const gate = walletGate(
+    { freighterAvailable, connected, publicKey, network },
+    EXPECTED_WALLET_NETWORK
+  );
   // Loaded data is tagged with the wallet it belongs to, so a response for a
   // previous seller can never be rendered under the current one.
   const [loaded, setLoaded] = useState<{ owner: string | null; invoices: any[]; stats: any }>({

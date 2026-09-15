@@ -37,6 +37,10 @@ const TERMINAL_STATES = Object.freeze([PAY_STATES.PAID, PAY_STATES.EXPIRED]);
 const { isTerminalPayState } = require('./pay-terminal-guard.ts');
 const { effectiveInvoiceStatus, hasInvoiceExpired } = require('./invoice-lifecycle');
 const { walletGate } = require('./freighter-availability');
+// The canonical code -> message table. describeVerifyError resolves the
+// backend's stable rejection code through it, so a payer reads the same
+// sentence here as on every other surface.
+const { messageForCode } = require('./verification.js');
 
 const asInvoice = (statusOrInvoice) =>
   statusOrInvoice && typeof statusOrInvoice === 'object'
@@ -176,6 +180,10 @@ function paymentReducer(state, event) {
     case 'RESET':
       if (isTerminalPayState(state.status)) return state;
       return { ...state, status: PAY_STATES.IDLE, error: null };
+
+    // A copy confirmation is feedback, not session state.
+    case 'COPIED':
+      return state;
 
     default:
       return state;
