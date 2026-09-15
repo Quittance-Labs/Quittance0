@@ -1,6 +1,19 @@
 import axios from 'axios';
+import {
+  resolveApiConfig,
+  toApiError,
+  isApiUnavailableError,
+  apiErrorMessage,
+} from './api-runtime.js';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+export const API_CONFIG = resolveApiConfig(process.env.NEXT_PUBLIC_API_URL, process.env.NODE_ENV);
+export const PAYMENT_STATUS_POLL_INTERVAL_MS = 3000;
+export const resolveVerificationError = (error: unknown, fallback?: string) =>
+  apiErrorMessage(error, fallback);
+export const describeApiError = (error: unknown, fallback?: string) =>
+  apiErrorMessage(error, fallback);
+
+const API_URL = API_CONFIG.baseUrl;
 
 const api = axios.create({
   baseURL: API_CONFIG.baseUrl,
@@ -123,6 +136,6 @@ export const healthCheck = async () => {
   return response.data;
 };
 
-export { apiErrorMessage, isApiUnavailableError, resolveVerificationError };
+export { apiErrorMessage, isApiUnavailableError };
 
 export default api;

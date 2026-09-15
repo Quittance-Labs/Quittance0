@@ -150,25 +150,6 @@ export const getUserPublicKey = async (): Promise<string | null> => {
   }
 };
 
-export const getFreighterNetwork = async (): Promise<FreighterNetwork> => {
-  const getNetwork = (FreighterApi as any).getNetwork;
-  if (typeof getNetwork !== 'function') {
-    return { network: null, networkPassphrase: null };
-  }
-
-  try {
-    const result = await getNetwork();
-    if (result?.error) return { network: null, networkPassphrase: null };
-    return {
-      network: readResultString(result?.network ?? result, ['network']),
-      networkPassphrase: readResultString(result?.networkPassphrase, ['networkPassphrase']),
-    };
-  } catch (error) {
-    console.error('Error getting Freighter network:', error);
-    return { network: null, networkPassphrase: null };
-  }
-};
-
 export const readFreighterSession = async (): Promise<FreighterSession> => {
   const freighterAvailable = await checkWalletConnection();
   if (!freighterAvailable) {
@@ -191,8 +172,8 @@ export const readFreighterSession = async (): Promise<FreighterSession> => {
     freighterAvailable: true,
     connected: allowed && Boolean(publicKey),
     publicKey,
-    network: network.network,
-    networkPassphrase: network.networkPassphrase,
+    network: network?.network ?? null,
+    networkPassphrase: network?.networkPassphrase ?? null,
   };
 };
 

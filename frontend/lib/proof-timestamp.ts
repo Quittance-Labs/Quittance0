@@ -13,7 +13,7 @@ export function formatProofTimestamp(value: unknown): string | null {
     return null;
   }
 
-  const date = value instanceof Date ? value : new Date(value);
+  const date = value instanceof Date ? value : new Date(value as any);
   if (Number.isNaN(date.getTime())) {
     return null;
   }

@@ -1,19 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { apiErrorMessage, invoiceApi, isApiUnavailableError } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { STELLAR_ASSETS, getAssetByCode } from '@/lib/assets';
 import { useWalletStore } from '@/lib/store';
-import { NETWORK_DISPLAY_NAME } from '@/lib/stellar';
-import { showFreighterWrongNetworkPrompt } from './FreighterInstallPrompt';
+import { NETWORK_DISPLAY_NAME, EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
+import { walletGate } from '@/lib/freighter-availability';
+import { showFreighterInstallPrompt, showFreighterWrongNetworkPrompt } from './FreighterInstallPrompt';
+import WalletConnect from './WalletConnect';
 import AssetLogo from './AssetLogo';
 import ApiErrorState from './ApiErrorState';
-import { useWalletStore } from '@/lib/store';
-import { walletGate } from '@/lib/freighter-availability';
-import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
-import { showFreighterInstallPrompt } from './FreighterInstallPrompt';
+import { loadInvoiceDraft, saveInvoiceDraft, clearInvoiceDraft } from '@/lib/invoice-draft';
 
 interface InvoiceFormProps {
   onSuccess?: (invoice: any) => void;
@@ -21,7 +20,7 @@ interface InvoiceFormProps {
 }
 
 export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps) {
-  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
+  const { publicKey, connected, network, freighterAvailable, isWrongNetwork } = useWalletStore();
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState('');
   const [assetCode, setAssetCode] = useState('XLM');
@@ -32,16 +31,58 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   const [customerEmail, setCustomerEmail] = useState('');
   const [apiError, setApiError] = useState<string | null>(null);
   const [expiresInDays, setExpiresInDays] = useState(7);
-  const { isWrongNetwork } = useWalletStore();
+  const [draftLoaded, setDraftLoaded] = useState(false);
+
+  // Restore draft from sessionStorage on initial mount
+  useEffect(() => {
+    const draft = loadInvoiceDraft();
+    if (draft) {
+      if (draft.amount) setAmount(draft.amount);
+      if (draft.assetCode) setAssetCode(draft.assetCode);
+      if (draft.description) setDescription(draft.description);
+      if (draft.sellerName) setSellerName(draft.sellerName);
+      if (draft.sellerEmail) setSellerEmail(draft.sellerEmail);
+      if (draft.customerName) setCustomerName(draft.customerName);
+      if (draft.customerEmail) setCustomerEmail(draft.customerEmail);
+      if (typeof draft.expiresInDays === 'number') setExpiresInDays(draft.expiresInDays);
+    }
+    setDraftLoaded(true);
+  }, []);
+
+  // Save non-secret draft fields on change
+  useEffect(() => {
+    if (!draftLoaded) return;
+    saveInvoiceDraft({
+      amount,
+      assetCode,
+      description,
+      sellerName,
+      sellerEmail,
+      customerName,
+      customerEmail,
+      expiresInDays,
+    });
+  }, [
+    amount,
+    assetCode,
+    description,
+    sellerName,
+    sellerEmail,
+    customerName,
+    customerEmail,
+    expiresInDays,
+    draftLoaded,
+  ]);
+
+  const sellerWallet = userWallet || publicKey || undefined;
+  const gate = walletGate(
+    { freighterAvailable, connected, publicKey: sellerWallet, network },
+    EXPECTED_WALLET_NETWORK
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const sellerWallet = userWallet || publicKey || undefined;
-    const gate = walletGate(
-      { freighterAvailable, connected, publicKey: sellerWallet, network },
-      EXPECTED_WALLET_NETWORK
-    );
     if (!gate.ready) {
       showFreighterInstallPrompt(gate);
       return;
@@ -52,7 +93,8 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       return;
     }
 
-    if (!amount || parseFloat(amount) <= 0) {
+    const parsedAmount = parseFloat(amount);
+    if (!amount || isNaN(parsedAmount) || parsedAmount <= 0) {
       toast.error('Enter a valid amount');
       return;
     }
@@ -87,6 +129,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       });
 
       toast.success('Invoice created');
+      clearInvoiceDraft();
       onSuccess?.(result.data);
       setAmount('');
       setAssetCode('XLM');
@@ -106,23 +149,31 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   };
 
   return (
-    /*
-     * Every control below is associated with a visible `<label htmlFor>`. They
-     * previously relied on an adjacent unassociated `<label>` plus a
-     * `placeholder`, which axe accepts as a name but which disappears the moment
-     * the field has a value — leaving a screen-reader user editing an unnamed
-     * box. The asset `<select>` had neither, and failed axe's `select-name`
-     * outright.
-     */
     <form onSubmit={handleSubmit} className="space-y-4" aria-labelledby="invoice-form-heading">
       <h3 id="invoice-form-heading" className="sr-only">
         Invoice details
       </h3>
 
-      {isWrongNetwork && (
+      {!gate.ready ? (
         <div
           role="alert"
-          className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2.5 text-xs text-amber-900"
+          className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-center mb-4"
+        >
+          <AlertTriangle className="w-6 h-6 text-amber-600 mx-auto mb-2" aria-hidden="true" />
+          <p className="text-sm font-semibold text-amber-900 mb-1">{gate.title}</p>
+          <p className="text-xs text-amber-800 mb-3">
+            {gate.status === 'disconnected'
+              ? 'Wallet disconnected: connect Freighter to finish creating your invoice. Your entered fields are preserved.'
+              : gate.message}
+          </p>
+          <div className="flex justify-center">
+            <WalletConnect />
+          </div>
+        </div>
+      ) : isWrongNetwork ? (
+        <div
+          role="alert"
+          className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2.5 text-xs text-amber-900 mb-4"
         >
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
           <div>
@@ -132,15 +183,15 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
             </p>
           </div>
         </div>
-      )}
+      ) : null}
 
       {apiError && <ApiErrorState message={apiError} compact />}
+
       <div>
         <label htmlFor="invoice-amount" className="label">
           Invoice amount <span aria-hidden="true">*</span>
-          <span className="sr-only">(required)</span>
         </label>
-        <div className="flex gap-3 flex-col sm:flex-row">
+        <div className="flex gap-2">
           <input
             id="invoice-amount"
             name="amount"
@@ -149,22 +200,22 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
             min="0.0000001"
             required
             aria-required="true"
-            aria-describedby="invoice-amount-hint"
-            className="input flex-1 text-2xl font-semibold"
-            placeholder="10.00"
+            aria-describedby="amount-hint"
+            className="input flex-1 text-lg font-semibold"
+            placeholder="0.00"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
           />
           <div className="relative">
-            <label htmlFor="invoice-asset" className="sr-only">
+            <label htmlFor="asset-select" className="sr-only">
               Asset
             </label>
             <select
-              id="invoice-asset"
+              id="asset-select"
               name="assetCode"
               value={assetCode}
               onChange={(e) => setAssetCode(e.target.value)}
-              className="input w-full sm:w-40 text-sm font-semibold pl-12 pr-3 appearance-none cursor-pointer"
+              className="input pr-8 font-semibold bg-gray-50 border-gray-300 h-full"
             >
               {STELLAR_ASSETS.map((asset) => (
                 <option key={asset.code} value={asset.code}>
@@ -172,69 +223,66 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
                 </option>
               ))}
             </select>
-            {/*
-              The logo repeats the asset code already announced by the select's
-              own value, so it is hidden from assistive technology rather than
-              read twice.
-            */}
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-              <AssetLogo code={assetCode} size={24} showName={false} decorative />
-            </div>
           </div>
         </div>
-        <p id="invoice-amount-hint" className="field-hint">
-          {assetCode === 'USDC'
-            ? 'The amount your client pays in USDC (requires a USDC trustline on Stellar).'
-            : 'The amount your client pays, in the selected asset.'}
+        <p id="amount-hint" className="field-hint">
+          Set the exact amount your client must send. Amounts are denominated in {assetCode}.
         </p>
       </div>
 
       <div>
         <label htmlFor="invoice-description" className="label">
-          Description
+          Description / Project details (optional)
         </label>
         <textarea
           id="invoice-description"
           name="description"
-          className="input min-h-[80px] resize-none text-sm"
-          placeholder="What is this invoice for?"
+          aria-describedby="description-hint"
+          className="input text-sm resize-none h-20"
+          placeholder="e.g. Website redesign - Milestone 1"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          maxLength={500}
+          maxLength={255}
         />
+        <p id="description-hint" className="field-hint">
+          A short summary that appears on the invoice and payment proof.
+        </p>
       </div>
 
       <div>
-        <label className="label" htmlFor="invoice-expiry">Payment window</label>
+        <label htmlFor="expires-in" className="label">
+          Invoice expiry
+        </label>
         <select
-          id="invoice-expiry"
-          className="input w-full text-sm"
+          id="expires-in"
+          name="expiresInDays"
+          aria-describedby="expires-hint"
           value={expiresInDays}
-          onChange={(event) => setExpiresInDays(Number(event.target.value))}
+          onChange={(e) => setExpiresInDays(Number(e.target.value))}
+          className="input text-sm"
         >
-          {[1, 3, 7, 14, 30].map((days) => (
-            <option key={days} value={days}>
-              {days} day{days === 1 ? '' : 's'}
-            </option>
-          ))}
+          <option value={1}>1 day</option>
+          <option value={3}>3 days</option>
+          <option value={7}>7 days (recommended)</option>
+          <option value={14}>14 days</option>
+          <option value={30}>30 days</option>
         </select>
-        <p className="text-xs text-gray-500 mt-1">
-          After this window the invoice stays in history but cannot be paid or verified.
+        <p id="expires-hint" className="field-hint">
+          Invoices that are not settled before expiring cannot be paid on-chain.
         </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label htmlFor="seller-name" className="label">
-            Your name (optional)
+            Your name / Company (optional)
           </label>
           <input
             id="seller-name"
             name="sellerName"
             type="text"
-            autoComplete="name"
             className="input text-sm"
-            placeholder="Your name or business"
+            placeholder="Jane Doe"
             value={sellerName}
             onChange={(e) => setSellerName(e.target.value)}
             maxLength={255}
@@ -249,7 +297,6 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
             id="seller-email"
             name="sellerEmail"
             type="email"
-            autoComplete="email"
             className="input text-sm"
             placeholder="you@example.com"
             value={sellerEmail}
@@ -297,15 +344,19 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
 
       <button
         type="submit"
-        disabled={loading}
+        disabled={loading || !gate.ready || isWrongNetwork}
         aria-busy={loading}
-        className="btn btn-primary w-full flex items-center justify-center gap-2 mt-6"
+        className="btn btn-primary w-full flex items-center justify-center gap-2 mt-6 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? (
           <>
             <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
             Creating...
           </>
+        ) : !gate.ready ? (
+          'Connect Wallet to Create'
+        ) : isWrongNetwork ? (
+          'Switch Network to Create'
         ) : (
           'Create Invoice'
         )}

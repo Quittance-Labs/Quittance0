@@ -7,11 +7,12 @@ import {
   requestWalletAccess,
   getFreighterNetwork,
   isWrongNetwork,
+  EXPECTED_WALLET_NETWORK,
   NETWORK_DISPLAY_NAME,
 } from '@/lib/stellar';
 import { toast } from 'sonner';
 import { Wallet, Loader2 } from 'lucide-react';
-import { invoiceApi } from '@/lib/api';
+import { invoiceApi, resolveVerificationError } from '@/lib/api';
 import { showFreighterInstallPrompt, showFreighterWrongNetworkPrompt } from '@/components/FreighterInstallPrompt';
 import { describeVerifyError, normalizePayerDetails } from '@/lib/payment-page-state';
 import { useWalletStore } from '@/lib/store';

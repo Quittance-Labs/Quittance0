@@ -10,11 +10,11 @@ import {
   getUserPublicKey,
   getAccountBalance,
   describeStellarNetworkError,
-  getFreighterNetwork,
   isWrongNetwork as checkIsWrongNetwork,
   NETWORK_DISPLAY_NAME,
 } from '@/lib/stellar';
 import { useWalletStore } from '@/lib/store';
+import { walletGate, networkLabel } from '@/lib/freighter-availability';
 import { paymentMonitor } from '@/lib/payment-monitor';
 import { Wallet, LogOut, Loader2, ExternalLink, Bell, BellOff, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -35,11 +35,17 @@ export default function WalletConnect({ onConnect }: WalletConnectProps = {}) {
     isWrongNetwork,
     network,
     networkPassphrase,
+    freighterAvailable,
     setWallet,
     setNetwork,
     setIsWrongNetwork,
     disconnect,
   } = useWalletStore();
+
+  const gate = walletGate(
+    { freighterAvailable, connected, publicKey, network },
+    EXPECTED_WALLET_NETWORK
+  );
 
   const loadBalance = useCallback(async (key: string, netName?: string | null, netPass?: string | null) => {
     try {
