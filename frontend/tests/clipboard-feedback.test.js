@@ -68,3 +68,57 @@ test('reports success only after the clipboard write completes', async () => {
   finishWrite();
   assert.equal(await result, true);
 });
+
+test('falls back to a temporary textarea when the Clipboard API is unavailable', async () => {
+  let selected = false;
+  let removed = false;
+  let restored = false;
+  const textarea = {
+    value: '',
+    style: {},
+    setAttribute() {},
+    select() { selected = true; },
+    remove() { removed = true; },
+  };
+  const document = {
+    activeElement: { focus() { restored = true; } },
+    body: { appendChild(node) { assert.equal(node, textarea); } },
+    createElement(tag) {
+      assert.equal(tag, 'textarea');
+      return textarea;
+    },
+    execCommand(command) {
+      assert.equal(command, 'copy');
+      return true;
+    },
+  };
+
+  const copy = loadHelper({ navigator: {}, document });
+  assert.equal(await copy('https://quittance.test/pay/inv_1'), true);
+  assert.equal(textarea.value, 'https://quittance.test/pay/inv_1');
+  assert.equal(selected, true);
+  assert.equal(removed, true);
+  assert.equal(restored, true);
+});
+
+test('removes the fallback textarea and restores focus when legacy copy throws', async () => {
+  let removed = false;
+  let restored = false;
+  const textarea = {
+    value: '',
+    style: {},
+    setAttribute() {},
+    select() {},
+    remove() { removed = true; },
+  };
+  const document = {
+    activeElement: { focus() { restored = true; } },
+    body: { appendChild() {} },
+    createElement: () => textarea,
+    execCommand() { throw new Error('Legacy copy blocked'); },
+  };
+
+  assert.equal(await loadHelper({ navigator: {}, document })('payment link'), false);
+  assert.equal(removed, true);
+  assert.equal(restored, true);
+});

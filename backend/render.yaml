@@ -16,7 +16,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: NODE_VERSION
-        value: "20"
+        value: "22.12.0"
       - key: STELLAR_NETWORK
         value: TESTNET
       - key: STELLAR_HORIZON_URL

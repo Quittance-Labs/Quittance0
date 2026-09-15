@@ -372,6 +372,30 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       assert.equal(res.body.data.paymentAvailable, true);
     });
 
+    it('scopes seller detail reads to the requested wallet', async () => {
+      const invoice = await createInvoice();
+
+      const owner = await call(
+        handlers().getInvoice,
+        createReq({ params: { id: invoice.id }, query: { sellerPublicKey: SELLER_A } })
+      );
+      assert.equal(owner.statusCode, 200);
+      assert.equal(owner.body.data.id, invoice.id);
+
+      const otherSeller = await call(
+        handlers().getInvoice,
+        createReq({ params: { id: invoice.id }, query: { sellerPublicKey: SELLER_B } })
+      );
+      assert.equal(otherSeller.statusCode, 403);
+      assert.equal(otherSeller.body.success, false);
+
+      const invalidSeller = await call(
+        handlers().getInvoice,
+        createReq({ params: { id: invoice.id }, query: { sellerPublicKey: 'invalid' } })
+      );
+      assert.equal(invalidSeller.statusCode, 400);
+    });
+
     it('normalizes lowercase assetCode to uppercase on creation', async () => {
       const res = await call(
         handlers().createInvoice,

@@ -7,6 +7,7 @@ const {
   FREIGHTER_WRONG_NETWORK_MESSAGE,
   detectFreighter,
   isNetworkMatching,
+  walletGate,
 } = require('../lib/freighter-availability');
 
 test('detectFreighter reports an installed extension', async () => {
@@ -48,4 +49,18 @@ test('isNetworkMatching correctly compares network names and passphrases', () =>
   assert.equal(isNetworkMatching('PUBLIC', 'TESTNET'), false);
   assert.equal(isNetworkMatching(null, 'TESTNET'), false);
   assert.equal(isNetworkMatching(undefined, 'TESTNET'), false);
+});
+
+test('walletGate rejects persisted identity until Freighter verifies this session', () => {
+  const gate = walletGate({
+    sessionVerified: false,
+    freighterAvailable: true,
+    connected: true,
+    publicKey: 'G'.padEnd(56, 'A'),
+    network: 'TESTNET',
+  }, 'TESTNET');
+
+  assert.equal(gate.status, 'checking');
+  assert.equal(gate.ready, false);
+  assert.match(gate.message, /Checking the current Freighter wallet/);
 });

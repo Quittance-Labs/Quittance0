@@ -4,6 +4,7 @@ const FREIGHTER_REQUIRED_MESSAGE =
 const FREIGHTER_CONNECT_REQUIRED_MESSAGE =
   'Connect Freighter to continue. Your wallet is your Quittance identity.';
 const FREIGHTER_READY_MESSAGE = 'Freighter is connected on the correct Stellar network.';
+const FREIGHTER_CHECKING_MESSAGE = 'Checking the current Freighter wallet before continuing.';
 
 const NETWORK_LABELS = Object.freeze({
   TESTNET: 'Testnet',
@@ -77,10 +78,72 @@ const isNetworkMatching = (networkOrPassphrase, expected = 'TESTNET') => {
   return false;
 };
 
+const walletGate = (session = {}, expectedNetwork = 'TESTNET') => {
+  // A persisted address is only a UI convenience. Never authorize a request
+  // with it until Freighter has confirmed the active account in this tab.
+  if (session.sessionVerified === false) {
+    return {
+      status: 'checking',
+      ready: false,
+      title: 'Checking Freighter',
+      message: FREIGHTER_CHECKING_MESSAGE,
+      action: 'connect',
+    };
+  }
+
+  if (session.freighterAvailable === false) {
+    return {
+      status: 'missing',
+      ready: false,
+      title: 'Install Freighter',
+      message: FREIGHTER_REQUIRED_MESSAGE,
+      action: 'install',
+    };
+  }
+
+  if (!session.connected || !session.publicKey) {
+    return {
+      status: 'disconnected',
+      ready: false,
+      title: 'Connect Freighter',
+      message: FREIGHTER_CONNECT_REQUIRED_MESSAGE,
+      action: 'connect',
+    };
+  }
+
+  if (!networkMatches(session.network, expectedNetwork)) {
+    return {
+      status: 'wrong_network',
+      ready: false,
+      title: 'Switch Freighter network',
+      message: wrongNetworkMessage(expectedNetwork, session.network),
+      action: 'switch_network',
+    };
+  }
+
+  return {
+    status: 'ready',
+    ready: true,
+    title: 'Freighter connected',
+    message: FREIGHTER_READY_MESSAGE,
+    action: 'continue',
+  };
+};
+
 module.exports = {
   FREIGHTER_INSTALL_URL,
   FREIGHTER_REQUIRED_MESSAGE,
+  FREIGHTER_CONNECT_REQUIRED_MESSAGE,
+  FREIGHTER_READY_MESSAGE,
+  FREIGHTER_CHECKING_MESSAGE,
   FREIGHTER_WRONG_NETWORK_MESSAGE,
+  NETWORK_LABELS,
   detectFreighter,
+  normalizeFreighterBoolean,
+  normalizeNetworkName,
+  networkLabel,
+  networkMatches,
+  walletGate,
+  wrongNetworkMessage,
   isNetworkMatching,
 };

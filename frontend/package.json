@@ -2,27 +2,31 @@
   "name": "quittance-frontend",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint . --max-warnings=0",
     "test": "node --test tests/*.test.js tests/isolated/*.test.js",
     "test:a11y": "node --test tests/a11y-core-pages.test.js",
+    "test:update-golden-pdf": "node scripts/update-golden-proof-pdf.cjs",
     "typecheck": "tsc --noEmit",
     "deploy:check": "node scripts/check-deploy-env.mjs"
   },
   "dependencies": {
     "@stellar/freighter-api": "^2.0.0",
-    "@stellar/stellar-sdk": "^12.1.0",
-    "axios": "^1.6.7",
+    "@stellar/stellar-sdk": "^17.1.0",
+    "axios": "^1.20.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.3.1",
     "geist": "^1.7.2",
-    "html2pdf.js": "^0.12.1",
+    "html2pdf.js": "^0.14.0",
     "lucide-react": "^0.363.0",
     "motion": "^12.42.2",
-    "next": "^14.2.3",
+    "next": "^15.5.24",
     "qrcode.react": "^3.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -30,17 +34,21 @@
     "zustand": "^4.5.7"
   },
   "devDependencies": {
-    "@types/node": "^20.11.24",
+    "@types/node": "^22.20.2",
     "@types/react": "^18.2.61",
     "@types/react-dom": "^18.2.19",
     "autoprefixer": "^10.4.18",
     "axe-core": "^4.13.0",
+    "baseline-browser-mapping": "^2.11.23",
     "esbuild": "^0.28.2",
     "eslint": "^8.57.0",
-    "eslint-config-next": "^14.2.3",
+    "eslint-config-next": "^15.5.24",
     "jsdom": "^24.0.0",
-    "postcss": "^8.4.35",
+    "postcss": "^8.5.28",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.28"
   }
 }

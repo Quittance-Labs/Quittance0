@@ -182,7 +182,7 @@ queries for this request path are defined in
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 22.12+
 - [Freighter](https://www.freighter.app/) for wallet flows — see [Freighter docs](https://docs.freighter.app/)
 - Stellar testnet account for real payments ([Laboratory](https://laboratory.stellar.org/#account-creator?network=test))
 

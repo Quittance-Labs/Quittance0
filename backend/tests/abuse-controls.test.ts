@@ -169,7 +169,7 @@ describe('Abuse Controls Suite', () => {
         expiresAt: new Date(Date.now() + 86400000),
       });
 
-      const fakeSig = otherKeypair.sign(Buffer.from(created.id)).toString('base64');
+      const fakeSig = Buffer.from(otherKeypair.sign(Buffer.from(created.id))).toString('base64');
       const res = await request(port, 'POST', `/api/invoices/${created.id}/cancel`, {
         sellerPublicKey: otherPublicKey,
         signature: fakeSig,
@@ -239,7 +239,9 @@ describe('Abuse Controls Suite', () => {
         expiresAt: new Date(Date.now() + 86400000),
       });
 
-      const validSig = sellerKeypair.sign(Buffer.from(created.id)).toString('base64');
+      // SDK 17 returns Uint8Array rather than Buffer; normalize before
+      // encoding so the HTTP contract continues to carry real Base64.
+      const validSig = Buffer.from(sellerKeypair.sign(Buffer.from(created.id))).toString('base64');
       const res = await request(port, 'POST', `/api/invoices/${created.id}/cancel`, {
         sellerPublicKey,
         signature: validSig,

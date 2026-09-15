@@ -1,4 +1,4 @@
-import { buildHorizonTxUrl } from './explorer-tx-link';
+import { buildHorizonTxUrl } from './stellar-explorer.js';
 
 export const QUITTANCE_PROOF_VERSION = 'quittance.v1';
 
@@ -639,7 +639,20 @@ export function createQuittanceProofPdf(
   });
 
   const generatedDate = new Date(proof.document.generatedAtUtc);
-  doc.setCreationDate(Number.isNaN(generatedDate.getTime()) ? new Date(0) : generatedDate);
+  const canonicalDate = Number.isNaN(generatedDate.getTime()) ? new Date(0) : generatedDate;
+  // jsPDF serializes Date objects in the host's local timezone. Supplying the
+  // canonical PDF date string keeps proof bytes identical across machines.
+  const pdfCreationDate = [
+    'D:',
+    canonicalDate.getUTCFullYear(),
+    String(canonicalDate.getUTCMonth() + 1).padStart(2, '0'),
+    String(canonicalDate.getUTCDate()).padStart(2, '0'),
+    String(canonicalDate.getUTCHours()).padStart(2, '0'),
+    String(canonicalDate.getUTCMinutes()).padStart(2, '0'),
+    String(canonicalDate.getUTCSeconds()).padStart(2, '0'),
+    "+00'00'",
+  ].join('');
+  doc.setCreationDate(pdfCreationDate);
   doc.setFileId('00000000000000000000000000000000');
 
   doc.setFontSize(22);

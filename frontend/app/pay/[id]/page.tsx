@@ -17,9 +17,8 @@ import WalletConnect from '@/components/WalletConnect';
 import FreighterInstallPrompt from '@/components/FreighterInstallPrompt';
 import MobilePaymentFallback from '@/components/MobilePaymentFallback';
 import ApiErrorState from '@/components/ApiErrorState';
-import { detectDeviceContext } from '@/lib/mobile-detection';
 import { copyToClipboard, formatAmount } from '@/lib/utils';
-import { openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
+import { emailPaymentProof, openInvoicePDF, shareInvoiceByEmail } from '@/lib/export';
 import { getPayPageView, getPayPageWalletGate } from '@/lib/payment-page-state';
 import { PAYMENT_STATUS_POLL_INTERVAL_MS } from '@/lib/api';
 // Payment and verification errors on the pay page resolve through the shared
@@ -29,6 +28,7 @@ import { MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';
 import { useWalletStore } from '@/lib/store';
 import { EXPECTED_WALLET_NETWORK, NETWORK_DISPLAY_NAME } from '@/lib/stellar';
 import { detectDevice } from '@/lib/mobile-detection';
+import { memoPaymentHint } from '@/lib/pay-memo-hint';
 
 export default function PaymentPage() {
   const id = useParams().id as string;
@@ -227,9 +227,7 @@ export default function PaymentPage() {
                           page.paymentInfo?.paymentUrl ||
                           (typeof window !== 'undefined' ? window.location.href : '')
                         }
-                        onCopy={(text, label) => {
-                          page.dispatch({ type: 'COPIED', key: label });
-                        }}
+                        onCopy={(_text, label) => toast.success(`${label} copied`)}
                       />
                       <div className="text-center">
                         <button
@@ -287,23 +285,24 @@ export default function PaymentPage() {
                         </div>
                       )}
                       {!(isWrongNetwork && walletPaymentGate.ready) && (
-                      <PaymentButton
-                        destination={invoice.sellerPublicKey}
-                        amount={String(invoice.amount)}
-                        memo={invoice.memo}
-                        assetCode={invoice.assetCode}
-                        assetIssuer={invoice.assetIssuer}
-                        invoiceId={invoice.id}
-                        payerName={page.payerName}
-                        payerEmail={page.payerEmail}
-                        invoiceStatus={view.expired ? 'EXPIRED' : invoice.status}
-                        onStart={() => page.dispatch({ type: 'PAY_STARTED' })}
-                        onSuccess={(txHash) => {
-                          page.dispatch({ type: 'PAY_SENT', txHash });
-                          void page.reload();
-                        }}
-                        onError={(error) => page.dispatch({ type: 'PAY_FAILED', error })}
-                      />
+                        <PaymentButton
+                          destination={invoice.sellerPublicKey}
+                          amount={String(invoice.amount)}
+                          memo={invoice.memo}
+                          assetCode={invoice.assetCode}
+                          assetIssuer={invoice.assetIssuer}
+                          invoiceId={invoice.id}
+                          payerName={page.payerName}
+                          payerEmail={page.payerEmail}
+                          invoiceStatus={view.expired ? 'EXPIRED' : invoice.status}
+                          onStart={() => page.dispatch({ type: 'PAY_STARTED' })}
+                          onSuccess={(txHash) => {
+                            page.dispatch({ type: 'PAY_SENT', txHash });
+                            void page.reload();
+                          }}
+                          onError={(error) => page.dispatch({ type: 'PAY_FAILED', error })}
+                        />
+                      )}
                       {isMobile && showDesktopWalletAnyway && (
                         <div className="mt-4 text-center">
                           <button

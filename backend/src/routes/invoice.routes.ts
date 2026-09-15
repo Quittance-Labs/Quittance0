@@ -25,6 +25,7 @@ export interface InvoiceRouterOptions extends InvoiceHandlerOptions {
  *   GET    /invoices/stats
  *   GET    /invoices
  *   GET    /invoices/:id
+ *            optional sellerPublicKey query scopes the seller-detail response
  *   GET    /invoices/:id/payment-info
  *   POST   /invoices/:id/cancel (seller authorized)
  *   POST   /invoices/:id/verify

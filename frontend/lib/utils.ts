@@ -1,4 +1,5 @@
 import { type ClassValue, clsx } from 'clsx';
+import { copyWithFeedback } from './clipboard-feedback';
 
 /**
  * Merge class names
@@ -31,13 +32,7 @@ export function formatAddress(address: string, chars: number = 4): string {
  * Copy to clipboard
  */
 export async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch (error) {
-    console.error('Failed to copy:', error);
-    return false;
-  }
+  return copyWithFeedback(text);
 }
 
 /**
@@ -130,7 +125,7 @@ export function formatCurrency(amount: number, currency: string = 'XLM'): string
   return `${formatAmount(amount, 7)} ${code}`;
 }
 
-export default {
+const utils = {
   cn,
   formatAmount,
   formatAddress,
@@ -142,3 +137,5 @@ export default {
   isValidEmail,
   formatCurrency,
 };
+
+export default utils;

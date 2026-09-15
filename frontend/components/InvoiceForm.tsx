@@ -6,13 +6,11 @@ import { toast } from 'sonner';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { STELLAR_ASSETS, getAssetByCode } from '@/lib/assets';
 import { useWalletStore } from '@/lib/store';
-import { NETWORK_DISPLAY_NAME } from '@/lib/stellar';
+import { EXPECTED_WALLET_NETWORK, NETWORK_DISPLAY_NAME } from '@/lib/stellar';
 import { showFreighterWrongNetworkPrompt } from './FreighterInstallPrompt';
 import AssetLogo from './AssetLogo';
 import ApiErrorState from './ApiErrorState';
-import { useWalletStore } from '@/lib/store';
 import { walletGate } from '@/lib/freighter-availability';
-import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
 import { showFreighterInstallPrompt } from './FreighterInstallPrompt';
 
 interface InvoiceFormProps {
@@ -21,7 +19,7 @@ interface InvoiceFormProps {
 }
 
 export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps) {
-  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
+  const { publicKey, connected, network, freighterAvailable, sessionVerified } = useWalletStore();
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState('');
   const [assetCode, setAssetCode] = useState('XLM');
@@ -39,7 +37,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
 
     const sellerWallet = userWallet || publicKey || undefined;
     const gate = walletGate(
-      { freighterAvailable, connected, publicKey: sellerWallet, network },
+      { sessionVerified, freighterAvailable, connected, publicKey: sellerWallet, network },
       EXPECTED_WALLET_NETWORK
     );
     if (!gate.ready) {
@@ -52,7 +50,8 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       return;
     }
 
-    if (!amount || parseFloat(amount) <= 0) {
+    const parsedAmount = Number(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
       toast.error('Enter a valid amount');
       return;
     }

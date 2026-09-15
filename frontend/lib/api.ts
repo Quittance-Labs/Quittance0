@@ -1,6 +1,17 @@
 import axios from 'axios';
+import {
+  apiErrorMessage,
+  isApiUnavailableError,
+  resolveApiConfig,
+  toApiError,
+  type ApiConfig,
+} from './api-runtime.js';
+import { resolveVerificationError } from './verification.js';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+export const API_CONFIG: ApiConfig = resolveApiConfig(
+  process.env.NEXT_PUBLIC_API_URL,
+  process.env.NODE_ENV
+);
 
 const api = axios.create({
   baseURL: API_CONFIG.baseUrl,
@@ -41,8 +52,10 @@ export const invoiceApi = {
     return response.data;
   },
 
-  getById: async (id: string) => {
-    const response = await api.get(`/invoices/${id}`);
+  getById: async (id: string, sellerPublicKey?: string) => {
+    const response = await api.get(`/invoices/${id}`, {
+      params: sellerPublicKey ? { sellerPublicKey } : undefined,
+    });
     return response.data;
   },
 
@@ -122,6 +135,9 @@ export const healthCheck = async () => {
   const response = await api.get('/health');
   return response.data;
 };
+
+/** Default polling interval for checking payment status (ms). */
+export const PAYMENT_STATUS_POLL_INTERVAL_MS = 5_000;
 
 export { apiErrorMessage, isApiUnavailableError, resolveVerificationError };
 

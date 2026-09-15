@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 export async function resolve(specifier, context, nextResolve) {
   if (specifier === 'date-fns') {
     return {
@@ -15,4 +17,16 @@ export async function resolve(specifier, context, nextResolve) {
   }
 
   return nextResolve(specifier, context);
+}
+
+export async function load(url, context, nextLoad) {
+  if (url.endsWith('.ts')) {
+    return {
+      format: 'module-typescript',
+      shortCircuit: true,
+      source: await readFile(new URL(url), 'utf8'),
+    };
+  }
+
+  return nextLoad(url, context);
 }

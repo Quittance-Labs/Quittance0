@@ -8,6 +8,13 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
+  webpack(config) {
+    // stellar-base optionally probes the Node-only sodium-native addon. The
+    // web app uses its documented JavaScript fallback, so excluding the addon
+    // prevents webpack from trying to analyze native loader paths.
+    config.resolve.alias['sodium-native'] = false;
+    return config;
+  },
   images: {
     domains: ['localhost', 'assets.coingecko.com'],
     remotePatterns: [

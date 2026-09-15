@@ -21,25 +21,40 @@ import { useWalletStore } from '@/lib/store';
 import ApiErrorState from '@/components/ApiErrorState';
 import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
 import { invoiceSharePath } from '@/lib/invoice-share-path';
-import { useWalletStore } from '@/lib/store';
 import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
 import { walletGate } from '@/lib/freighter-availability';
+import {
+  shareInvoiceByEmail,
+  emailPaymentProof,
+  canSendInvoiceEmail,
+  canSendProofEmail,
+  getProofMailtoRecipient,
+} from '@/lib/export';
+import { copyWithFeedback } from '@/lib/clipboard-feedback';
+import { getExplorerTransactionUrl } from '@/lib/stellar';
 
 export default function InvoiceDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
-  const { publicKey: storePublicKey, connected } = useWalletStore();
+  const { publicKey, connected, network, freighterAvailable, sessionVerified } = useWalletStore();
+
+  const gate = walletGate(
+    { sessionVerified, freighterAvailable, connected, publicKey, network },
+    EXPECTED_WALLET_NETWORK
+  );
+  const userWallet = gate.ready ? publicKey : null;
 
   const [invoice, setInvoice] = useState<any>(null);
-  const [paymentInfo, setPaymentInfo] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
+  const [loading, setLoading] = useState(false);
+  const [forbidden, setForbidden] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lifecycleNow, setLifecycleNow] = useState(() => Date.now());
   // Cancelling reloads the invoice and swaps the status panel out from under
   // the button that was just pressed, so focus has to be moved deliberately.
   const statusPanelRef = useRef<HTMLDivElement>(null);
+  const loadRequestRef = useRef(0);
 
   useEffect(() => {
     const timer = window.setInterval(() => setLifecycleNow(Date.now()), 30_000);
@@ -47,33 +62,49 @@ export default function InvoiceDetailPage() {
   }, []);
 
   const loadInvoice = useCallback(async () => {
+    if (!userWallet) return;
+    const requestId = ++loadRequestRef.current;
+    setLoading(true);
     setLoadError(null);
+    setForbidden(false);
     try {
-      const [invoiceResult, paymentResult] = await Promise.allSettled([
-        invoiceApi.getById(id),
-        invoiceApi.getPaymentInfo(id),
-      ]);
-
-      if (invoiceResult.status === 'rejected') throw invoiceResult.reason;
-      setInvoice(invoiceResult.value.data);
-      if (paymentResult.status === 'fulfilled') {
-        setPaymentInfo(paymentResult.value.data);
-      } else {
-        setLoadError(apiErrorMessage(paymentResult.reason));
-      }
-    } catch (error) {
+      const result = await invoiceApi.getById(id, userWallet);
+      if (requestId !== loadRequestRef.current) return;
+      setInvoice(result.data);
+    } catch (error: any) {
+      if (requestId !== loadRequestRef.current) return;
+      setInvoice(null);
+      if (error?.status === 403) setForbidden(true);
       const message = apiErrorMessage(error, 'Failed to load invoice');
       if (isApiUnavailableError(error)) setLoadError(message);
       toast.error(message);
       console.error(error);
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestRef.current) setLoading(false);
     }
-  }, [id]);
+  }, [id, userWallet]);
 
   useEffect(() => {
+    if (!userWallet) {
+      loadRequestRef.current += 1;
+      setInvoice(null);
+      setForbidden(false);
+      setLoadError(null);
+      setLoading(false);
+      return;
+    }
     void loadInvoice();
-  }, [loadInvoice]);
+  }, [loadInvoice, userWallet]);
+
+  const handleCopyPayLink = async () => {
+    const url = `${window.location.origin}${invoiceSharePath(invoice.id)}`;
+    const copied = await copyWithFeedback(url);
+    if (copied) {
+      toast.success('Pay link copied to clipboard');
+    } else {
+      toast.error('Failed to copy link');
+    }
+  };
 
   const handleShare = async () => {
     const url = `${window.location.origin}${invoiceSharePath(invoice.id)}`;
@@ -85,21 +116,21 @@ export default function InvoiceDetailPage() {
           text: `Pay ${invoice.amount} ${invoice.assetCode}`,
           url,
         });
-      } catch {
-        // User cancelled share
+      } catch (error: any) {
+        if (error?.name !== 'AbortError') {
+          toast.error('Failed to open the share menu');
+        }
       }
     } else {
-      await navigator.clipboard.writeText(url);
-      toast.success('Invoice link copied');
+      await handleCopyPayLink();
     }
   };
 
-  const activeWallet = userWallet || (connected ? storePublicKey : null);
-
   const handleCancel = async () => {
-    if (!window.confirm('Cancel this invoice?')) return;
+    if (cancelling || !userWallet || !window.confirm('Cancel this invoice?')) return;
+    setCancelling(true);
     try {
-      await invoiceApi.cancel(id, activeWallet || invoice?.sellerPublicKey);
+      await invoiceApi.cancel(id, userWallet);
       toast.success('Invoice cancelled');
       await loadInvoice();
       /*
@@ -113,9 +144,26 @@ export default function InvoiceDetailPage() {
       const message = apiErrorMessage(error, 'Failed to cancel invoice');
       if (isApiUnavailableError(error)) setLoadError(message);
       toast.error(message);
+    } finally {
+      setCancelling(false);
     }
   };
 
+  if (!gate.ready) {
+    return (
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className="min-h-screen bg-logo-pattern relative flex items-center justify-center px-4"
+      >
+        <div className="max-w-md w-full relative z-10">
+          <FreighterInstallPrompt gate={gate} action={<WalletConnect />} />
+        </div>
+      </main>
+    );
+  }
+
+  // ── Loading state ──────────────────────────────────────────────────────
   if (loading) {
     return (
       <main
@@ -136,6 +184,25 @@ export default function InvoiceDetailPage() {
     );
   }
 
+  if (forbidden) {
+    return (
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className="min-h-screen bg-logo-pattern relative flex items-center justify-center px-4"
+      >
+        <div className="card text-center max-w-md relative z-10" role="alert">
+          <h1 className="text-2xl font-bold text-red-700 mb-2">Access Denied</h1>
+          <p className="text-gray-700 mb-4">
+            This invoice belongs to a different seller. Connect the wallet that created this invoice to view it.
+          </p>
+          <Link href="/dashboard" className="btn btn-primary inline-block">Go to Dashboard</Link>
+        </div>
+      </main>
+    );
+  }
+
+  // ── Invoice not found ──────────────────────────────────────────────────
   if (!invoice) {
     if (loadError) {
       return (
@@ -165,13 +232,65 @@ export default function InvoiceDetailPage() {
     );
   }
 
+  const isOwner = invoice.sellerPublicKey === userWallet;
+  if (!isOwner) {
+    return (
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className="min-h-screen bg-logo-pattern relative flex items-center justify-center px-4"
+      >
+        <div className="card text-center max-w-md relative z-10" role="alert">
+          <h1 className="text-2xl font-bold text-red-700 mb-2">Access Denied</h1>
+          <p className="text-gray-700 mb-4">
+            This invoice belongs to a different seller. Connect the wallet that created this invoice to view it.
+          </p>
+          <Link href="/dashboard" className="btn btn-primary inline-block">Go to Dashboard</Link>
+        </div>
+      </main>
+    );
+  }
+  const payUrl = `${typeof window === 'undefined' ? '' : window.location.origin}${invoiceSharePath(invoice.id)}`;
+
   const effectiveStatus = (effectiveInvoiceStatus(invoice, lifecycleNow) || invoice.status) as
     'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
-  const gate = walletGate(
-    { freighterAvailable, connected, publicKey, network },
-    EXPECTED_WALLET_NETWORK
-  );
-  const userWallet = gate.ready ? publicKey : null;
+
+  // ── Status timeline steps ──────────────────────────────────────────────
+  type TimelineStep = { label: string; timestamp?: string; active: boolean; completed: boolean };
+  const timelineSteps: TimelineStep[] = [
+    {
+      label: 'Created',
+      timestamp: invoice.createdAt,
+      active: false,
+      completed: true,
+    },
+    {
+      label: 'Awaiting Payment',
+      active: effectiveStatus === 'PENDING',
+      completed: effectiveStatus !== 'PENDING',
+    },
+    ...(effectiveStatus === 'CANCELLED'
+      ? [{
+          label: 'Cancelled',
+          timestamp: invoice.cancelledAt,
+          active: false,
+          completed: true,
+        }]
+      : effectiveStatus === 'EXPIRED'
+        ? [{
+            label: 'Expired',
+            timestamp: invoice.expiresAt,
+            active: false,
+            completed: true,
+          }]
+        : [{
+            label: 'Paid',
+            timestamp: invoice.paidAt,
+            active: false,
+            completed: effectiveStatus === 'PAID',
+          }]
+    ),
+  ];
 
   return (
     <div className="min-h-screen bg-logo-pattern relative py-8 sm:py-12 px-4">
@@ -206,19 +325,19 @@ export default function InvoiceDetailPage() {
             ) : (
               <UserProfile userWallet={publicKey} />
             )}
-            {effectiveStatus === 'PENDING' && (
+            {effectiveStatus === 'PENDING' && isOwner && (
               <div className="flex items-center gap-2">
-                {invoice.customerEmail && (
+                {invoice.customerEmail && canSendInvoiceEmail(invoice) && (
                   <button
                     onClick={() => {
                       shareInvoiceByEmail(invoice);
                       toast.success('Opening email client');
                     }}
                     className="btn btn-outline flex items-center gap-2"
-                    aria-label={`Email invoice to ${invoice.customerEmail}`}
+                    aria-label={`Resend invoice to ${invoice.customerEmail}`}
                   >
                     <Mail className="w-5 h-5" aria-hidden="true" />
-                    <span className="hidden sm:inline">Email</span>
+                    <span className="hidden sm:inline">Resend</span>
                   </button>
                 )}
                 <button
@@ -229,17 +348,30 @@ export default function InvoiceDetailPage() {
                   <Share2 className="w-5 h-5" aria-hidden="true" />
                   <span className="hidden sm:inline">Share</span>
                 </button>
-                {activeWallet && invoice.sellerPublicKey === activeWallet && (
-                  <button
-                    onClick={handleCancel}
-                    className="btn btn-destructive flex items-center gap-2"
-                    aria-label="Cancel this invoice"
-                  >
-                    <X className="w-5 h-5" aria-hidden="true" />
-                    <span className="hidden sm:inline">Cancel</span>
-                  </button>
-                )}
+                <button
+                  onClick={handleCancel}
+                  disabled={cancelling}
+                  aria-busy={cancelling}
+                  className="btn btn-destructive flex items-center gap-2"
+                  aria-label="Cancel this invoice"
+                >
+                  {cancelling ? <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" /> : <X className="w-5 h-5" aria-hidden="true" />}
+                  <span className="hidden sm:inline">{cancelling ? 'Cancelling…' : 'Cancel'}</span>
+                </button>
               </div>
+            )}
+            {effectiveStatus === 'PAID' && isOwner && canSendProofEmail(invoice) && (
+              <button
+                onClick={() => {
+                  emailPaymentProof(invoice);
+                  toast.success('Opening email client');
+                }}
+                className="btn btn-outline flex items-center gap-2"
+                aria-label={`Email payment proof to ${getProofMailtoRecipient(invoice)}`}
+              >
+                <Mail className="w-5 h-5" aria-hidden="true" />
+                <span className="hidden sm:inline">Send Proof</span>
+              </button>
             )}
           </nav>
         </div>
@@ -351,7 +483,39 @@ export default function InvoiceDetailPage() {
                     <dd className="text-gray-900">{formatDate(invoice.paidAt)}</dd>
                   </div>
                 )}
+
+                {/* Tx hash + explorer link for paid invoices */}
+                {effectiveStatus === 'PAID' && invoice.paymentTxHash && (
+                  <div className="border-b pb-4">
+                    <dt className="text-sm text-gray-600 mb-1">Transaction Hash</dt>
+                    <dd className="text-gray-900">
+                      <a
+                        href={getExplorerTransactionUrl(invoice.paymentTxHash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-mono text-sm text-cyan-700 hover:text-cyan-900 underline break-all"
+                        aria-label={`View transaction ${invoice.paymentTxHash} on Stellar Explorer`}
+                      >
+                        {invoice.paymentTxHash}
+                      </a>
+                    </dd>
+                  </div>
+                )}
               </dl>
+
+              {/* ── Pay link copy button ────────────────────────────────── */}
+              {effectiveStatus === 'PENDING' && isOwner && (
+                <div className="mt-6">
+                  <button
+                    onClick={handleCopyPayLink}
+                    className="btn btn-outline w-full flex items-center justify-center gap-2"
+                    aria-label="Copy pay link to clipboard"
+                  >
+                    <Share2 className="w-4 h-4" aria-hidden="true" />
+                    Copy Pay Link
+                  </button>
+                </div>
+              )}
             </div>
 
             {/*
@@ -360,6 +524,33 @@ export default function InvoiceDetailPage() {
               from and the panel below is the result of it.
             */}
             <div className="space-y-6" ref={statusPanelRef} tabIndex={-1}>
+              {/* ── Status timeline ──────────────────────────────────────── */}
+              <div className="card">
+                <h3 className="text-lg font-semibold mb-4">Status Timeline</h3>
+                <ol className="relative border-l-2 border-gray-200 ml-3 space-y-4" aria-label="Invoice status timeline">
+                  {timelineSteps.map((step) => (
+                    <li key={step.label} className="ml-6">
+                      <span
+                        className={`absolute -left-[9px] w-4 h-4 rounded-full border-2 ${
+                          step.completed
+                            ? 'bg-green-500 border-green-500'
+                            : step.active
+                              ? 'bg-cyan-500 border-cyan-500'
+                              : 'bg-gray-200 border-gray-300'
+                        }`}
+                        aria-hidden="true"
+                      />
+                      <p className={`text-sm font-medium ${step.completed || step.active ? 'text-gray-900' : 'text-gray-400'}`}>
+                        {step.label}
+                      </p>
+                      {step.timestamp && (
+                        <time dateTime={step.timestamp} className="text-xs text-gray-500">{formatDate(step.timestamp)}</time>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
               {effectiveStatus !== 'PAID' && (
                 <PaymentStatus status={effectiveStatus} txHash={invoice.paymentTxHash} />
               )}
@@ -368,21 +559,13 @@ export default function InvoiceDetailPage() {
                 <PaymentReceipt invoice={invoice} />
               )}
 
-              {effectiveStatus === 'PENDING' && paymentInfo?.paymentAvailable !== false && (
+              {effectiveStatus === 'PENDING' && (
                 <div className="card">
-                  {!gate.ready && (
-                    <FreighterInstallPrompt
-                      gate={gate}
-                      action={<WalletConnect />}
-                      compact
-                      className="mb-4"
-                    />
-                  )}
                   <h3 className="text-lg font-semibold mb-4 text-center">
                     Payment QR Code
                   </h3>
                   <QRCodeDisplay
-                    value={paymentInfo.paymentUrl}
+                    value={payUrl}
                     size={200}
                     showCopy={true}
                     description={`a payment link for ${describeAmount(

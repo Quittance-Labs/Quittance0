@@ -19,13 +19,14 @@ import { toast } from 'sonner';
 import { shareInvoiceByEmail } from '@/lib/export';
 import { renderLandingBullets } from '@/lib/landing-feature-bullets';
 import { CREATED_INVOICE_ID, MAIN_CONTENT_ID, describeAmount } from '@/lib/a11y';
+import { copyWithFeedback } from '@/lib/clipboard-feedback';
 
 export default function HomePage() {
   const [createdInvoice, setCreatedInvoice] = useState<any>(null);
-  const { publicKey, connected, network, freighterAvailable, isWrongNetwork } = useWalletStore();
+  const { publicKey, connected, network, freighterAvailable, isWrongNetwork, sessionVerified } = useWalletStore();
   const resultRef = useRef<HTMLDivElement>(null);
   const gate = walletGate(
-    { freighterAvailable, connected, publicKey, network },
+    { sessionVerified, freighterAvailable, connected, publicKey, network },
     EXPECTED_WALLET_NETWORK
   );
 
@@ -304,8 +305,11 @@ export default function HomePage() {
                     <button
                       type="button"
                       onClick={async () => {
-                        await navigator.clipboard.writeText(createdInvoice.paymentUrl);
-                        toast.success('Link copied');
+                        if (await copyWithFeedback(createdInvoice.paymentUrl)) {
+                          toast.success('Link copied');
+                        } else {
+                          toast.error('Failed to copy link');
+                        }
                       }}
                       className="btn btn-primary flex-1"
                     >

@@ -16,7 +16,6 @@ import { FilePaymentMonitorCheckpointStore } from './services/payment-monitor-ch
 import { SELLER_PUBLIC_KEY } from './config/stellar';
 import { configuredFrontendOrigins, corsOptions } from './config/runtime';
 import { healthHandler, readinessHandler } from './health';
-import bodyLimitMiddleware from './middleware/body-limit';
 
 dotenv.config();
 

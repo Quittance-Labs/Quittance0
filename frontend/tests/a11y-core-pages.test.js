@@ -58,9 +58,11 @@ const bundle = loadBundle();
 const ALL_STATUSES = ['PENDING', 'PAID', 'EXPIRED', 'CANCELLED'];
 
 const SELLER = 'GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ';
+const OTHER_SELLER = 'GB6IHEZ4QNOHJZRYRFLOC45P4SK3KKL6KNPI5WEG6FNVSZ2K5FS2MNY7';
 
 function setConnectedWallet() {
   bundle.useWalletStore.setState({
+    sessionVerified: true,
     publicKey: SELLER,
     balance: '100.00',
     connected: true,
@@ -72,6 +74,7 @@ function setConnectedWallet() {
 
 function setDisconnectedWallet() {
   bundle.useWalletStore.setState({
+    sessionVerified: true,
     publicKey: null,
     balance: '0.00',
     connected: false,
@@ -190,7 +193,7 @@ test('the pay page is axe-clean in every invoice status', async () => {
 });
 
 test('the invoice detail page is axe-clean in every invoice status', async () => {
-  setDisconnectedWallet();
+  setConnectedWallet();
 
   for (const status of ALL_STATUSES) {
     const invoice = invoiceFixture({ status });
@@ -198,6 +201,89 @@ test('the invoice detail page is axe-clean in every invoice status', async () =>
 
     const violations = await auditElement(React.createElement(bundle.InvoiceDetailPage));
     assertNoViolations(violations, `invoice detail page (${status})`);
+  }
+});
+
+test('the invoice detail page does not reveal invoice data without a connected seller wallet', async () => {
+  const invoice = invoiceFixture();
+  primeApi(invoice);
+  setDisconnectedWallet();
+
+  const { container, unmount } = await render(React.createElement(bundle.InvoiceDetailPage));
+  try {
+    assert.match(container.textContent, /Connect Freighter/i);
+    assert.doesNotMatch(container.textContent, /Ada Lovelace|ada@example\.com|QT-A11Y-01/);
+  } finally {
+    unmount();
+  }
+});
+
+test('the invoice detail page denies a connected wallet that does not own the invoice', async () => {
+  const invoice = invoiceFixture({ sellerPublicKey: OTHER_SELLER });
+  primeApi(invoice);
+  setConnectedWallet();
+
+  const { container, unmount } = await render(React.createElement(bundle.InvoiceDetailPage));
+  try {
+    assert.match(container.textContent, /Access Denied/i);
+    assert.doesNotMatch(container.textContent, /Ada Lovelace|ada@example\.com|QT-A11Y-01/);
+  } finally {
+    unmount();
+  }
+});
+
+test('the invoice detail page can send proof to a payer email when client email is absent', async () => {
+  const invoice = invoiceFixture({ status: 'PAID', customerEmail: undefined, payerEmail: 'payer@example.com' });
+  primeApi(invoice);
+  setConnectedWallet();
+
+  const { container, unmount } = await render(React.createElement(bundle.InvoiceDetailPage));
+  try {
+    assert.ok(container.querySelector('button[aria-label="Email payment proof to payer@example.com"]'));
+  } finally {
+    unmount();
+  }
+});
+
+test('the invoice detail copy action writes the canonical pay URL', async () => {
+  const invoice = invoiceFixture({ paymentTxHash: undefined });
+  primeApi(invoice);
+  setConnectedWallet();
+  const written = [];
+  const previousClipboard = navigator.clipboard;
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: async (value) => written.push(value) },
+  });
+
+  const { container, unmount } = await render(React.createElement(bundle.InvoiceDetailPage));
+  try {
+    const button = container.querySelector('button[aria-label="Copy pay link to clipboard"]');
+    assert.ok(button);
+    await React.act(async () => {
+      button.click();
+      await Promise.resolve();
+    });
+    assert.deepEqual(written, [`https://quittance.test/pay/${invoice.id}`]);
+  } finally {
+    unmount();
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: previousClipboard });
+  }
+});
+
+test('terminal invoice timeline steps are completed rather than shown as in progress', async () => {
+  const invoice = invoiceFixture({ status: 'CANCELLED', cancelledAt: '2026-03-02T12:30:00.000Z' });
+  primeApi(invoice);
+  setConnectedWallet();
+
+  const { container, unmount } = await render(React.createElement(bundle.InvoiceDetailPage));
+  try {
+    const timeline = container.querySelector('ol[aria-label="Invoice status timeline"]');
+    assert.ok(timeline);
+    assert.equal(timeline.querySelectorAll('.bg-green-500').length, 3);
+    assert.equal(timeline.querySelector('.animate-pulse'), null);
+  } finally {
+    unmount();
   }
 });
 

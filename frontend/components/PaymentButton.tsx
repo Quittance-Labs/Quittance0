@@ -8,10 +8,11 @@ import {
   getFreighterNetwork,
   isWrongNetwork,
   NETWORK_DISPLAY_NAME,
+  EXPECTED_WALLET_NETWORK,
 } from '@/lib/stellar';
 import { toast } from 'sonner';
 import { Wallet, Loader2 } from 'lucide-react';
-import { invoiceApi } from '@/lib/api';
+import { invoiceApi, resolveVerificationError } from '@/lib/api';
 import { showFreighterInstallPrompt, showFreighterWrongNetworkPrompt } from '@/components/FreighterInstallPrompt';
 import { describeVerifyError, normalizePayerDetails } from '@/lib/payment-page-state';
 import { useWalletStore } from '@/lib/store';
@@ -51,9 +52,9 @@ export default function PaymentButton({
   onError,
 }: PaymentButtonProps) {
   const [loading, setLoading] = useState(false);
-  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
+  const { publicKey, connected, network, freighterAvailable, sessionVerified } = useWalletStore();
   const gate = walletGate(
-    { freighterAvailable, connected, publicKey, network },
+    { sessionVerified, freighterAvailable, connected, publicKey, network },
     EXPECTED_WALLET_NETWORK
   );
 
