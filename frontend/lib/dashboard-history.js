@@ -43,10 +43,13 @@ function scopeInvoicesToSeller(invoices, sellerPublicKey) {
 function invoiceSearchText(invoice) {
   return [
     invoice?.id,
+    invoice?.publicId,
     invoice?.memo,
     invoice?.description,
     invoice?.customerName,
+    invoice?.clientName,
     invoice?.customerEmail,
+    invoice?.clientEmail,
     invoice?.sellerName,
     invoice?.sellerEmail,
     invoice?.payerName,
@@ -58,12 +61,23 @@ function invoiceSearchText(invoice) {
     .toLowerCase();
 }
 
-function searchInvoices(invoices, query) {
+/**
+ * Searches invoices across metadata and description fields.
+ *
+ * @param {Array<object>} invoices - Candidate invoice records.
+ * @param {string} query - Text search query.
+ * @param {string} [sellerPublicKey] - Optional seller key for scoping.
+ * @returns {Array<object>} Filtered invoice records.
+ */
+function searchInvoices(invoices, query, sellerPublicKey) {
+  let list = Array.isArray(invoices) ? invoices : [];
+  if (sellerPublicKey) {
+    list = scopeInvoicesToSeller(list, sellerPublicKey);
+  }
   const needle = (query ?? '').trim().toLowerCase();
-  if (!needle) return Array.isArray(invoices) ? [...invoices] : [];
-  if (!Array.isArray(invoices)) return [];
+  if (!needle) return [...list];
 
-  return invoices.filter((invoice) => invoiceSearchText(invoice).includes(needle));
+  return list.filter((invoice) => invoiceSearchText(invoice).includes(needle));
 }
 
 /** Paid invoices are the only ones worth exporting as settled history. */
@@ -158,11 +172,23 @@ const DASHBOARD_SORT_OPTIONS = Object.freeze([
   'status',
 ]);
 
-function filterInvoicesByStatus(invoices, statusFilter) {
+/**
+ * Filters invoices by payment lifecycle status.
+ *
+ * @param {Array<object>} invoices - Candidate invoice records.
+ * @param {string} statusFilter - Target status string or 'all'.
+ * @param {string} [sellerPublicKey] - Optional seller key for scoping.
+ * @returns {Array<object>} Filtered invoice records.
+ */
+function filterInvoicesByStatus(invoices, statusFilter, sellerPublicKey) {
   if (!Array.isArray(invoices)) return [];
+  let list = invoices;
+  if (sellerPublicKey) {
+    list = scopeInvoicesToSeller(list, sellerPublicKey);
+  }
   const normalized = (statusFilter ?? 'all').trim().toLowerCase();
-  if (normalized === 'all') return [...invoices];
-  return invoices.filter((invoice) => (invoice?.status ?? '').toLowerCase() === normalized);
+  if (normalized === 'all') return [...list];
+  return list.filter((invoice) => (invoice?.status ?? '').toLowerCase() === normalized);
 }
 
 function parseInvoiceDate(value) {
@@ -216,6 +242,54 @@ function hasAnyInvoices(stats) {
   return Number(stats?.total_invoices || 0) > 0;
 }
 
+/**
+ * Applies invoice cancellation to loaded dashboard data while enforcing wallet scoping.
+ *
+ * @param {object|null|undefined} loaded - Current loaded state with owner and invoices.
+ * @param {string|null|undefined} sellerPublicKey - Currently connected seller public key.
+ * @param {string} cancelledId - Identifier of the cancelled invoice.
+ * @returns {object|null|undefined} Updated loaded dashboard state.
+ */
+function applyInvoiceCancellation(loaded, sellerPublicKey, cancelledId) {
+  if (!loaded || !sellerPublicKey || loaded.owner !== sellerPublicKey || !cancelledId) {
+    return loaded;
+  }
+  if (!Array.isArray(loaded.invoices)) {
+    return loaded;
+  }
+
+  const target = loaded.invoices.find((inv) => inv?.id === cancelledId);
+  if (!target) {
+    return loaded;
+  }
+  if (target.sellerPublicKey && target.sellerPublicKey !== sellerPublicKey) {
+    return loaded;
+  }
+
+  const wasPending = target.status === 'PENDING';
+  const updatedInvoices = loaded.invoices.map((inv) =>
+    inv?.id === cancelledId ? { ...inv, status: 'CANCELLED' } : inv
+  );
+
+  let updatedStats = loaded.stats;
+  if (updatedStats && wasPending) {
+    updatedStats = {
+      ...updatedStats,
+      pending_invoices: Math.max(0, Number(updatedStats.pending_invoices || 0) - 1),
+      actionable_invoices: Math.max(
+        0,
+        Number(updatedStats.actionable_invoices ?? updatedStats.pending_invoices ?? 0) - 1
+      ),
+    };
+  }
+
+  return {
+    ...loaded,
+    invoices: updatedInvoices,
+    stats: updatedStats,
+  };
+}
+
 module.exports = {
   INVOICE_FILTERS,
   DASHBOARD_SORT_OPTIONS,
@@ -234,5 +308,6 @@ module.exports = {
   reconcileExpiryStats,
   revenueEntries,
   hasAnyInvoices,
+  applyInvoiceCancellation,
 };
 

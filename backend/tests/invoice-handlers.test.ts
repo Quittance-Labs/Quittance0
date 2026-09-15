@@ -586,6 +586,67 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       assert.equal(res.body.error, 'sellerPublicKey query parameter is required');
     });
 
+    it('filters invoices by status case-insensitively scoped to the requested wallet', async () => {
+      const invA1 = await createInvoice({ sellerPublicKey: SELLER_A });
+      const invA2 = await createInvoice({ sellerPublicKey: SELLER_A });
+      await createInvoice({ sellerPublicKey: SELLER_B });
+
+      await call(
+        handlers().cancelInvoice,
+        createReq({ params: { id: invA2.id }, body: { sellerPublicKey: SELLER_A } })
+      );
+
+      const pendingA = await call(
+        handlers().getInvoices,
+        createReq({ query: { sellerPublicKey: SELLER_A, status: 'pending' } })
+      );
+      assert.equal(pendingA.statusCode, 200);
+      assert.equal(pendingA.body.data.length, 1);
+      assert.equal(pendingA.body.data[0].id, invA1.id);
+
+      const cancelledA = await call(
+        handlers().getInvoices,
+        createReq({ query: { sellerPublicKey: SELLER_A, status: 'CANCELLED' } })
+      );
+      assert.equal(cancelledA.statusCode, 200);
+      assert.equal(cancelledA.body.data.length, 1);
+      assert.equal(cancelledA.body.data[0].id, invA2.id);
+
+      const pendingB = await call(
+        handlers().getInvoices,
+        createReq({ query: { sellerPublicKey: SELLER_B, status: 'PENDING' } })
+      );
+      assert.equal(pendingB.statusCode, 200);
+      assert.equal(pendingB.body.data.length, 1);
+      assert.equal(pendingB.body.data[0].sellerPublicKey, SELLER_B);
+    });
+
+    it('returns empty array and zero stats for a wallet with no invoices', async () => {
+      await createInvoice({ sellerPublicKey: SELLER_A });
+
+      const invoicesRes = await call(
+        handlers().getInvoices,
+        createReq({ query: { sellerPublicKey: PAYER } })
+      );
+      assert.equal(invoicesRes.statusCode, 200);
+      assert.deepEqual(invoicesRes.body.data, []);
+      assert.deepEqual(invoicesRes.body.pagination, { limit: 50, offset: 0, total: 0 });
+
+      const statsRes = await call(
+        handlers().getStats,
+        createReq({ query: { sellerPublicKey: PAYER } })
+      );
+      assert.equal(statsRes.statusCode, 200);
+      assert.deepEqual(statsRes.body.data[0], {
+        total_invoices: 0,
+        paid_invoices: 0,
+        pending_invoices: 0,
+        actionable_invoices: 0,
+        expired_invoices: 0,
+        revenue_by_asset: {},
+      });
+    });
+
     it('cancels a pending invoice once', async () => {
       const invoice = await createInvoice();
 

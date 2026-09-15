@@ -51,12 +51,14 @@ export function invoiceSearchText(invoice: DashboardInvoice): string;
 
 export function searchInvoices(
   invoices: DashboardInvoice[] | null | undefined,
-  query: string | null | undefined
+  query: string | null | undefined,
+  sellerPublicKey?: string | null
 ): DashboardInvoice[];
 
 export function filterInvoicesByStatus(
   invoices: DashboardInvoice[] | null | undefined,
-  statusFilter: string | null | undefined
+  statusFilter: string | null | undefined,
+  sellerPublicKey?: string | null
 ): DashboardInvoice[];
 
 export function sortInvoices(
@@ -103,4 +105,10 @@ export function revenueEntries(
 ): Array<[string, number | string]>;
 
 export function hasAnyInvoices(stats: DashboardStats | null | undefined): boolean;
+
+export function applyInvoiceCancellation(
+  loaded: OwnedDashboardData | null | undefined,
+  sellerPublicKey: string | null | undefined,
+  cancelledId: string
+): OwnedDashboardData | null | undefined;
 

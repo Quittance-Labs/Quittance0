@@ -181,9 +181,14 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         const limit = toPositiveInt(req.query.limit, 50);
         const offset = toPositiveInt(req.query.offset, 0);
 
+        const normalizedStatus =
+          typeof status === 'string' && status.trim() !== ''
+            ? (status.trim().toUpperCase() as 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED')
+            : undefined;
+
         const invoices = await storage.getInvoicesBySeller(
           sellerCheck.data,
-          status as string | undefined,
+          normalizedStatus,
           limit,
           offset
         );

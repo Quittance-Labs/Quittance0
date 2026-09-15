@@ -15,6 +15,7 @@ import { Loader2, Plus, TrendingUp, DollarSign, FileText, Download, AlertTriangl
 import { toast } from 'sonner';
 import { downloadInvoiceCSV } from '@/lib/export';
 import {
+  applyInvoiceCancellation,
   dashboardDataFor,
   exportableInvoices,
   hasAnyInvoices as hasAnyInvoicesIn,
@@ -60,7 +61,7 @@ export default function DashboardPage() {
     gate.ready ? publicKey : null,
     lifecycleNow
   );
-  const filteredInvoices = searchInvoices(invoices, searchQuery);
+  const filteredInvoices = searchInvoices(invoices, searchQuery, gate.ready ? publicKey : null);
   const sortedInvoices = sortInvoices(filteredInvoices, sortBy);
   const hasAnyInvoices = hasAnyInvoicesIn(stats);
   const revenueByAsset = revenueEntries(stats);
@@ -80,6 +81,7 @@ export default function DashboardPage() {
     let active = true;
     setLoading(true);
     setLoadError(null);
+    setLoaded((prev) => (prev.owner === publicKey ? prev : { owner: publicKey, invoices: [], stats: null }));
 
     (async () => {
       try {
@@ -115,22 +117,7 @@ export default function DashboardPage() {
   }, [filter, gate.ready, publicKey, reloadKey]);
 
   const handleInvoiceCancelled = (cancelledId: string) => {
-    setLoaded((prev) => {
-      if (!prev.invoices) return prev;
-      const updatedInvoices = prev.invoices.map((inv) =>
-        inv.id === cancelledId ? { ...inv, status: 'CANCELLED' } : inv
-      );
-      return {
-        ...prev,
-        invoices: updatedInvoices,
-        stats: prev.stats
-          ? {
-              ...prev.stats,
-              pending_invoices: Math.max(0, Number(prev.stats.pending_invoices || 0) - 1),
-            }
-          : prev.stats,
-      };
-    });
+    setLoaded((prev) => applyInvoiceCancellation(prev, gate.ready ? publicKey : null, cancelledId) ?? prev);
     setReloadKey((k) => k + 1);
   };
 

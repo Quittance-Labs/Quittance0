@@ -113,11 +113,14 @@ export class InvoiceMemoryService {
     limit: number = 50,
     offset: number = 0
   ): Promise<StoredInvoice[]> {
-    let invoices = this.storage.getAllInvoices(status ? { status } : undefined);
-
-    if (sellerPublicKey) {
-      invoices = invoices.filter((inv) => inv.sellerPublicKey === sellerPublicKey);
+    if (!sellerPublicKey) {
+      return [];
     }
+
+    const normalizedStatus = status ? status.toUpperCase() : undefined;
+    let invoices = this.storage.getAllInvoices(normalizedStatus ? { status: normalizedStatus } : undefined);
+
+    invoices = invoices.filter((inv) => inv.sellerPublicKey === sellerPublicKey);
 
     return invoices.slice(offset, offset + limit);
   }
@@ -143,6 +146,16 @@ export class InvoiceMemoryService {
   }
 
   async getInvoiceStats(sellerPublicKey: string): Promise<InvoiceStats[]> {
+    if (!sellerPublicKey) {
+      return [{
+        total_invoices: 0,
+        paid_invoices: 0,
+        pending_invoices: 0,
+        actionable_invoices: 0,
+        expired_invoices: 0,
+        revenue_by_asset: {},
+      }];
+    }
     return [this.storage.getStats(sellerPublicKey)];
   }
 
