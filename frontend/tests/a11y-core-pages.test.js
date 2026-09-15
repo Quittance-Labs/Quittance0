@@ -201,6 +201,30 @@ test('the invoice detail page is axe-clean in every invoice status', async () =>
   }
 });
 
+test('the invoice detail page access-restricted screen is axe-clean (issue #454)', async () => {
+  // A wallet connected, but not the invoice's own seller: the
+  // "Access Restricted" branch (lib/invoice-workspace-access.js), distinct
+  // from the disconnected "Connect Your Wallet" branch the previous test
+  // already covers.
+  const FOREIGN_WALLET = 'GCKFBEIYTKP7RCZNVPH6PYJHLKGRDJKA76G3XV5F9RBQZBRPKUL7NXCG';
+  bundle.useWalletStore.setState({
+    publicKey: FOREIGN_WALLET,
+    balance: '100.00',
+    connected: true,
+    network: 'TESTNET',
+    networkPassphrase: 'Test SDF Network ; September 2015',
+    freighterAvailable: true,
+  });
+
+  const invoice = invoiceFixture({ status: 'PENDING' });
+  primeApi(invoice);
+
+  const violations = await auditElement(React.createElement(bundle.InvoiceDetailPage));
+  assertNoViolations(violations, 'invoice detail page (access restricted)');
+
+  setDisconnectedWallet();
+});
+
 test('an invoice card is axe-clean in every status, with and without a client email', async () => {
   for (const status of ALL_STATUSES) {
     for (const customerEmail of ['ada@example.com', undefined]) {

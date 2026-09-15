@@ -20,6 +20,8 @@ import { toast } from 'sonner';
 import { useWalletStore } from '@/lib/store';
 import ApiErrorState from '@/components/ApiErrorState';
 import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
+import { invoiceWorkspaceAccess } from '@/lib/invoice-workspace-access';
+import InvoiceTimeline from '@/components/InvoiceTimeline';
 import { invoiceSharePath } from '@/lib/invoice-share-path';
 import { shareInvoiceByEmail } from '@/lib/export';
 import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
@@ -179,6 +181,58 @@ export default function InvoiceDetailPage() {
 
   const effectiveStatus = (effectiveInvoiceStatus(invoice, lifecycleNow) || invoice.status) as
     'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
+
+  // Seller-only workspace (issue #454): unlike /pay/[id], this page must not
+  // reveal invoice details -- amount, memo, customer contact info, timeline
+  // -- to a wallet that isn't the invoice's own seller. `activeWallet` is
+  // already computed above from the same wallet-gate the rest of the page
+  // uses, so this is one extra check, not a second source of truth for who
+  // is connected.
+  const access = invoiceWorkspaceAccess(invoice, activeWallet);
+  if (access !== 'allowed') {
+    return (
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className="min-h-screen bg-logo-pattern relative flex items-center justify-center px-4"
+      >
+        <div className="orb orb-1"></div>
+        <div className="orb orb-2"></div>
+        <div className="orb orb-3"></div>
+        <div className="card text-center max-w-md relative z-10" role="alert">
+          {access === 'wallet-required' ? (
+            <>
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">Connect Your Wallet</h1>
+              <p className="text-gray-700 mb-6">
+                This invoice workspace is only visible to the seller. Connect the seller
+                wallet to continue, or use the{' '}
+                <Link href={`/pay/${id}`} className="text-cyan-700 hover:underline">
+                  payment page
+                </Link>{' '}
+                if you're paying this invoice.
+              </p>
+              <div className="flex justify-center">
+                <WalletConnect />
+              </div>
+            </>
+          ) : (
+            <>
+              <h1 className="text-2xl font-bold text-red-700 mb-2">Access Restricted</h1>
+              <p className="text-gray-700 mb-6">
+                This invoice belongs to another seller wallet. If you're the customer paying
+                this invoice, use the{' '}
+                <Link href={`/pay/${id}`} className="text-cyan-700 hover:underline">
+                  payment page
+                </Link>{' '}
+                instead.
+              </p>
+            </>
+          )}
+        </div>
+      </main>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-logo-pattern relative py-8 sm:py-12 px-4">
       <div className="orb orb-1"></div>
@@ -405,6 +459,10 @@ export default function InvoiceDetailPage() {
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="mt-6 sm:mt-8">
+            <InvoiceTimeline invoice={invoice} now={lifecycleNow} />
           </div>
         </main>
       </div>
