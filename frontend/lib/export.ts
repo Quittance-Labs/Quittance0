@@ -23,6 +23,7 @@ import {
   type QuittanceProofResult,
   QUITTANCE_PROOF_VERSION,
 } from './quittance-proof';
+import { buildHorizonTxUrl } from './explorer-tx-link';
 
 export {
   assertPaymentProofAvailable,
@@ -175,8 +176,12 @@ export function generateInvoicePDF(invoiceOrProof: Invoice | QuittanceProof): st
   const invoice = invoiceOrProof;
   assertPaymentProofAvailable(invoice);
   const network = process.env.NEXT_PUBLIC_STELLAR_NETWORK === 'TESTNET' ? 'Testnet' : 'Mainnet';
+  const networkKey = (process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET').toLowerCase() === 'public' ? 'public' : 'testnet';
   const isPaid = invoice.status === 'PAID';
   const warning = latePaymentWarning(invoice);
+  const explorerUrl = isPaid && invoice.paymentTxHash
+    ? buildHorizonTxUrl(invoice.paymentTxHash, networkKey)
+    : null;
 
   return `
 <!DOCTYPE html>
@@ -401,6 +406,7 @@ export function generateInvoicePDF(invoiceOrProof: Invoice | QuittanceProof): st
     <tr><td>Seller Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${escapeHtml(invoice.sellerPublicKey)}</td></tr>
     ${isPaid && invoice.paymentTxHash ? `
     <tr><td>Transaction Hash</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${escapeHtml(invoice.paymentTxHash)}</td></tr>
+    ${explorerUrl ? `<tr><td>Explorer Record</td><td><a href="${escapeHtml(explorerUrl)}" target="_blank" rel="noopener noreferrer" style="font-family: monospace; font-size: 11px; word-break: break-all; color: #0284c7;">${escapeHtml(explorerUrl)}</a></td></tr>` : ''}
     <tr><td>Payer Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${escapeHtml(invoice.payerPublicKey || 'N/A')}</td></tr>
     ${invoice.payerName ? `<tr><td>Payer Name</td><td>${escapeHtml(invoice.payerName)}</td></tr>` : ''}
     ${invoice.payerEmail ? `<tr><td>Payer Email</td><td>${escapeHtml(invoice.payerEmail)}</td></tr>` : ''}` : ''}
