@@ -14,6 +14,7 @@ export interface InvoiceRouterOptions extends InvoiceHandlerOptions {
   enableConcurrencyLock?: boolean;
   enableCeilingCheck?: boolean;
   invoiceCeiling?: number;
+  rateLimiterStore?: any;
 }
 
 /**
@@ -57,7 +58,7 @@ export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
     );
   }
   if (enableRateLimiting) {
-    createMiddlewares.push(...createInvoiceRateLimiters());
+    createMiddlewares.push(...createInvoiceRateLimiters(options.rateLimiterStore));
   }
 
   router.post('/invoices', ...createMiddlewares, handlers.createInvoice);
@@ -65,7 +66,7 @@ export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
 
   const getInvoicesMiddlewares: RequestHandler[] = [];
   if (enableRateLimiting) {
-    getInvoicesMiddlewares.push(createGetInvoicesRateLimiter());
+    getInvoicesMiddlewares.push(createGetInvoicesRateLimiter(options.rateLimiterStore));
   }
   router.get('/invoices', ...getInvoicesMiddlewares, handlers.getInvoices);
 
@@ -95,7 +96,7 @@ export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
   };
   cancelMiddlewares.push(cancelAuthPreCheck);
   if (enableRateLimiting) {
-    cancelMiddlewares.push(createCancelInvoiceRateLimiter());
+    cancelMiddlewares.push(createCancelInvoiceRateLimiter(options.rateLimiterStore));
   }
   router.post('/invoices/:id/cancel', ...cancelMiddlewares, handlers.cancelInvoice);
 
@@ -104,7 +105,7 @@ export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
     verifyMiddlewares.push(verifyConcurrencyLock());
   }
   if (enableRateLimiting) {
-    verifyMiddlewares.push(...createVerifyRateLimiters());
+    verifyMiddlewares.push(...createVerifyRateLimiters(options.rateLimiterStore));
   }
   router.post('/invoices/:id/verify', ...verifyMiddlewares, handlers.verifyPayment);
 

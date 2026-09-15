@@ -85,6 +85,36 @@ The JSON artifact must contain:
 - [ ] `simulationDisabled: true` and final status `PAID`
 - [ ] no payer secret, auth token, cookie, or secret key
 
+### Automated End-to-End Testnet Smoke Runner (Issue #429)
+
+For quick post-deploy smoke checks or integration validation, the testnet smoke runner exercises the complete invoice lifecycle:
+`health` -> `readiness` -> `create invoice` -> `validate pay link` -> `negative verify guard` -> `pay` -> `positive verify` -> `reread confirmation`.
+
+```bash
+cd backend
+npm run smoke:testnet -- --simulate
+# Or with a real testnet account:
+SMOKE_PAYER_SECRET="S..." npm run smoke:testnet
+```
+
+**Options & Flags:**
+- `--api-url <url>`: Target API base URL (default: `http://127.0.0.1:3001` or `SMOKE_API_URL` / `API_URL`).
+- `--seller <publicKey>`: Recipient seller public key (default: `GB3Q3VRHH3OQDYITTLONDLEHWQGKB27T2BEDSFHIUMOERULVXPDXRKG4`).
+- `--payer-secret <secret>`: Funded testnet payer secret (auto-signs and submits transaction via `@stellar/stellar-sdk` without requiring manual Freighter interaction).
+- `--fixture-tx-hash <hash>`: Use a pre-existing valid testnet transaction hash for verification.
+- `--simulate`: Use the `/simulate-payment` endpoint during offline local development.
+- `--amount <amount>`: XLM amount (default: `1`).
+
+**Guards & Verification Integrity:**
+- **Negative Verification Guard:** Submits an invalid transaction hash (`0000...`) to `/api/invoices/:id/verify` and asserts rejection (HTTP 400/404). If the verify endpoint accepts invalid hashes, the smoke test immediately aborts.
+- **Reviewer Summary Output:** At completion, outputs a structured summary block ready for copy-paste containing:
+  - Invoice ID
+  - Invoice Status (`PAID`)
+  - Payment Link
+  - Amount and Memo
+  - Transaction Hash
+  - Stellar Explorer link
+
 ---
 
 ## Screen recording

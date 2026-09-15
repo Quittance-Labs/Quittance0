@@ -8,7 +8,7 @@ import { createInvoiceRouter } from '../src/routes/invoice.routes';
 import { MemoryInvoiceStorage } from '../src/storage/memory-invoice-storage';
 import { InvoiceMemoryService } from '../src/services/invoice-memory.service';
 import { MemoryStorage } from '../src/storage/memory-storage';
-import { resetRateLimiters } from '../src/middleware/rate-limit';
+import { resetRateLimiters, MemoryRateLimiterStore } from '../src/middleware/rate-limit';
 
 interface HttpResponse {
   status: number;
@@ -25,10 +25,15 @@ function request(
 ): Promise<HttpResponse> {
   return new Promise((resolve, reject) => {
     let payload: Buffer | undefined;
-    const headers: Record<string, string | number> = { ...customHeaders };
+    const headers: Record<string, string | number> = {
+      connection: 'close',
+      ...customHeaders,
+    };
 
     if (body !== undefined) {
-      if (typeof body === 'string') {
+      if (Buffer.isBuffer(body)) {
+        payload = body;
+      } else if (typeof body === 'string') {
         payload = Buffer.from(body);
         if (!headers['content-type']) {
           headers['content-type'] = 'application/json';
@@ -46,20 +51,18 @@ function request(
         port,
         method,
         path,
+        agent: false,
         headers,
       },
       (res) => {
-        let raw = '';
-        res.setEncoding('utf8');
-        res.on('data', (chunk) => {
-          raw += chunk;
-        });
+        const chunks: Buffer[] = [];
+        res.on('data', (c) => chunks.push(c));
         res.on('end', () => {
-          let parsed: any;
+          const raw = Buffer.concat(chunks).toString('utf-8');
+          let parsed: any = raw;
           try {
             parsed = JSON.parse(raw);
           } catch {
-            parsed = raw;
           }
           resolve({
             status: res.statusCode || 0,
@@ -83,6 +86,7 @@ describe('Abuse Controls Suite', () => {
   let port: number;
   let rawStorage: MemoryStorage;
   let invoiceStorage: MemoryInvoiceStorage;
+  let testLimiterStore: MemoryRateLimiterStore;
 
   const sellerKeypair = Keypair.random();
   const sellerPublicKey = sellerKeypair.publicKey();
@@ -93,6 +97,7 @@ describe('Abuse Controls Suite', () => {
     rawStorage = new MemoryStorage();
     const service = new InvoiceMemoryService(rawStorage);
     invoiceStorage = new MemoryInvoiceStorage(service);
+    testLimiterStore = new MemoryRateLimiterStore();
 
     const app: Application = express();
     app.use(express.json({ limit: '16kb' }));
@@ -104,6 +109,7 @@ describe('Abuse Controls Suite', () => {
       enableConcurrencyLock: true,
       enableCeilingCheck: true,
       requireCancelSignature: true,
+      rateLimiterStore: testLimiterStore,
     });
 
     app.use('/api', router);
@@ -129,6 +135,7 @@ describe('Abuse Controls Suite', () => {
   });
 
   after(async () => {
+    server.closeAllConnections?.();
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
     });
@@ -137,6 +144,7 @@ describe('Abuse Controls Suite', () => {
   beforeEach(() => {
     rawStorage.clear();
     resetRateLimiters();
+    testLimiterStore.reset();
   });
 
   describe('Scenario 1 & 2: Cancellation Ownership Proof', () => {
@@ -320,7 +328,7 @@ describe('Abuse Controls Suite', () => {
         assert.equal(fullRes.headers['retry-after'], '300');
         assert.equal(ceilingStorage.size(), 2);
       } finally {
-        ceilingServer.close();
+        await new Promise<void>((resolve) => ceilingServer.close(() => resolve()));
       }
     });
   });
@@ -436,7 +444,7 @@ describe('Abuse Controls Suite', () => {
         unblockStellar();
         await firstPromise;
       } finally {
-        lockServer.close();
+        await new Promise<void>((resolve) => lockServer.close(() => resolve()));
       }
     });
   });
@@ -468,7 +476,7 @@ describe('Abuse Controls Suite', () => {
         assert.match(res.body.error, /endpoint not found/i);
       } finally {
         process.env.NODE_ENV = originalEnv;
-        prodServer.close();
+        await new Promise<void>((resolve) => prodServer.close(() => resolve()));
       }
     });
   });
