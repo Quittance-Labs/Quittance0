@@ -21,7 +21,7 @@ import { useWalletStore } from '@/lib/store';
 import ApiErrorState from '@/components/ApiErrorState';
 import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
 import { invoiceSharePath } from '@/lib/invoice-share-path';
-import { useWalletStore } from '@/lib/store';
+import { shareInvoiceByEmail } from '@/lib/export';
 import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
 import { walletGate } from '@/lib/freighter-availability';
 
@@ -29,12 +29,11 @@ export default function InvoiceDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
-  const { publicKey: storePublicKey, connected } = useWalletStore();
-
+  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
+  const storePublicKey = publicKey;
   const [invoice, setInvoice] = useState<any>(null);
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lifecycleNow, setLifecycleNow] = useState(() => Date.now());
   // Cancelling reloads the invoice and swaps the status panel out from under
@@ -94,6 +93,11 @@ export default function InvoiceDetailPage() {
     }
   };
 
+  const gate = walletGate(
+    { freighterAvailable, connected, publicKey, network },
+    EXPECTED_WALLET_NETWORK
+  );
+  const userWallet = gate.ready ? publicKey : null;
   const activeWallet = userWallet || (connected ? storePublicKey : null);
 
   const handleCancel = async () => {
@@ -167,11 +171,6 @@ export default function InvoiceDetailPage() {
 
   const effectiveStatus = (effectiveInvoiceStatus(invoice, lifecycleNow) || invoice.status) as
     'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
-  const gate = walletGate(
-    { freighterAvailable, connected, publicKey, network },
-    EXPECTED_WALLET_NETWORK
-  );
-  const userWallet = gate.ready ? publicKey : null;
 
   return (
     <div className="min-h-screen bg-logo-pattern relative py-8 sm:py-12 px-4">

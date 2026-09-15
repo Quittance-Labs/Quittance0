@@ -77,10 +77,59 @@ const isNetworkMatching = (networkOrPassphrase, expected = 'TESTNET') => {
   return false;
 };
 
+const walletGate = (session = {}, expectedNetwork = 'TESTNET') => {
+  if (session.freighterAvailable === false) {
+    return {
+      status: 'missing',
+      ready: false,
+      title: 'Install Freighter',
+      message: FREIGHTER_REQUIRED_MESSAGE,
+      action: 'install',
+    };
+  }
+
+  if (!session.connected || !session.publicKey) {
+    return {
+      status: 'disconnected',
+      ready: false,
+      title: 'Connect Freighter',
+      message: FREIGHTER_CONNECT_REQUIRED_MESSAGE,
+      action: 'connect',
+    };
+  }
+
+  if (!networkMatches(session.network, expectedNetwork)) {
+    return {
+      status: 'wrong_network',
+      ready: false,
+      title: 'Switch Freighter network',
+      message: wrongNetworkMessage(expectedNetwork, session.network),
+      action: 'switch_network',
+    };
+  }
+
+  return {
+    status: 'ready',
+    ready: true,
+    title: 'Freighter connected',
+    message: FREIGHTER_READY_MESSAGE,
+    action: 'continue',
+  };
+};
+
 module.exports = {
   FREIGHTER_INSTALL_URL,
   FREIGHTER_REQUIRED_MESSAGE,
+  FREIGHTER_CONNECT_REQUIRED_MESSAGE,
+  FREIGHTER_READY_MESSAGE,
   FREIGHTER_WRONG_NETWORK_MESSAGE,
+  NETWORK_LABELS,
   detectFreighter,
   isNetworkMatching,
+  normalizeFreighterBoolean,
+  normalizeNetworkName,
+  networkLabel,
+  networkMatches,
+  walletGate,
+  wrongNetworkMessage,
 };

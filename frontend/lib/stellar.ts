@@ -1,22 +1,22 @@
 import * as StellarSdk from '@stellar/stellar-sdk';
-import * as FreighterApi from '@stellar/freighter-api';
-import {
-  isConnected,
-  getPublicKey,
-  signTransaction,
-  isAllowed,
-  setAllowed,
-  getNetwork,
-  getNetworkDetails,
-} from '@stellar/freighter-api';
+import * as FreighterApiModule from '@stellar/freighter-api';
+
+const freighter: any = (FreighterApiModule as any).default || FreighterApiModule;
+const isConnected = freighter.isConnected;
+const getPublicKey = freighter.getPublicKey;
+const signTransaction = freighter.signTransaction;
+const isAllowed = freighter.isAllowed;
+const setAllowed = freighter.setAllowed;
+const getNetwork = freighter.getNetwork;
+const getNetworkDetails = freighter.getNetworkDetails;
 import {
   FREIGHTER_CONNECT_REQUIRED_MESSAGE,
   FREIGHTER_REQUIRED_MESSAGE,
   detectFreighter,
   networkMatches,
   wrongNetworkMessage,
-} from './freighter-availability';
-import { networkDisplayName } from './network-display-name';
+} from './freighter-availability.js';
+import { networkDisplayName } from './network-display-name.js';
 
 // Network configuration
 export const STELLAR_NETWORK = process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET';
@@ -139,7 +139,7 @@ export const getUserPublicKey = async (): Promise<string | null> => {
     const normalized = readResultString(publicKey, ['publicKey', 'address']);
     if (normalized) return normalized;
 
-    const getAddress = (FreighterApi as any).getAddress;
+    const getAddress = (freighter as any).getAddress;
     if (typeof getAddress === 'function') {
       return readResultString(await getAddress(), ['address', 'publicKey']);
     }
@@ -147,25 +147,6 @@ export const getUserPublicKey = async (): Promise<string | null> => {
   } catch (error) {
     console.error('Error getting public key:', error);
     return null;
-  }
-};
-
-export const getFreighterNetwork = async (): Promise<FreighterNetwork> => {
-  const getNetwork = (FreighterApi as any).getNetwork;
-  if (typeof getNetwork !== 'function') {
-    return { network: null, networkPassphrase: null };
-  }
-
-  try {
-    const result = await getNetwork();
-    if (result?.error) return { network: null, networkPassphrase: null };
-    return {
-      network: readResultString(result?.network ?? result, ['network']),
-      networkPassphrase: readResultString(result?.networkPassphrase, ['networkPassphrase']),
-    };
-  } catch (error) {
-    console.error('Error getting Freighter network:', error);
-    return { network: null, networkPassphrase: null };
   }
 };
 
@@ -182,7 +163,7 @@ export const readFreighterSession = async (): Promise<FreighterSession> => {
   }
 
   const [allowed, publicKey, network] = await Promise.all([
-    isAllowed().then((value) => readResultBoolean(value, 'isAllowed')).catch(() => false),
+    isAllowed().then((value: any) => readResultBoolean(value, 'isAllowed')).catch(() => false),
     getUserPublicKey(),
     getFreighterNetwork(),
   ]);
@@ -191,8 +172,8 @@ export const readFreighterSession = async (): Promise<FreighterSession> => {
     freighterAvailable: true,
     connected: allowed && Boolean(publicKey),
     publicKey,
-    network: network.network,
-    networkPassphrase: network.networkPassphrase,
+    network: network?.network ?? null,
+    networkPassphrase: network?.networkPassphrase ?? null,
   };
 };
 
@@ -200,7 +181,7 @@ export const stopFreighterWalletWatcher = (
   onChange: (session: FreighterSession) => void,
   intervalMs = 1000
 ): (() => void) => {
-  const WatchWalletChanges = (FreighterApi as any).WatchWalletChanges;
+  const WatchWalletChanges = (freighter as any).WatchWalletChanges;
   if (typeof WatchWalletChanges !== 'function') return () => {};
 
   const watcher = new WatchWalletChanges(intervalMs);

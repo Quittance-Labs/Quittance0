@@ -1,4 +1,4 @@
-import { buildHorizonTxUrl } from './explorer-tx-link';
+import { buildHorizonTxUrl } from './stellar-explorer.js';
 
 export const QUITTANCE_PROOF_VERSION = 'quittance.v1';
 

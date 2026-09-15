@@ -4,6 +4,12 @@ import { useState, useRef, useEffect } from 'react';
 import { User, LogOut, Wallet, ChevronDown } from 'lucide-react';
 import { useWalletStore } from '@/lib/store';
 import { NETWORK_DISPLAY_NAME } from '@/lib/stellar';
+import { networkLabel } from '@/lib/freighter-availability';
+
+function initialsFromAddress(address?: string | null): string {
+  if (!address) return 'W';
+  return address.slice(0, 2).toUpperCase();
+}
 
 interface UserProfileProps {
   userWallet: string | null;
@@ -15,7 +21,7 @@ export default function UserProfile({ userWallet, onDisconnect }: UserProfilePro
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const { disconnect, isWrongNetwork } = useWalletStore();
+  const { disconnect, isWrongNetwork, network } = useWalletStore();
   const menuId = 'user-profile-menu';
 
   useEffect(() => {

@@ -184,26 +184,13 @@ export default function HomePage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-start">
             <div className="card">
-              {!gate.ready ? (
-                <div className="py-8 text-center">
-                  <FreighterInstallPrompt gate={gate} action={<WalletConnect />} />
-                </div>
-              ) : isWrongNetwork ? (
-                <div className="py-8 text-center">
-                  <AlertTriangle className="w-10 h-10 text-amber-600 mx-auto mb-3" aria-hidden="true" />
-                  <h3 className="font-semibold text-lg text-amber-900 mb-2">Wrong Stellar Network</h3>
-                  <p className="text-sm text-amber-800 max-w-md mx-auto">
-                    Your Freighter wallet is connected to a different network. Please switch to {NETWORK_DISPLAY_NAME} in Freighter, then reconnect to create invoices.
-                  </p>
-                  <WalletConnect />
-                </div>
-              ) : (
-                <>
+              {gate.ready && !isWrongNetwork && publicKey && (
+                <div className="mb-6 pb-4 border-b border-[var(--line)]">
                   <p className="text-xs text-[var(--muted)] mb-1">Receiving to</p>
-                  <p className="font-mono text-xs text-[var(--ink)] mb-6 break-all">{publicKey}</p>
-                  <InvoiceForm onSuccess={handleInvoiceCreated} userWallet={publicKey || undefined} />
-                </>
+                  <p className="font-mono text-xs text-[var(--ink)] break-all">{publicKey}</p>
+                </div>
               )}
+              <InvoiceForm onSuccess={handleInvoiceCreated} userWallet={publicKey || undefined} />
             </div>
 
             <div>

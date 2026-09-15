@@ -60,7 +60,7 @@ app.get('/', (req: Request, res: Response) => {
 app.get('/api/health', healthHandler(memoryInvoiceStorage.mode));
 app.get('/api/ready', readinessHandler(memoryInvoiceStorage.mode));
 
-app.use('/api', createInvoiceRouter({ storage: memoryInvoiceStorage }));
+app.use('/api', createInvoiceRouter({ storage: memoryInvoiceStorage, paymentMonitor: paymentMonitorService }));
 app.use('/api', createPaymentMonitorRouter(paymentMonitorService));
 
 // Mock Stellar endpoint (MVP only)

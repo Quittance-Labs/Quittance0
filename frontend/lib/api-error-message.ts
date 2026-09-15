@@ -53,7 +53,7 @@ export function mapApiError(error: unknown): string {
     if (message) return message;
   }
 
-  const status = err.status ?? err.response?.status;
+  const status = err.status ?? (err.response as any)?.status;
   if (typeof status === 'number' && ERROR_MESSAGES[String(status)]) {
     return ERROR_MESSAGES[String(status)];
   }

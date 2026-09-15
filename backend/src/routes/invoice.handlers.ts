@@ -27,6 +27,7 @@ import {
 import { cutoverDrainMode, simulationAllowed } from '../config/runtime';
 import { createRequestId } from '../utils/request-correlation-id';
 import { verifySellerSignature } from '../utils/signature-verification';
+import { cacheVerificationResult } from '../middleware/verify-cache';
 
 /** Kept explicit so clients can tune polling without duplicating backend policy. */
 export const PAYMENT_STATUS_POLL_INTERVAL_MS = 3000;
@@ -34,6 +35,11 @@ export const PAYMENT_STATUS_POLL_INTERVAL_MS = 3000;
 /** Only the part of the Stellar service the verify handler needs. */
 export interface TransactionLookup {
   getTransaction(txHash: string): Promise<any>;
+}
+
+export interface PaymentMonitorWatchRegistry {
+  registerWatch(invoice: any): void;
+  unregisterWatch(invoiceId: string): void;
 }
 
 export interface InvoiceHandlerOptions {
@@ -44,6 +50,7 @@ export interface InvoiceHandlerOptions {
   allowSimulate?: boolean;
   stellar?: TransactionLookup;
   requireCancelSignature?: boolean;
+  paymentMonitor?: PaymentMonitorWatchRegistry;
 }
 
 export interface InvoiceHandlers {
@@ -133,6 +140,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           return sendFailure(res, 400, 'Client wallet network does not match the server Stellar network');
         }
         const invoice = await storage.createInvoice(validatedData);
+        options.paymentMonitor?.registerWatch(invoice);
         const payment = await buildPaymentPayload(invoice);
 
         sendSuccess(res, 201, {
@@ -332,6 +340,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         }
 
         const invoice = await storage.cancelInvoice(req.params.id, sellerPublicKey);
+        options.paymentMonitor?.unregisterWatch(req.params.id);
         sendSuccess(res, 200, invoice);
       } catch (error: any) {
         logError('Cancel invoice error:', error);
@@ -347,18 +356,6 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
       try {
         const { id } = req.params;
         const { network } = req.body || {};
-
-        // Per-invoice rate limit check (prevents Horizon amplification)
-        const invoiceLimit = await checkInvoiceVerifyLimit(id);
-        if (!invoiceLimit.allowed) {
-          res.set('Retry-After', (invoiceLimit.retryAfter || 60).toString());
-          return sendVerificationFailure(
-            res,
-            429,
-            'VERIFY_RATE_LIMIT_EXCEEDED',
-            'Too many verification attempts for this invoice'
-          );
-        }
 
         const hashCheck = checkTxHash(req.body?.txHash);
         if (!hashCheck.ok) {
@@ -431,6 +428,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
             payerCheck.value,
             { settledAt: verification.value.settledAt }
           );
+          options.paymentMonitor?.unregisterWatch(id);
           
           // Cache successful verification
           await cacheVerificationResult(id, hashCheck.value, 'verified');
@@ -530,6 +528,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         const mockPayerKey = 'GXXXSIMULATEDPAYERXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
 
         const updatedInvoice = await storage.markAsPaid(id, mockTxHash, mockPayerKey);
+        options.paymentMonitor?.unregisterWatch(id);
 
         sendSuccess(res, 200, updatedInvoice, { message: 'Payment simulated successfully' });
       } catch (error: any) {

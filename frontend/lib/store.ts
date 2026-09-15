@@ -9,6 +9,16 @@ export interface WalletState {
   network: string | null;
   networkPassphrase: string | null;
   isWrongNetwork: boolean;
+  freighterAvailable?: boolean;
+  syncSession: (session: {
+    freighterAvailable?: boolean;
+    connected?: boolean;
+    publicKey?: string | null;
+    network?: string | null;
+    networkPassphrase?: string | null;
+    balance?: string;
+    [key: string]: any;
+  }) => void;
   setWallet: (
     publicKey: string,
     balance: string,
@@ -44,6 +54,15 @@ export const useWalletStore = create<WalletState>()(
       setNetwork: (network, networkPassphrase = null) =>
         set({ network, networkPassphrase }),
       setIsWrongNetwork: (isWrongNetwork) => set({ isWrongNetwork }),
+      syncSession: (session) =>
+        set((state) => ({
+          freighterAvailable: session.freighterAvailable ?? state.freighterAvailable,
+          connected: session.connected ?? state.connected,
+          publicKey: session.publicKey !== undefined ? session.publicKey : state.publicKey,
+          network: session.network !== undefined ? session.network : state.network,
+          networkPassphrase: session.networkPassphrase !== undefined ? session.networkPassphrase : state.networkPassphrase,
+          balance: session.balance !== undefined ? session.balance : state.balance,
+        })),
       disconnect: () =>
         set({
           publicKey: null,
