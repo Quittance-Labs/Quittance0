@@ -499,6 +499,8 @@ Reviewer pack: **[`EVIDENCE.md`](./EVIDENCE.md)** (URLs, testnet tx hashes, reco
 After deployment, `cd backend && npm run evidence:smoke -- --write-evidence`
 runs the real Testnet create → pay → verify path and fills the reviewer tables;
 the required secret and public variables are listed in `EVIDENCE.md`.
+For a fast local or remote end-to-end smoke pass with negative verification guard, run:
+`cd backend && npm run smoke:testnet`.
 
 | Item | Status |
 |------|--------|

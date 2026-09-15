@@ -69,6 +69,11 @@ Configure the values in a local secret manager or ephemeral shell, then run:
 cd backend
 npm run evidence:smoke
 npm run evidence:smoke -- --write-evidence
+
+# Or run the fast end-to-end smoke test with negative verify check:
+npm run smoke:testnet
+# With live on-chain Testnet submission:
+SMOKE_API_URL=https://.../api SMOKE_PAYER_SECRET=S... npm run smoke:testnet
 ```
 
 The script is Testnet-only and never calls Friendbot. Fund the two distinct
