@@ -498,6 +498,9 @@ After deployment, `cd backend && npm run evidence:smoke -- --write-evidence`
 runs the real Testnet create → pay → verify path and fills the reviewer tables;
 the required secret and public variables are listed in `EVIDENCE.md`.
 
+For automated E2E lifecycle testing, `cd backend && npm run smoke:testnet` runs the complete
+health → readiness → create → negative verify guard → pay → positive verify → reread flow.
+
 | Item | Status |
 |------|--------|
 | Public demo URL | Fill in `EVIDENCE.md` after deploy (D4) |
