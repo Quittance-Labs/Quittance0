@@ -280,3 +280,30 @@ export function resetRateLimiters(): void {
   defaultLimiterStore.reset();
   inFlightVerifications.clear();
 }
+
+/**
+ * Checks per-invoice verification rate limit (max 10 per minute per invoice).
+ */
+export async function checkInvoiceVerifyLimit(
+  invoiceId: string
+): Promise<{ allowed: boolean; retryAfter?: number }> {
+  const result = defaultLimiterStore.consume(`verify_invoice:target:${invoiceId}`, 10, 60_000);
+  return {
+    allowed: result.allowed,
+    ...(result.allowed ? {} : { retryAfter: result.resetAfterSeconds }),
+  };
+}
+
+/**
+ * Compatibility rate limit middleware factory for legacy caller patterns.
+ */
+export function rateLimitMiddleware(limitKey: string): RequestHandler {
+  return createRateLimiter({
+    windowMs: 60_000,
+    max: 60,
+    keyGenerator: (req) => `${limitKey}:${getClientIp(req)}`,
+    code: 'RATE_LIMIT_EXCEEDED',
+    message: 'Rate limit exceeded',
+  });
+}
+

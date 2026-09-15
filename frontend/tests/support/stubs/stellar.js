@@ -28,12 +28,10 @@ export const getExplorerAccountUrl = (publicKey) =>
   `https://stellar.expert/explorer/testnet/account/${publicKey}`;
 export const describeStellarNetworkError = (error) =>
   error?.message || 'Stellar network error';
-export const getFreighterNetwork = async () => ({ network: 'TESTNET', networkUrl: '', networkPassphrase: '' });
 export const isWrongNetwork = () => false;
 export const watchFreighterNetwork = () => () => {};
 export const STELLAR_NETWORK = 'TESTNET';
 export const STELLAR_PASSPHRASE = 'Test SDF Network ; September 2015';
-export const NETWORK_DISPLAY_NAME = 'Testnet';
 
 const stellarExports = {
   server,
