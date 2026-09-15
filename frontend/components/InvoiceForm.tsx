@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { apiErrorMessage, invoiceApi, isApiUnavailableError } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2, AlertTriangle } from 'lucide-react';
@@ -14,6 +14,8 @@ import { walletGate } from '@/lib/freighter-availability';
 import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
 import { showFreighterInstallPrompt } from './FreighterInstallPrompt';
 import { parseAmountInput } from '@/lib/parse-amount-input';
+import WalletConnect from './WalletConnect';
+import { loadInvoiceDraft, saveInvoiceDraft, clearInvoiceDraft } from '@/lib/invoice-draft';
 
 interface InvoiceFormProps {
   onSuccess?: (invoice: any) => void;
@@ -32,16 +34,57 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   const [customerEmail, setCustomerEmail] = useState('');
   const [apiError, setApiError] = useState<string | null>(null);
   const [expiresInDays, setExpiresInDays] = useState(7);
+  const [hasLoadedDraft, setHasLoadedDraft] = useState(false);
   const { isWrongNetwork } = useWalletStore();
+
+  const sellerWallet = userWallet || publicKey || undefined;
+  const gate = walletGate(
+    { freighterAvailable, connected, publicKey: sellerWallet, network },
+    EXPECTED_WALLET_NETWORK
+  );
+
+  useEffect(() => {
+    const draft = loadInvoiceDraft();
+    if (draft) {
+      if (draft.amount !== undefined) setAmount(draft.amount);
+      if (draft.assetCode !== undefined) setAssetCode(draft.assetCode);
+      if (draft.description !== undefined) setDescription(draft.description);
+      if (draft.sellerName !== undefined) setSellerName(draft.sellerName);
+      if (draft.sellerEmail !== undefined) setSellerEmail(draft.sellerEmail);
+      if (draft.customerName !== undefined) setCustomerName(draft.customerName);
+      if (draft.customerEmail !== undefined) setCustomerEmail(draft.customerEmail);
+      if (draft.expiresInDays !== undefined) setExpiresInDays(draft.expiresInDays);
+    }
+    setHasLoadedDraft(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedDraft) return;
+    saveInvoiceDraft({
+      amount,
+      assetCode,
+      description,
+      sellerName,
+      sellerEmail,
+      customerName,
+      customerEmail,
+      expiresInDays,
+    });
+  }, [
+    hasLoadedDraft,
+    amount,
+    assetCode,
+    description,
+    sellerName,
+    sellerEmail,
+    customerName,
+    customerEmail,
+    expiresInDays,
+  ]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const sellerWallet = userWallet || publicKey || undefined;
-    const gate = walletGate(
-      { freighterAvailable, connected, publicKey: sellerWallet, network },
-      EXPECTED_WALLET_NETWORK
-    );
     if (!gate.ready) {
       showFreighterInstallPrompt(gate);
       return;
@@ -91,6 +134,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       });
 
       toast.success('Invoice created');
+      clearInvoiceDraft();
       onSuccess?.(result.data);
       setAmount('');
       setAssetCode('XLM');
@@ -123,10 +167,28 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
         Invoice details
       </h3>
 
-      {isWrongNetwork && (
+      {!gate.ready && (
         <div
           role="alert"
-          className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2.5 text-xs text-amber-900"
+          className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-center space-y-2 mb-4"
+        >
+          <AlertTriangle className="w-6 h-6 text-amber-600 mx-auto" aria-hidden="true" />
+          <p className="text-sm font-semibold text-amber-900">{gate.title}</p>
+          <p className="text-xs text-amber-800">
+            {gate.status === 'disconnected'
+              ? 'Freighter is disconnected or locked. Connect your wallet to create this invoice. Your entered fields are preserved.'
+              : gate.message}
+          </p>
+          <div className="flex justify-center pt-1">
+            <WalletConnect />
+          </div>
+        </div>
+      )}
+
+      {gate.ready && isWrongNetwork && (
+        <div
+          role="alert"
+          className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2.5 text-xs text-amber-900 mb-4"
         >
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
           <div>
@@ -301,15 +363,19 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
 
       <button
         type="submit"
-        disabled={loading}
+        disabled={loading || !gate.ready || isWrongNetwork}
         aria-busy={loading}
-        className="btn btn-primary w-full flex items-center justify-center gap-2 mt-6"
+        className="btn btn-primary w-full flex items-center justify-center gap-2 mt-6 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? (
           <>
             <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
             Creating...
           </>
+        ) : !gate.ready ? (
+          'Connect Wallet to Create'
+        ) : isWrongNetwork ? (
+          'Switch Network to Create'
         ) : (
           'Create Invoice'
         )}
