@@ -28,16 +28,39 @@ export function formatAddress(address: string, chars: number = 4): string {
 }
 
 /**
- * Copy to clipboard
+ * Copies text to the clipboard with modern API and fallback support for mobile and desktop environments.
+ * @param text The string to copy.
+ * @returns Promise resolving to true if copying succeeded, false otherwise.
  */
 export async function copyToClipboard(text: string): Promise<boolean> {
   try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch (error) {
-    console.error('Failed to copy:', error);
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+  }
+
+  try {
+    if (typeof document !== 'undefined') {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      textArea.setAttribute('readonly', '');
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      return successful;
+    }
+  } catch {
     return false;
   }
+
+  return false;
 }
 
 /**

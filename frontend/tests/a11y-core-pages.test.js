@@ -190,7 +190,7 @@ test('the pay page is axe-clean in every invoice status', async () => {
 });
 
 test('the invoice detail page is axe-clean in every invoice status', async () => {
-  setDisconnectedWallet();
+  setConnectedWallet();
 
   for (const status of ALL_STATUSES) {
     const invoice = invoiceFixture({ status });
@@ -199,6 +199,24 @@ test('the invoice detail page is axe-clean in every invoice status', async () =>
     const violations = await auditElement(React.createElement(bundle.InvoiceDetailPage));
     assertNoViolations(violations, `invoice detail page (${status})`);
   }
+});
+
+test('the invoice detail page is axe-clean when disconnected', async () => {
+  setDisconnectedWallet();
+  const invoice = invoiceFixture();
+  primeApi(invoice);
+
+  const violations = await auditElement(React.createElement(bundle.InvoiceDetailPage));
+  assertNoViolations(violations, 'invoice detail page (disconnected)');
+});
+
+test('the invoice detail page is axe-clean when forbidden', async () => {
+  bundle.useWalletStore.setState({ publicKey: 'GBNOTTHEOWNERX5R34WQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ', connected: true });
+  const invoice = invoiceFixture({ sellerPublicKey: SELLER });
+  primeApi(invoice);
+
+  const violations = await auditElement(React.createElement(bundle.InvoiceDetailPage));
+  assertNoViolations(violations, 'invoice detail page (forbidden)');
 });
 
 test('an invoice card is axe-clean in every status, with and without a client email', async () => {
