@@ -174,15 +174,15 @@ class FakePostgresDb implements Queryable {
 
     if (sql.startsWith("UPDATE invoices SET status = 'PAID'") || sql.startsWith('WITH settled AS')) {
       const row = this.rows.find((candidate) => candidate.id === params[0]);
-      const settledAt = params[5] ? new Date(params[5]) : new Date();
+      const settledAt = params[5] ? new Date(params[5]) : (row?.status === 'PENDING' ? new Date() : null);
       const canSettle =
         row &&
         (
           (row.status === 'PENDING' && new Date(row.expires_at).getTime() > Date.now()) ||
-          (row.status === 'CANCELLED' && row.cancelled_at && Number.isFinite(settledAt.getTime()))
+          (row.status === 'CANCELLED' && row.cancelled_at && settledAt && Number.isFinite(settledAt.getTime()))
         );
 
-      if (!row || !canSettle) {
+      if (!row || !canSettle || !settledAt) {
         return { rows: [], rowCount: 0 };
       }
 
@@ -366,6 +366,7 @@ function runManualVerifySuite(name: string, createStorage: () => InvoiceStorage)
       );
 
       assert.equal(cancelled.statusCode, 400);
+      assert.equal(cancelled.body.code, 'INVOICE_ALREADY_PAID');
       const stored = await storage.getInvoiceById(invoice.id);
       assert.equal(stored?.status, 'PAID');
       assert.equal(stored?.paymentTxHash, TX_HASH);

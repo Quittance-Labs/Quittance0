@@ -8,6 +8,8 @@ import {
   parseSettlementTime,
   SettlementTimeUnavailableError,
 } from '../domain/invoice-settlement';
+import { IllegalStateTransitionError } from '../domain/invoice-lifecycle';
+import { PaymentClaimError } from '../domain/payment-attribution';
 import { monitorBackoffMs } from '../utils/monitor-retry-backoff';
 import {
   FilePaymentMonitorCheckpointStore,
@@ -271,14 +273,22 @@ export class PaymentMonitorService {
       throw new SettlementTimeUnavailableError();
     }
 
-    await this.saveTransaction(payment, invoice.id);
-    await this.invoices.markAsPaid(
-      invoice.id,
-      payment.txHash,
-      payment.from,
-      undefined,
-      { settledAt }
-    );
+    try {
+      await this.saveTransaction(payment, invoice.id);
+      await this.invoices.markAsPaid(
+        invoice.id,
+        payment.txHash,
+        payment.from,
+        undefined,
+        { settledAt }
+      );
+    } catch (error) {
+      if (error instanceof IllegalStateTransitionError || error instanceof PaymentClaimError) {
+        console.warn('Payment monitor skipped settling invoice due to state conflict:', error.message);
+        return;
+      }
+      throw error;
+    }
   }
 
   private async saveTransaction(payment: PaymentRecord, invoiceId: string) {

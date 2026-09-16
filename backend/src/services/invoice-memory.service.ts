@@ -7,6 +7,8 @@ import { calculateInvoiceExpiry } from '../domain/invoice-expiry';
 import type { StoredInvoice } from '../storage/invoice-storage';
 import type { InvoiceStats } from '../storage/invoice-stats';
 import type { MarkAsPaidOptions, PayerInfo } from '../storage/invoice-storage';
+import { IllegalStateTransitionError } from '../domain/invoice-lifecycle';
+import { SettlementTimeUnavailableError } from '../domain/invoice-settlement';
 
 /**
  * How many times invoice creation re-draws a memo before giving up.
@@ -93,6 +95,27 @@ export class InvoiceMemoryService {
     payerInfo?: PayerInfo,
     options?: MarkAsPaidOptions
   ): Promise<StoredInvoice> {
+    const existing = this.storage.getInvoiceById(invoiceId);
+    if (!existing) {
+      throw new Error('Invoice not found, expired, or already processed');
+    }
+    if (existing.status === 'PAID') {
+      throw new IllegalStateTransitionError('PAID', 'PAID');
+    }
+    const now = Date.now();
+    if (
+      existing.status === 'EXPIRED' ||
+      (existing.status === 'PENDING' && new Date(existing.expiresAt).getTime() <= now)
+    ) {
+      throw new IllegalStateTransitionError('EXPIRED', 'PAID');
+    }
+    if (existing.status === 'CANCELLED' && !options?.settledAt) {
+      throw new SettlementTimeUnavailableError();
+    }
+    if (existing.status !== 'PENDING' && existing.status !== 'CANCELLED') {
+      throw new IllegalStateTransitionError(existing.status as any, 'PAID');
+    }
+
     const invoice = this.storage.markAsPaid(invoiceId, txHash, payerPublicKey, payerInfo, options);
 
     if (!invoice) {
@@ -119,6 +142,18 @@ export class InvoiceMemoryService {
   }
 
   async cancelInvoice(invoiceId: string, sellerPublicKey?: string): Promise<StoredInvoice> {
+    const existing = this.storage.getInvoiceById(invoiceId);
+    if (!existing) {
+      throw new Error('Invoice not found');
+    }
+    if (sellerPublicKey && existing.sellerPublicKey !== sellerPublicKey) {
+      const error = new Error('Unauthorized: only the seller can cancel this invoice');
+      (error as any).status = 403;
+      throw error;
+    }
+    if (existing.status !== 'PENDING') {
+      throw new IllegalStateTransitionError(existing.status as any, 'CANCELLED');
+    }
     const updated = this.storage.cancelInvoice(invoiceId, sellerPublicKey);
     if (!updated) {
       throw new Error('Invoice not found or already processed');

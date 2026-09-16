@@ -10,3 +10,6 @@ export function effectiveInvoiceStatus(invoice?: InvoiceLifecycleInput | null, n
 export function applyExpiryStatus<T extends InvoiceLifecycleInput>(invoice: T, now?: string | number | Date): T;
 export function applyExpiryLifecycle<T extends InvoiceLifecycleInput>(invoices: T[], now?: string | number | Date): T[];
 export function isActionableInvoice(invoice?: InvoiceLifecycleInput | null, now?: string | number | Date): boolean;
+export const LEGAL_INVOICE_TRANSITIONS: Record<string, readonly string[]>;
+export function isLegalInvoiceTransition(fromStatus: string, toStatus: string, options?: { settledAt?: unknown }): boolean;
+export function isTerminalInvoiceStatus(status: string): boolean;

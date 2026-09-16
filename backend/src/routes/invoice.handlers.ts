@@ -29,8 +29,10 @@ import {
   checkTxHash,
   messageForCode,
   verifyHorizonPayment,
+  type VerificationCode,
 } from '../services/payment-verification';
 import { PaymentClaimError } from '../domain/payment-attribution';
+import { IllegalStateTransitionError } from '../domain/invoice-lifecycle';
 import {
   SettlementTimeUnavailableError,
   warningForLatePayment,
@@ -357,8 +359,20 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         sendSuccess(res, 200, invoice);
       } catch (error: any) {
         logError('Cancel invoice error:', error);
+        if (error instanceof IllegalStateTransitionError) {
+          res.status(400).json({
+            success: false,
+            code: error.code,
+            error: error.message,
+          });
+          return;
+        }
         const message = error.message || 'Failed to cancel invoice';
         const lowerMessage = message.toLowerCase();
+        if (lowerMessage === 'invoice not found') {
+          sendFailure(res, 404, 'Invoice not found');
+          return;
+        }
         const isSellerMismatch = lowerMessage.includes('only the seller can cancel');
         const isUnauthorized = lowerMessage.includes('unauthorized');
         sendFailure(res, isSellerMismatch ? 403 : isUnauthorized ? 401 : 400, message);
@@ -471,8 +485,20 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
               messageForCode('TRANSACTION_CLOSE_TIME_UNAVAILABLE')
             );
           }
-          // The payment lookup can cross expiresAt after the first status read.
-          // Re-read so that race still returns the public expiry contract.
+          if (error instanceof IllegalStateTransitionError) {
+            let verificationCode: VerificationCode = 'INVOICE_NOT_PENDING';
+            if (error.code === 'INVOICE_ALREADY_PAID') {
+              verificationCode = 'INVOICE_ALREADY_PAID';
+            } else if (error.code === 'INVOICE_EXPIRED') {
+              verificationCode = 'INVOICE_EXPIRED';
+            }
+            return sendVerificationFailure(
+              res,
+              400,
+              verificationCode,
+              error.message
+            );
+          }
           const latest = await storage.getInvoiceById(id);
           const latestStatus = latest && checkInvoiceIsPayable(latest.status);
           if (latestStatus && !latestStatus.ok) {

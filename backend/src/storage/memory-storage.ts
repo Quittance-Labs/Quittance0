@@ -96,7 +96,6 @@ class MemoryStorage {
     return updated;
   }
 
-  // Cancel invoice
   cancelInvoice(id: string, sellerPublicKey?: string): Invoice | undefined {
     this.markExpiredInvoices();
     const invoice = this.invoices.get(id);
@@ -107,7 +106,6 @@ class MemoryStorage {
     return this.updateInvoice(id, { status: 'CANCELLED', cancelledAt: new Date() });
   }
 
-  // Mark as paid
   markAsPaid(
     id: string,
     txHash: string,
@@ -120,6 +118,7 @@ class MemoryStorage {
     const invoice = this.invoices.get(id);
     if (!invoice || invoice.status === 'PAID') return undefined;
     if (invoice.status === 'PENDING' && new Date(invoice.expiresAt).getTime() <= now.getTime()) {
+      invoice.status = 'EXPIRED';
       return undefined;
     }
     if (invoice.status !== 'PENDING' && invoice.status !== 'CANCELLED') return undefined;
@@ -129,10 +128,6 @@ class MemoryStorage {
       options.settledAt ?? (invoice.status === 'PENDING' ? now : undefined)
     );
 
-    // One transaction settles one invoice. The claim below reads and records in
-    // the same synchronous step, so a second caller holding the same hash gets a
-    // decision here rather than a second PAID transition. A replay against this
-    // same invoice falls back to the "already processed" contract above.
     const decision = this.paymentClaims.claim(txHash, id, now);
     if (decision.kind === 'conflict') {
       throw new PaymentClaimError(txHash, id, decision.claim.invoiceId);

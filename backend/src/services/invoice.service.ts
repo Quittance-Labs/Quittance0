@@ -4,6 +4,7 @@ import { generateInvoiceMemo } from '../utils/memo';
 import { CreateInvoiceInput } from '../utils/validation';
 import type { InvoiceStats } from '../storage/invoice-stats';
 import { calculateInvoiceExpiry } from '../domain/invoice-expiry';
+import { IllegalStateTransitionError } from '../domain/invoice-lifecycle';
 import {
   SettlementTimeUnavailableError,
   type LatePaymentWarningCode,
@@ -205,8 +206,24 @@ export class InvoiceService {
 
       if (result.rows.length === 0) {
         const existing = await this.db.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
-        if (existing.rows[0]?.status === 'CANCELLED' && !settledAt) {
+        if (existing.rows.length === 0) {
+          throw new Error('Invoice not found');
+        }
+        const current = existing.rows[0];
+        if (current.status === 'PAID') {
+          throw new IllegalStateTransitionError('PAID', 'PAID');
+        }
+        if (
+          current.status === 'EXPIRED' ||
+          (current.status === 'PENDING' && new Date(current.expires_at).getTime() <= Date.now())
+        ) {
+          throw new IllegalStateTransitionError('EXPIRED', 'PAID');
+        }
+        if (current.status === 'CANCELLED' && !settledAt) {
           throw new SettlementTimeUnavailableError();
+        }
+        if (current.status !== 'PENDING' && current.status !== 'CANCELLED') {
+          throw new IllegalStateTransitionError(current.status, 'PAID');
         }
         throw new Error('Invoice not found, expired, or already processed');
       }
@@ -215,7 +232,10 @@ export class InvoiceService {
 
       return this.mapRowToInvoice(result.rows[0]);
     } catch (error: any) {
-      if (error instanceof SettlementTimeUnavailableError) {
+      if (
+        error instanceof SettlementTimeUnavailableError ||
+        error instanceof IllegalStateTransitionError
+      ) {
         throw error;
       }
       console.error('Error marking invoice as paid:', error);
@@ -269,15 +289,20 @@ export class InvoiceService {
     const result = await this.db.query(query, [invoiceId, sellerPublicKey || null]);
 
     if (result.rows.length === 0) {
-      if (sellerPublicKey) {
-        const existing = await this.db.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
-        if (
-          existing.rows.length > 0 &&
-          existing.rows[0].status === 'PENDING' &&
-          existing.rows[0].seller_public_key !== sellerPublicKey
-        ) {
-          throw new Error('Unauthorized: only the seller can cancel this invoice');
-        }
+      const existing = await this.db.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
+      if (existing.rows.length === 0) {
+        throw new Error('Invoice not found');
+      }
+      const current = existing.rows[0];
+      if (
+        sellerPublicKey &&
+        current.status === 'PENDING' &&
+        current.seller_public_key !== sellerPublicKey
+      ) {
+        throw new Error('Unauthorized: only the seller can cancel this invoice');
+      }
+      if (current.status !== 'PENDING') {
+        throw new IllegalStateTransitionError(current.status, 'CANCELLED');
       }
       throw new Error('Invoice not found or already processed');
     }

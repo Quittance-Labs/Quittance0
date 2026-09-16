@@ -320,7 +320,7 @@ describe('Abuse Controls Suite', () => {
         assert.equal(fullRes.headers['retry-after'], '300');
         assert.equal(ceilingStorage.size(), 2);
       } finally {
-        ceilingServer.close();
+        await new Promise<void>((resolve) => ceilingServer.close(() => resolve()));
       }
     });
   });
@@ -436,7 +436,7 @@ describe('Abuse Controls Suite', () => {
         unblockStellar();
         await firstPromise;
       } finally {
-        lockServer.close();
+        await new Promise<void>((resolve) => lockServer.close(() => resolve()));
       }
     });
   });
@@ -468,7 +468,7 @@ describe('Abuse Controls Suite', () => {
         assert.match(res.body.error, /endpoint not found/i);
       } finally {
         process.env.NODE_ENV = originalEnv;
-        prodServer.close();
+        await new Promise<void>((resolve) => prodServer.close(() => resolve()));
       }
     });
   });
