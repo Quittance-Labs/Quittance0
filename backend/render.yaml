@@ -23,6 +23,8 @@ services:
         value: https://horizon-testnet.stellar.org
       - key: ALLOW_SIMULATE
         value: "false"
+      - key: HEALTH_HORIZON_PING
+        value: "false"
       - key: FRONTEND_URL
         sync: false
       - key: FRONTEND_URLS

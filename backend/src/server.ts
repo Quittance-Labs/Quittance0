@@ -7,6 +7,7 @@ import { validateStellarConfig, SELLER_PUBLIC_KEY } from './config/stellar';
 import paymentMonitorService from './services/payment-monitor.service';
 import { configuredFrontendOrigins, corsOptions } from './config/runtime';
 import postgresInvoiceStorage from './storage/postgres-invoice-storage';
+import { healthHandler, readinessHandler } from './health';
 
 dotenv.config();
 
@@ -22,6 +23,11 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
+
+app.get('/health', healthHandler(postgresInvoiceStorage.mode));
+app.get('/healthz', healthHandler(postgresInvoiceStorage.mode));
+app.get('/ready', readinessHandler(postgresInvoiceStorage.mode));
+app.get('/readyz', readinessHandler(postgresInvoiceStorage.mode));
 
 app.use('/api', routes);
 

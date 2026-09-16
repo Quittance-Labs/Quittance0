@@ -380,8 +380,17 @@ because it exposes normal liveness/readiness checks and predictable logs.
 | `FRONTEND_URL` | `https://YOUR-APP.vercel.app` (exact frontend origin) |
 | `FRONTEND_URLS` | Optional comma-separated preview/custom origins |
 | `ALLOW_SIMULATE` | `false` |
+| `HEALTH_HORIZON_PING` | `false` (optional, pings Horizon RPC if enabled) |
 
 `PORT` is set by Render automatically.
+
+### Health and readiness probe contract
+
+See [API Deployment and Health Probes Guide](./docs/DEPLOYMENT.md) for full architecture and platform recipes (Render, Fly.io, Railway, Kubernetes).
+
+- **Liveness (`/api/health`, `/health`, `/healthz`, `/api/health/live`):** Process-only probe returning HTTP 200 without external network requests or database queries. Safe for cold starts and container restart detection.
+- **Readiness (`/api/ready`, `/ready`, `/readyz`, `/api/health/ready`):** Traffic routing probe returning HTTP 200 when required deployment configuration is present (`STELLAR_NETWORK`, HTTPS `STELLAR_HORIZON_URL`, `FRONTEND_URL`, `ALLOW_SIMULATE=false`). Fails fast with HTTP 503 and a structured `missing` array if prerequisites are absent. In-memory MVP is ready without PostgreSQL (`storageReady: true`).
+- **Horizon ping (`HEALTH_HORIZON_PING=true` or `?ping=true`):** Optional reachability check with 2000 ms timeout and 5000 ms cache TTL.
 
 ### Blueprint (optional)
 

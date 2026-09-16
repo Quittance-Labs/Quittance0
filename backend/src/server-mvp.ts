@@ -44,7 +44,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// Root endpoint
 app.get('/', (req: Request, res: Response) => {
   res.json({
     name: 'Quittance API (MVP)',
@@ -55,9 +54,15 @@ app.get('/', (req: Request, res: Response) => {
   });
 });
 
-// Health check
 app.get('/api/health', healthHandler(memoryInvoiceStorage.mode));
+app.get('/api/health/live', healthHandler(memoryInvoiceStorage.mode));
+app.get('/health', healthHandler(memoryInvoiceStorage.mode));
+app.get('/healthz', healthHandler(memoryInvoiceStorage.mode));
+
 app.get('/api/ready', readinessHandler(memoryInvoiceStorage.mode));
+app.get('/api/health/ready', readinessHandler(memoryInvoiceStorage.mode));
+app.get('/ready', readinessHandler(memoryInvoiceStorage.mode));
+app.get('/readyz', readinessHandler(memoryInvoiceStorage.mode));
 
 app.use('/api', createInvoiceRouter({ storage: memoryInvoiceStorage }));
 app.use('/api', createPaymentMonitorRouter(paymentMonitorService));
