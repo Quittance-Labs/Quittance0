@@ -79,8 +79,38 @@ describe('amount check - XLM', () => {
     );
   });
 
+  it('reports 50% underpayment as a shortfall and keeps the invoice unsettled', () => {
+    const result = verifyHorizonPayment(input({ amount: '50.0000000' }));
+
+    assert.equal(codeOf(result), 'AMOUNT_TOO_LOW');
+    assert.equal(
+      result.ok ? '' : result.error,
+      'Payment is less than the invoice amount'
+    );
+  });
+
+  it('reports dust underpayment as a shortfall and keeps the invoice unsettled', () => {
+    const result = verifyHorizonPayment(input({ amount: '0.0000001' }));
+
+    assert.equal(codeOf(result), 'AMOUNT_TOO_LOW');
+    assert.equal(
+      result.ok ? '' : result.error,
+      'Payment is less than the invoice amount'
+    );
+  });
+
   it('reports one stroop over as an excess', () => {
     const result = verifyHorizonPayment(input({ amount: '100.0000001' }));
+
+    assert.equal(codeOf(result), 'AMOUNT_TOO_HIGH');
+    assert.equal(
+      result.ok ? '' : result.error,
+      'Payment is more than the invoice amount'
+    );
+  });
+
+  it('reports large overpayment as an excess', () => {
+    const result = verifyHorizonPayment(input({ amount: '150.0000000' }));
 
     assert.equal(codeOf(result), 'AMOUNT_TOO_HIGH');
     assert.equal(
@@ -115,6 +145,27 @@ describe('amount check - USDC', () => {
     );
     assert.equal(
       codeOf(verifyHorizonPayment(usdcInput('25.0000001', '25.0000000'))),
+      'AMOUNT_TOO_HIGH'
+    );
+  });
+
+  it('reports 50% underpayment for USDC as a shortfall', () => {
+    assert.equal(
+      codeOf(verifyHorizonPayment(usdcInput('12.5000000', '25.0000000'))),
+      'AMOUNT_TOO_LOW'
+    );
+  });
+
+  it('reports dust underpayment for USDC as a shortfall', () => {
+    assert.equal(
+      codeOf(verifyHorizonPayment(usdcInput('0.0000001', '25.0000000'))),
+      'AMOUNT_TOO_LOW'
+    );
+  });
+
+  it('reports large overpayment for USDC as an excess', () => {
+    assert.equal(
+      codeOf(verifyHorizonPayment(usdcInput('50.0000000', '25.0000000'))),
       'AMOUNT_TOO_HIGH'
     );
   });

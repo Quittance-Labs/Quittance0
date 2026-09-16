@@ -537,6 +537,24 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       assert.equal(res.body.error, 'Payment is less than the invoice amount');
     });
 
+    it('rejects an overpayment with AMOUNT_TOO_HIGH', async () => {
+      const invoice = await createInvoice();
+      transaction = paymentTransaction({
+        memo: invoice.memo,
+        amount: '100.0000000',
+        to: SELLER_A,
+      });
+
+      const res = await call(
+        handlers().verifyPayment,
+        createReq({ params: { id: invoice.id }, body: { txHash: TX_HASH } })
+      );
+
+      assert.equal(res.statusCode, 400);
+      assert.equal(res.body.code, 'AMOUNT_TOO_HIGH');
+      assert.equal(res.body.error, 'Payment is more than the invoice amount');
+    });
+
     it('refuses to verify an invoice twice', async () => {
       const invoice = await createInvoice();
       transaction = paymentTransaction({

@@ -118,6 +118,13 @@ test pins the two layers together.
 Amounts compare at Stellar's 7-decimal (stroop) precision, so `100` and
 `100.0000000` match while a partial payment does not.
 
+### Amount matching and overpayment policy
+
+Invoices settle strictly on the exact expected amount:
+- **Underpayment**: Any payment strictly less than the invoice amount (including 1 stroop short, 50% partial payment, or dust amounts) is rejected with stable code `AMOUNT_TOO_LOW` (`Payment is less than the invoice amount`). An underpaid invoice remains `PENDING` and never transitions to `PAID`.
+- **Overpayment**: Any payment greater than the invoice amount (including 1 stroop excess or larger overpayments) is rejected with stable code `AMOUNT_TOO_HIGH` (`Payment is more than the invoice amount`). Overpayments are rejected to prevent accounting discrepancies, unauthorized credit liabilities, and unmanaged refund obligations.
+- **Unparseable amounts**: Non-numeric or invalid amount payloads return `AMOUNT_MISMATCH`.
+
 Run the checks: `cd backend && npm test` — `cd frontend && npm test`.
 
 ### Invoice expiry lifecycle

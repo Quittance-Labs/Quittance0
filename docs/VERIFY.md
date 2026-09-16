@@ -28,14 +28,11 @@ Checks run in a fixed order so every caller reports the same *first* failure:
 
 ## Amount policy
 
-An invoice settles on the exact amount, not on at-least. A payment one stroop
-short is rejected as `AMOUNT_TOO_LOW` and the invoice stays `PENDING`: the
-money is not lost, but it does not settle the invoice either. A payment one
-stroop over is rejected as `AMOUNT_TOO_HIGH`: the funds still reach the
-seller, but the invoice does not transition on them, so a client that
-overpays cannot silently turn a 50 USDC invoice into a 100 USDC one. Both
-outcomes are recorded in the payment-event log for reconciliation
-(see [LATE_PAYMENT_POLICY.md](./LATE_PAYMENT_POLICY.md)).
+An invoice settles on the exact amount, not on at-least:
+- **Underpayment**: A payment one stroop short, 50% under, or dust amount is rejected as `AMOUNT_TOO_LOW` and the invoice stays `PENDING`. An underpayment never transitions an invoice to `PAID`.
+- **Overpayment**: A payment one stroop over or with excess funds is rejected as `AMOUNT_TOO_HIGH`. The invoice does not transition to `PAID`. This policy prevents unauthorized over-billing, accounting discrepancies, and untracked refund obligations.
+- **Audit trail**: Both underpayment and overpayment attempts are recorded in the payment-event log for reconciliation (see [LATE_PAYMENT_POLICY.md](./LATE_PAYMENT_POLICY.md)).
+- **Unparseable amounts**: Payloads with invalid number formats or missing amounts reject with `AMOUNT_MISMATCH`.
 
 ## Asset matching
 
