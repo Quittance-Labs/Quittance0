@@ -431,24 +431,36 @@ fallback UX without Google login, and demonstration instructions are in
 
 ## Tests & CI
 
-Every pull request and every push to `main` runs the same three jobs defined in
-[`.github/workflows/ci.yml`](./.github/workflows/ci.yml). All of them are
-reproducible locally with the commands below — CI runs nothing you cannot run
-yourself.
+Every pull request and every push to `main` runs the jobs defined in
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml): `backend`,
+`frontend`, `root-tests` (shared contracts), and an optional
+`evidence-smoke`. All of them are reproducible locally with the commands
+below — CI runs nothing you cannot run yourself.
+
+The root [`package.json`](./package.json) is a thin, dependency-free
+orchestration layer over `shared`/`backend`/`frontend`'s own scripts — it
+has no `node_modules` of its own to install. Each command below is the
+exact local equivalent of one CI job or step; `npm run ci` runs the same
+sequence CI does end to end (except `evidence-smoke`, which needs real
+Testnet secrets `evidence:smoke` documents separately below).
 
 ```bash
-# Backend: typecheck + unit and integration tests
-cd backend && npm ci && npm run typecheck && npm test
+# The full local mirror of CI (installs backend + frontend deps first)
+npm run ci
 
-# Frontend: lint + typecheck + unit tests
-cd frontend && npm ci && npm run lint && npm run typecheck && npm test
-
-# Frontend: focused axe, focus-management, live-region, and contrast checks
-cd frontend && npm run test:a11y
-
-# Shared export helpers (repository root)
-node --test "tests/**/*.test.mjs"
+# Individual pieces, once dependencies are installed:
+npm run test:shared      # Shared export/contract tests (repository root)
+npm run test:backend     # Backend: unit + integration tests
+npm run test:frontend    # Frontend: unit tests
+npm run test:a11y        # Frontend: focused axe, focus, live-region, contrast checks
+npm run lint:frontend    # Frontend: next lint
+npm run typecheck        # Backend + frontend: tsc --noEmit
+npm test                 # test:shared + test:backend + test:frontend together
 ```
+
+These call straight through to each package's own scripts (e.g.
+`npm --prefix backend test`), so `cd backend && npm test` still works
+exactly as before if you'd rather work inside one package at a time.
 
 The focused accessibility suite renders the landing, dashboard, pay, and
 invoice-detail routes in jsdom, audits them with axe, and directly checks the
@@ -474,7 +486,8 @@ refuse, this test fails.
 
 ### Environment variables in CI
 
-No secrets are required. The workflow sets only:
+The default `backend`, `frontend`, and `root-tests` jobs that run on every PR
+require no secrets. The workflow sets only:
 
 | Variable | Job | Why |
 |---|---|---|
@@ -487,8 +500,28 @@ A plaintext Horizon URL is accepted **only** for a loopback address
 (`backend/src/config/stellar.ts`), so a real deployment can never be downgraded
 to HTTP by configuration.
 
-For a manual testnet pass with a real Freighter payment, see
-[`EVIDENCE.md`](./EVIDENCE.md).
+### `evidence-smoke`: optional, secrets-gated, never required for a PR to pass
+
+Unlike the three jobs above, `evidence-smoke` runs a real create → pay →
+verify pass against Stellar **Testnet** (`backend/scripts/evidence-smoke.mjs`,
+also runnable locally as `cd backend && npm run evidence:smoke`). That needs
+a funded Testnet keypair, which is exactly the kind of thing a public repo
+must not require an external contributor's PR to have:
+
+- The job's final step is gated by `env.EVIDENCE_PAYER_SECRET` and
+  `env.EVIDENCE_SELLER_PUBLIC_KEY` being non-empty. GitHub never exposes
+  repository secrets to a fork's `pull_request` context at all, so on an
+  external contributor's PR these are always empty and the step is skipped
+  cleanly — it is not possible for a fork PR to fail this job for lacking
+  credentials it was never meant to have.
+- Where the repository's own `EVIDENCE_SELLER_PUBLIC_KEY` and
+  `EVIDENCE_PAYER_SECRET` secrets (and `EVIDENCE_API_URL` repository
+  variable) **are** configured — this repository's own main-branch pushes,
+  or a PR from a branch within it — the step runs for real and its failure
+  does block the job, the same as any other test.
+
+For a manual testnet pass with a real Freighter payment instead of this
+scripted one, see [`EVIDENCE.md`](./EVIDENCE.md).
 
 ---
 
