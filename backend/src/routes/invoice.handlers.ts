@@ -29,6 +29,7 @@ import {
   checkTxHash,
   messageForCode,
   verifyHorizonPayment,
+  executePaymentVerificationPipeline,
 } from '../services/payment-verification';
 import { PaymentClaimError } from '../domain/payment-attribution';
 import {
@@ -368,7 +369,6 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
     async verifyPayment(req: Request, res: Response) {
       try {
         const { id } = req.params;
-        const { network } = req.body || {};
 
         // Per-invoice rate limit check (prevents Horizon amplification)
         const invoiceLimit = await checkInvoiceVerifyLimit(id);
@@ -384,12 +384,16 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
         const hashCheck = checkTxHash(req.body?.txHash);
         if (!hashCheck.ok) {
-          return sendVerificationFailure(res, 400, hashCheck.code, hashCheck.error);
+          return sendVerificationFailure(res, 400, hashCheck.code, hashCheck.error, {
+            stage: 'fetch_transaction',
+          });
         }
 
         const payerCheck = checkPayerInfo(req.body);
         if (!payerCheck.ok) {
-          return sendVerificationFailure(res, 400, payerCheck.code, payerCheck.error);
+          return sendVerificationFailure(res, 400, payerCheck.code, payerCheck.error, {
+            stage: 'attribute',
+          });
         }
 
         const invoice = await storage.getInvoiceById(id);
@@ -400,92 +404,55 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
         const statusCheck = checkInvoiceIsPayable(invoice.status);
         if (!statusCheck.ok && invoice.status !== 'CANCELLED') {
-          return sendVerificationFailure(res, 400, statusCheck.code, statusCheck.error);
+          return sendVerificationFailure(res, 400, statusCheck.code, statusCheck.error, {
+            stage: 'persist_paid',
+          });
         }
 
-        let txDetails;
-        try {
-          txDetails = await stellar.getTransaction(hashCheck.value);
-        } catch (error: any) {
-          logError('Verify payment lookup error:', error);
-          const notFound = failure('TRANSACTION_NOT_FOUND');
-          // Cache the rejection to prevent repeated Horizon lookups for invalid hashes
-          await cacheVerificationResult(id, hashCheck.value, 'rejected', notFound.code);
-          return sendVerificationFailure(res, 404, notFound.code, notFound.error);
-        }
+        const network =
+          typeof req.body?.network === 'string' && req.body.network.trim().length > 0
+            ? req.body.network.trim()
+            : undefined;
 
-        const verification = verifyHorizonPayment({
-          txHash: hashCheck.value,
-          expected: {
-            memo: invoice.memo,
-            amount: invoice.amount,
-            destination: invoice.sellerPublicKey,
-            assetCode: invoice.assetCode,
-            assetIssuer: invoice.assetIssuer,
-            network: STELLAR_NETWORK,
-          },
-          transaction: txDetails.transaction,
-          operations: txDetails.operations,
+        const pipelineResult = await executePaymentVerificationPipeline({
+          invoice,
+          txHash: req.body?.txHash,
           network,
+          stellar,
+          storage,
+          payer: req.body,
+          onAfterPersist: async ({ txHash }) => {
+            await cacheVerificationResult(id, txHash, 'verified');
+          },
         });
 
-        if (!verification.ok) {
-          // Cache verification failures to prevent repeated attempts
-          await cacheVerificationResult(id, hashCheck.value, 'rejected', verification.code);
-          return sendVerificationFailure(res, 400, verification.code, verification.error);
-        }
+        if (!pipelineResult.ok) {
+          const status =
+            pipelineResult.code === 'TRANSACTION_NOT_FOUND'
+              ? 404
+              : pipelineResult.code === 'TX_HASH_ALREADY_USED'
+              ? 409
+              : pipelineResult.code === 'TRANSACTION_CLOSE_TIME_UNAVAILABLE'
+              ? 503
+              : 400;
 
-        if (invoice.status === 'CANCELLED' && !verification.value.settledAt) {
+          if (req.body?.txHash && typeof req.body.txHash === 'string') {
+            await cacheVerificationResult(id, req.body.txHash, 'rejected', pipelineResult.code);
+          }
+
           return sendVerificationFailure(
             res,
-            503,
-            'TRANSACTION_CLOSE_TIME_UNAVAILABLE',
-            messageForCode('TRANSACTION_CLOSE_TIME_UNAVAILABLE')
+            status,
+            pipelineResult.code,
+            pipelineResult.error,
+            {
+              stage: pipelineResult.stage,
+              details: pipelineResult.details,
+            }
           );
         }
 
-        let updatedInvoice: StoredInvoice;
-        try {
-          updatedInvoice = await storage.markAsPaid(
-            id,
-            verification.value.txHash,
-            verification.value.from,
-            payerCheck.value,
-            { settledAt: verification.value.settledAt }
-          );
-          
-          // Cache successful verification
-          await cacheVerificationResult(id, hashCheck.value, 'verified');
-        } catch (error) {
-          if (error instanceof PaymentClaimError) {
-            // A transaction that already settled another invoice must not settle
-            // this one as well. 409, not 400: the request is well formed and it
-            // is the server's recorded state that refuses it.
-            return sendVerificationFailure(res, 409, error.code, messageForCode(error.code));
-          }
-          if (error instanceof SettlementTimeUnavailableError) {
-            return sendVerificationFailure(
-              res,
-              503,
-              'TRANSACTION_CLOSE_TIME_UNAVAILABLE',
-              messageForCode('TRANSACTION_CLOSE_TIME_UNAVAILABLE')
-            );
-          }
-          // The payment lookup can cross expiresAt after the first status read.
-          // Re-read so that race still returns the public expiry contract.
-          const latest = await storage.getInvoiceById(id);
-          const latestStatus = latest && checkInvoiceIsPayable(latest.status);
-          if (latestStatus && !latestStatus.ok) {
-            return sendVerificationFailure(
-              res,
-              400,
-              latestStatus.code,
-              latestStatus.error
-            );
-          }
-          throw error;
-        }
-
+        const updatedInvoice = pipelineResult.invoice;
         sendSuccess(res, 200, updatedInvoice, {
           message: 'Payment verified on Stellar',
           code: updatedInvoice.latePaymentWarningCode,

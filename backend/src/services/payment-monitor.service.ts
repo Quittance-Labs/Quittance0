@@ -3,7 +3,11 @@ import stellarService, { PaymentPageRecord, PaymentRecord } from './stellar.serv
 import invoiceService, { InvoiceService, Queryable } from './invoice.service';
 import { SELLER_PUBLIC_KEY, STELLAR_NETWORK } from '../config/stellar';
 import { pool } from '../config/database';
-import { checkInvoiceIsPayable, verifyHorizonPayment } from './payment-verification';
+import {
+  checkInvoiceIsPayable,
+  verifyHorizonPayment,
+  executePaymentVerificationPipeline,
+} from './payment-verification';
 import {
   parseSettlementTime,
   SettlementTimeUnavailableError,
@@ -226,10 +230,15 @@ export class PaymentMonitorService {
     if (!payable.ok && invoice.status !== 'CANCELLED') return;
 
     const isNative = payment.assetCode === 'XLM' && !payment.assetIssuer;
-    const verification = verifyHorizonPayment({
+    const pipelineResult = await executePaymentVerificationPipeline({
+      invoice,
       txHash: payment.txHash,
       network: this.network,
-      transaction: { memo: payment.memo, memo_type: payment.memoType },
+      transaction: {
+        memo: payment.memo,
+        memo_type: payment.memoType,
+        created_at: payment.createdAt,
+      },
       operations: [{
         type: 'payment',
         from: payment.from,
@@ -239,46 +248,34 @@ export class PaymentMonitorService {
         asset_code: isNative ? undefined : payment.assetCode,
         asset_issuer: payment.assetIssuer,
       }],
-      expected: {
-        memo: invoice.memo,
-        amount: invoice.amount,
-        destination: invoice.sellerPublicKey,
-        assetCode: invoice.assetCode,
-        assetIssuer: invoice.assetIssuer,
-        network: this.network,
+      storage: this.invoices,
+      onBeforePersist: async () => {
+        await this.saveTransaction(payment, invoice.id);
       },
     });
 
-    if (!verification.ok) {
-      await this.invoices.logPaymentEvent(
-        invoice.id,
-        verification.code === 'AMOUNT_TOO_LOW' || verification.code === 'AMOUNT_MISMATCH'
-          ? 'PARTIAL_PAYMENT'
-          : 'PAYMENT_REJECTED',
-        {
-          code: verification.code,
-          txHash: payment.txHash,
-          expectedAmount: invoice.amount.toFixed(7),
-          receivedAmount: payment.amount,
-          payerPublicKey: payment.from,
-        }
-      );
+    if (!pipelineResult.ok) {
+      if (invoice.status === 'CANCELLED' && pipelineResult.code === 'TRANSACTION_CLOSE_TIME_UNAVAILABLE') {
+        throw new SettlementTimeUnavailableError();
+      }
+      if (pipelineResult.stage !== 'persist_paid') {
+        await this.invoices.logPaymentEvent(
+          invoice.id,
+          pipelineResult.code === 'AMOUNT_TOO_LOW' || pipelineResult.code === 'AMOUNT_MISMATCH'
+            ? 'PARTIAL_PAYMENT'
+            : 'PAYMENT_REJECTED',
+          {
+            code: pipelineResult.code,
+            stage: pipelineResult.stage,
+            txHash: payment.txHash,
+            expectedAmount: invoice.amount.toFixed(7),
+            receivedAmount: payment.amount,
+            payerPublicKey: payment.from,
+          }
+        );
+      }
       return;
     }
-
-    const settledAt = parseSettlementTime(payment.createdAt) ?? verification.value.settledAt;
-    if (invoice.status === 'CANCELLED' && !settledAt) {
-      throw new SettlementTimeUnavailableError();
-    }
-
-    await this.saveTransaction(payment, invoice.id);
-    await this.invoices.markAsPaid(
-      invoice.id,
-      payment.txHash,
-      payment.from,
-      undefined,
-      { settledAt }
-    );
   }
 
   private async saveTransaction(payment: PaymentRecord, invoiceId: string) {

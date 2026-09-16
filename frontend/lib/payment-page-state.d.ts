@@ -9,11 +9,15 @@ export interface PayInvoice {
   [key: string]: unknown;
 }
 
+import type { VerificationCode, VerificationStage } from './verification.d.ts';
+
 export interface PaymentState {
   status: PayStatus;
   invoice: PayInvoice | null;
   txHash: string | null;
   error: string | null;
+  stage?: VerificationStage | null;
+  code?: VerificationCode | null;
 }
 
 export interface WalletGateSession {
@@ -39,7 +43,7 @@ export type PaymentEvent =
   | { type: 'PAY_FAILED'; error?: string }
   | { type: 'VERIFY_STARTED' }
   | { type: 'VERIFY_SUCCEEDED'; invoice?: PayInvoice | null; txHash?: string }
-  | { type: 'VERIFY_FAILED'; error?: string }
+  | { type: 'VERIFY_FAILED'; error?: string; stage?: VerificationStage; code?: VerificationCode }
   | { type: 'VERIFY_UNAVAILABLE' }
   | { type: 'COPIED'; key?: string }
   | { type: 'RESET' };

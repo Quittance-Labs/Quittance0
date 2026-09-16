@@ -114,8 +114,14 @@ export function usePaymentPage(id: string) {
       }
 
       const message = resolveVerificationError(error);
+      const data = (error && typeof error === 'object' && 'response' in error && (error as any).response?.data) || {};
       if (isApiUnavailableError(error)) setLoadError(apiErrorMessage(error));
-      dispatch({ type: 'VERIFY_FAILED', error: message });
+      dispatch({
+        type: 'VERIFY_FAILED',
+        error: message,
+        stage: data.stage,
+        code: data.code,
+      });
       toast.error(message);
     }
   };

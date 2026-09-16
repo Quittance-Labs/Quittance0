@@ -73,12 +73,123 @@ export const CHECK_REJECTION_CODES: Record<VerificationCheck, VerificationCode> 
   asset: 'ASSET_MISMATCH',
 };
 
+/**
+ * The ordered execution stages of the payment verification pipeline.
+ *
+ * Each verification run executes these stages in strict sequence:
+ * fetch_transaction -> match_destination -> match_asset -> match_amount ->
+ * match_memo -> attribute -> persist_paid.
+ *
+ * A failure in any stage short-circuits the pipeline immediately.
+ */
+export const VERIFICATION_STAGES = [
+  'fetch_transaction',
+  'match_destination',
+  'match_asset',
+  'match_amount',
+  'match_memo',
+  'attribute',
+  'persist_paid',
+] as const;
+
+export type VerificationStage = (typeof VERIFICATION_STAGES)[number];
+
+/**
+ * Rejection codes produced by each verification stage.
+ */
+export const STAGE_REJECTION_CODES: Record<VerificationStage, readonly VerificationCode[]> = {
+  fetch_transaction: [
+    'MISSING_TX_HASH',
+    'INVALID_TX_HASH',
+    'TRANSACTION_NOT_FOUND',
+    'NO_PAYMENT_OPERATION',
+    'NETWORK_MISMATCH',
+    'VERIFY_RATE_LIMIT_EXCEEDED',
+  ],
+  match_destination: [
+    'DESTINATION_MISMATCH',
+  ],
+  match_asset: [
+    'ASSET_MISMATCH',
+  ],
+  match_amount: [
+    'AMOUNT_MISMATCH',
+    'AMOUNT_TOO_LOW',
+    'AMOUNT_TOO_HIGH',
+  ],
+  match_memo: [
+    'MEMO_MISMATCH',
+  ],
+  attribute: [
+    'INVALID_PAYER_NAME',
+    'INVALID_PAYER_EMAIL',
+    'PAYER_INFO_TOO_LONG',
+    'TX_HASH_ALREADY_USED',
+    'TRANSACTION_CLOSE_TIME_UNAVAILABLE',
+  ],
+  persist_paid: [
+    'INVOICE_ALREADY_PAID',
+    'INVOICE_EXPIRED',
+    'INVOICE_NOT_PENDING',
+  ],
+};
+
+const CODE_TO_STAGE: Record<VerificationCode, VerificationStage> = {
+  MISSING_TX_HASH: 'fetch_transaction',
+  INVALID_TX_HASH: 'fetch_transaction',
+  TRANSACTION_NOT_FOUND: 'fetch_transaction',
+  NO_PAYMENT_OPERATION: 'fetch_transaction',
+  NETWORK_MISMATCH: 'fetch_transaction',
+  VERIFY_RATE_LIMIT_EXCEEDED: 'fetch_transaction',
+  DESTINATION_MISMATCH: 'match_destination',
+  ASSET_MISMATCH: 'match_asset',
+  AMOUNT_MISMATCH: 'match_amount',
+  AMOUNT_TOO_LOW: 'match_amount',
+  AMOUNT_TOO_HIGH: 'match_amount',
+  MEMO_MISMATCH: 'match_memo',
+  INVALID_PAYER_NAME: 'attribute',
+  INVALID_PAYER_EMAIL: 'attribute',
+  PAYER_INFO_TOO_LONG: 'attribute',
+  TX_HASH_ALREADY_USED: 'attribute',
+  TRANSACTION_CLOSE_TIME_UNAVAILABLE: 'attribute',
+  INVOICE_ALREADY_PAID: 'persist_paid',
+  INVOICE_EXPIRED: 'persist_paid',
+  INVOICE_NOT_PENDING: 'persist_paid',
+};
+
+/**
+ * Resolves which stage of the pipeline produces a given verification rejection code.
+ */
+export function stageForCode(code: VerificationCode): VerificationStage {
+  return CODE_TO_STAGE[code] ?? 'fetch_transaction';
+}
+
 /** The envelope a verification rejection is returned in. */
 export interface VerificationFailureBody {
   success: false;
   code: VerificationCode;
   error: string;
+  stage?: VerificationStage;
+  details?: Record<string, unknown>;
 }
+
+/** Individual stage result when successful. */
+export interface StageSuccessResult<T = unknown> {
+  ok: true;
+  stage: VerificationStage;
+  value: T;
+}
+
+/** Individual stage result when failed. */
+export interface StageFailureResult {
+  ok: false;
+  stage: VerificationStage;
+  code: VerificationCode;
+  error: string;
+  details?: Record<string, unknown>;
+}
+
+export type StageResult<T = unknown> = StageSuccessResult<T> | StageFailureResult;
 
 /** User-facing message for every rejection code. */
 export const VERIFICATION_MESSAGES: Record<VerificationCode, string> = {

@@ -20,6 +20,21 @@ export type VerificationCode =
   | 'NETWORK_MISMATCH'
   | 'TX_HASH_ALREADY_USED';
 
+export type VerificationStage =
+  | 'fetch_transaction'
+  | 'match_destination'
+  | 'match_asset'
+  | 'match_amount'
+  | 'match_memo'
+  | 'attribute'
+  | 'persist_paid';
+
+export const VERIFICATION_STAGES: readonly VerificationStage[];
+
+export const STAGE_REJECTION_CODES: Record<VerificationStage, readonly VerificationCode[]>;
+
+export function stageForCode(code: VerificationCode): VerificationStage;
+
 export interface VerificationFailure {
   ok: false;
   code: VerificationCode;

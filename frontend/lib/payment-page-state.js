@@ -103,6 +103,8 @@ function initialPaymentState(invoice) {
     invoice: invoice ?? null,
     txHash: invoice?.paymentTxHash ?? null,
     error: null,
+    stage: null,
+    code: null,
   };
 }
 
@@ -126,6 +128,8 @@ function paymentReducer(state, event) {
           invoice,
           txHash: invoice.paymentTxHash ?? state.txHash,
           error: null,
+          stage: null,
+          code: null,
         };
       }
 
@@ -134,7 +138,7 @@ function paymentReducer(state, event) {
         return { ...state, invoice };
       }
 
-      return { ...state, status: PAY_STATES.IDLE, invoice, error: null };
+      return { ...state, status: PAY_STATES.IDLE, invoice, error: null, stage: null, code: null };
     }
 
     case 'PAY_STARTED':
@@ -156,7 +160,7 @@ function paymentReducer(state, event) {
 
     case 'VERIFY_STARTED':
       if (isTerminalPayState(state.status)) return state;
-      return { ...state, status: PAY_STATES.VERIFYING, error: null };
+      return { ...state, status: PAY_STATES.VERIFYING, error: null, stage: null, code: null };
 
     case 'VERIFY_SUCCEEDED':
       return {
@@ -164,11 +168,19 @@ function paymentReducer(state, event) {
         invoice: event.invoice ?? state.invoice,
         txHash: event.invoice?.paymentTxHash ?? event.txHash ?? state.txHash,
         error: null,
+        stage: null,
+        code: null,
       };
 
     case 'VERIFY_FAILED':
       if (isTerminalPayState(state.status)) return state;
-      return { ...state, status: PAY_STATES.ERROR, error: event.error ?? 'Verification failed' };
+      return {
+        ...state,
+        status: PAY_STATES.ERROR,
+        error: event.error ?? 'Verification failed',
+        stage: event.stage ?? null,
+        code: event.code ?? null,
+      };
 
     // An outage is not a rejection. Return to idle so the payer keeps the
     // verify control and the rest of the session, instead of being told the
