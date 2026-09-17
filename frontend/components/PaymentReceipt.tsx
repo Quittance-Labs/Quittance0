@@ -5,17 +5,19 @@ import { describeAmount } from '@/lib/a11y';
 import { Check, Download, ExternalLink, FileText, Mail } from 'lucide-react';
 import AssetLogo from './AssetLogo';
 import { openInvoicePDF, emailPaymentProof } from '@/lib/export';
-import { canSendProofEmail, getProofMailtoRecipient } from '@/lib/mailto-delivery';
+import { canSendProofEmail, getProofMailtoRecipient, resolveInvoiceNetwork } from '@/lib/mailto-delivery';
 import { toast } from 'sonner';
 import type { PayPageInvoice } from './pay-page.types';
 import { buildHorizonTxUrl } from '@/lib/explorer-tx-link';
 import { getExplorerTransactionUrl } from '@/lib/stellar';
+import { buildQuittanceProof, type QuittanceProof } from '@/lib/quittance-proof';
 // The receipt renders a settled (paid / expired / cancelled) record. It shares
 // the same status vocabulary as PaymentStatus and the verification rejection
 // table, so the proof view and the pay page never disagree on wording.
 
 interface PaymentReceiptProps {
   invoice: PayPageInvoice;
+  proof?: QuittanceProof;
 }
 
 function latePaymentWarning(invoice: PayPageInvoice): { title: string; body: string } | null {
@@ -34,79 +36,132 @@ function latePaymentWarning(invoice: PayPageInvoice): { title: string; body: str
   return null;
 }
 
-export default function PaymentReceipt({ invoice }: PaymentReceiptProps) {
+/**
+ * PaymentReceipt component rendering verified payment proof or receipt.
+ *
+ * @param props - Component properties containing invoice and optional canonical proof.
+ */
+export default function PaymentReceipt({ invoice, proof: initialProof }: PaymentReceiptProps) {
+  const proof = initialProof ?? (() => {
+    const res = buildQuittanceProof(invoice as any, {
+      network: resolveInvoiceNetwork(invoice as any),
+    });
+    return res.ok ? res.proof : null;
+  })();
+
   const warning = latePaymentWarning(invoice);
   const handleDownloadPDF = () => {
-    openInvoicePDF(invoice as any);
+    openInvoicePDF((proof ?? invoice) as any);
     toast.success('Opening payment proof');
   };
 
   const handleEmailProof = () => {
     try {
-      emailPaymentProof(invoice as any);
+      emailPaymentProof(
+        (proof ?? invoice) as any,
+        undefined,
+        invoice.customerEmail || invoice.payerEmail
+      );
       toast.success('Opening email client');
     } catch (err: any) {
       toast.error(err?.message || 'No recipient email on this invoice');
     }
   };
 
-  // Generates and downloads a plain text payment receipt for the verified invoice
+  const displayInvoiceId = proof ? proof.invoiceId : invoice.id;
+  const status = proof ? proof.status : invoice.status;
+  const activeAssetCode = proof ? proof.payment.asset.code : (invoice.assetCode || 'XLM');
+  const amount = proof ? proof.payment.amount : invoice.amount;
+  const settledDate = proof ? proof.settledAt : (invoice.settledAt || invoice.paidAt);
+  const txHash = proof ? proof.payment.txHash : invoice.paymentTxHash;
+  const seller = proof ? proof.seller : invoice.sellerPublicKey;
+  const payer = proof ? proof.payer : invoice.payerPublicKey;
+  const memo = proof ? proof.payment.memo : invoice.memo;
+  const network = proof ? proof.network : resolveInvoiceNetwork(invoice as any);
+  const explorerUrl = (proof && proof.payment.explorerUrl)
+    ? proof.payment.explorerUrl
+    : (txHash ? buildHorizonTxUrl(txHash, network) : null);
+
   const handleDownload = () => {
-    const receiptText = `
-═══════════════════════════════════════
-          PAYMENT RECEIPT
-═══════════════════════════════════════
+    const lines = [
+      '═══════════════════════════════════════',
+      '          PAYMENT RECEIPT',
+      '═══════════════════════════════════════',
+      '',
+      `Invoice ID: ${displayInvoiceId}`,
+      `Status: ${status}`,
+    ];
 
-Invoice ID: ${invoice.id}
-Status: ${invoice.status}
-Payment Date: ${formatDate(invoice.settledAt || invoice.paidAt || invoice.createdAt)}
-${warning ? `Warning: ${warning.title}. ${warning.body}` : ''}
+    if (settledDate) {
+      lines.push(`Payment Date: ${formatDate(settledDate)}`);
+    }
 
-───────────────────────────────────────
-PAYMENT DETAILS
-───────────────────────────────────────
+    if (warning) {
+      lines.push(`Warning: ${warning.title}. ${warning.body}`);
+    }
 
-Amount Paid: ${formatAmount(invoice.amount, 7)} ${invoice.assetCode}
-${invoice.description ? `Description: ${invoice.description}` : ''}
-${invoice.customerName ? `Customer: ${invoice.customerName}` : ''}
-${invoice.customerEmail ? `Email: ${invoice.customerEmail}` : ''}
+    lines.push('');
+    lines.push('───────────────────────────────────────');
+    lines.push('PAYMENT DETAILS');
+    lines.push('───────────────────────────────────────');
+    lines.push('');
+    lines.push(`Amount Paid: ${formatAmount(amount, 7)} ${activeAssetCode}`);
 
-───────────────────────────────────────
-TRANSACTION DETAILS
-───────────────────────────────────────
+    if (invoice.description) {
+      lines.push(`Description: ${invoice.description}`);
+    }
+    if (invoice.customerName) {
+      lines.push(`Customer: ${invoice.customerName}`);
+    }
+    if (invoice.customerEmail) {
+      lines.push(`Email: ${invoice.customerEmail}`);
+    }
 
-Transaction Hash:
-${invoice.paymentTxHash}
+    if (txHash) {
+      lines.push('');
+      lines.push('───────────────────────────────────────');
+      lines.push('TRANSACTION DETAILS');
+      lines.push('───────────────────────────────────────');
+      lines.push('');
+      lines.push('Transaction Hash:');
+      lines.push(txHash);
+      lines.push('');
+      lines.push('From (Payer):');
+      lines.push(payer || 'N/A');
+      lines.push('');
+      lines.push('To (Recipient):');
+      lines.push(seller);
+      if (memo) {
+        lines.push('');
+        lines.push(`Memo: ${memo}`);
+      }
+      if (explorerUrl) {
+        lines.push('');
+        lines.push(`Explorer: ${explorerUrl}`);
+      }
+    }
 
-From (Payer):
-${invoice.payerPublicKey || 'N/A'}
+    lines.push('');
+    lines.push('───────────────────────────────────────');
+    lines.push('Powered by Quittance');
+    lines.push('Stellar Blockchain Payment System');
+    lines.push('═══════════════════════════════════════');
 
-To (Recipient):
-${invoice.sellerPublicKey}
-
-Memo: ${invoice.memo}
-
-───────────────────────────────────────
-Powered by Quittance
-Stellar Blockchain Payment System
-═══════════════════════════════════════
-    `.trim();
-
+    const receiptText = lines.join('\n');
     const blob = new Blob([receiptText], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `receipt-${invoice.id}.txt`;
+    a.download = `receipt-${displayInvoiceId}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
-  const activeAssetCode = invoice.assetCode || 'XLM';
-  const amountLabel = describeAmount(formatAmount(invoice.amount, 7), activeAssetCode);
+  const amountLabel = describeAmount(formatAmount(amount, 7), activeAssetCode);
   const canEmail = Boolean(invoice.customerEmail);
-  const proofRecipient = getProofMailtoRecipient(invoice as any);
+  const proofRecipient = getProofMailtoRecipient((proof ?? invoice) as any);
   const emailReasonId = 'receipt-email-reason';
 
   return (
@@ -151,13 +206,13 @@ Stellar Blockchain Payment System
             role="group"
             aria-label={`Amount paid: ${amountLabel}`}
           >
-            <AssetLogo code={invoice.assetCode} size={36} showName={false} decorative />
+            <AssetLogo code={activeAssetCode} size={36} showName={false} decorative />
             <div aria-hidden="true">
               <p className="text-4xl font-bold text-green-700">
-                {formatAmount(invoice.amount, 7)}
+                {formatAmount(amount, 7)}
               </p>
               <p className="text-lg font-semibold text-green-700 mt-1">
-                {invoice.assetCode}
+                {activeAssetCode}
               </p>
             </div>
           </div>
@@ -170,18 +225,20 @@ Stellar Blockchain Payment System
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className={`grid ${settledDate ? 'grid-cols-2' : 'grid-cols-1'} gap-4`}>
           <div className="bg-gray-50 rounded-lg p-4">
             <p className="text-xs text-gray-600 mb-1">Invoice ID</p>
-            <p className="text-sm font-mono text-gray-900 break-all">{invoice.id}</p>
+            <p className="text-sm font-mono text-gray-900 break-all">{displayInvoiceId}</p>
           </div>
 
-          <div className="bg-gray-50 rounded-lg p-4">
-            <p className="text-xs text-gray-600 mb-1">Payment Date</p>
-            <p className="text-sm text-gray-900">
-              {formatDate(invoice.settledAt || invoice.paidAt || invoice.createdAt)}
-            </p>
-          </div>
+          {settledDate && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs text-gray-600 mb-1">Payment Date</p>
+              <p className="text-sm text-gray-900">
+                {formatDate(settledDate)}
+              </p>
+            </div>
+          )}
         </div>
 
         {(invoice.sellerName || invoice.sellerEmail) && (
@@ -225,33 +282,37 @@ Stellar Blockchain Payment System
         )}
       </div>
 
-      <div className="border-t pt-6 mb-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Transaction Details</h3>
-        
-        <div className="space-y-3">
-          <div className="bg-gray-50 rounded-lg p-4">
-            <p className="text-xs text-gray-600 mb-1">Transaction Hash</p>
-            <p className="text-xs font-mono text-gray-900 break-all">{invoice.paymentTxHash}</p>
-          </div>
-
-          {invoice.payerPublicKey && (
+      {txHash && (
+        <div className="border-t pt-6 mb-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Transaction Details</h3>
+          
+          <div className="space-y-3">
             <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-xs text-gray-600 mb-1">From (Payer Address)</p>
-              <p className="text-xs font-mono text-gray-900 break-all">{invoice.payerPublicKey}</p>
+              <p className="text-xs text-gray-600 mb-1">Transaction Hash</p>
+              <p className="text-xs font-mono text-gray-900 break-all">{txHash}</p>
             </div>
-          )}
 
-          <div className="bg-gray-50 rounded-lg p-4">
-            <p className="text-xs text-gray-600 mb-1">To (Recipient Address)</p>
-            <p className="text-xs font-mono text-gray-900 break-all">{invoice.sellerPublicKey}</p>
-          </div>
+            {payer && (
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-xs text-gray-600 mb-1">From (Payer Address)</p>
+                <p className="text-xs font-mono text-gray-900 break-all">{payer}</p>
+              </div>
+            )}
 
-          <div className="bg-gray-50 rounded-lg p-4">
-            <p className="text-xs text-gray-600 mb-1">Memo</p>
-            <p className="text-sm font-mono text-gray-900">{invoice.memo}</p>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-xs text-gray-600 mb-1">To (Recipient Address)</p>
+              <p className="text-xs font-mono text-gray-900 break-all">{seller}</p>
+            </div>
+
+            {memo && (
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-xs text-gray-600 mb-1">Memo</p>
+                <p className="text-sm font-mono text-gray-900">{memo}</p>
+              </div>
+            )}
           </div>
         </div>
-      </div>
+      )}
 
       <div className="border-t pt-6 space-y-3 print:hidden">
         <button
@@ -283,19 +344,21 @@ Stellar Blockchain Payment System
           </p>
         )}
 
-        <a
-          href={
-            buildHorizonTxUrl(invoice.paymentTxHash, 'public') ??
-            getExplorerTransactionUrl(invoice.paymentTxHash || '')
-          }
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn btn-outline w-full flex items-center justify-center gap-2"
-        >
-          <ExternalLink className="w-5 h-5" aria-hidden="true" />
-          View on Stellar Explorer
-          <span className="sr-only"> (opens in a new tab)</span>
-        </a>
+        {txHash && (
+          <a
+            href={
+              explorerUrl ??
+              getExplorerTransactionUrl(txHash)
+            }
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-outline w-full flex items-center justify-center gap-2"
+          >
+            <ExternalLink className="w-5 h-5" aria-hidden="true" />
+            View on Stellar Explorer
+            <span className="sr-only"> (opens in a new tab)</span>
+          </a>
+        )}
 
         <button
           onClick={handleDownload}
