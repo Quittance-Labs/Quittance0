@@ -1,8 +1,9 @@
-// Asset code normalizer for display.
-// Ensures asset codes are presented consistently across the UI: uppercase,
-// trimmed, and with a safe fallback for native / missing assets.
+import {
+  normalizeAssetCode as canonicalNormalizeAssetCode,
+  NATIVE_ASSET_CODE,
+} from '../../shared/assets.ts';
 
-const NATIVE_ASSET_CODE = 'XLM';
+export { NATIVE_ASSET_CODE };
 
 /**
  * Normalise an asset code for display.
@@ -11,19 +12,7 @@ const NATIVE_ASSET_CODE = 'XLM';
  * @returns Canonical display asset code.
  */
 export function normalizeAssetCode(code: unknown): string {
-  if (typeof code !== 'string') {
-    return NATIVE_ASSET_CODE;
-  }
-
-  const trimmed = code.trim().toUpperCase();
-  if (trimmed === '' || trimmed === 'NATIVE') {
-    return NATIVE_ASSET_CODE;
-  }
-
-  // Stellar asset codes are 1-12 alphanumeric characters.
-  if (!/^[A-Z0-9]{1,12}$/.test(trimmed)) {
-    return NATIVE_ASSET_CODE;
-  }
-
-  return trimmed;
+  return canonicalNormalizeAssetCode(code);
 }
+
+export default { NATIVE_ASSET_CODE, normalizeAssetCode };

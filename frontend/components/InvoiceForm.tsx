@@ -15,6 +15,12 @@ import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
 import { showFreighterInstallPrompt } from './FreighterInstallPrompt';
 import { parseAmountInput } from '@/lib/parse-amount-input';
 import { clearInvoiceDraft, loadInvoiceDraft, saveInvoiceDraft } from '@/lib/invoice-draft';
+import {
+  fieldErrorSummary,
+  fieldErrorsFromApiError,
+  firstInvalidFieldId,
+  formFieldErrors,
+} from '@/lib/invoice-form-validation';
 
 interface InvoiceFormProps {
   onSuccess?: (invoice: any) => void;
@@ -24,10 +30,6 @@ interface InvoiceFormProps {
 export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps) {
   const { publicKey, connected, network, freighterAvailable } = useWalletStore();
   const [loading, setLoading] = useState(false);
-  // The page renders this form only while the wallet gate is ready, so a
-  // Freighter disconnect unmounts it. The draft is read once on mount so the
-  // fields someone had typed come back; only typed fields are stored, never
-  // anything about the wallet (issue #442, lib/invoice-draft.js).
   const [initialDraft] = useState(() => loadInvoiceDraft());
   const [amount, setAmount] = useState(initialDraft.amount ?? '');
   const [assetCode, setAssetCode] = useState(initialDraft.assetCode ?? 'XLM');
@@ -38,7 +40,12 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   const [customerEmail, setCustomerEmail] = useState(initialDraft.customerEmail ?? '');
   const [apiError, setApiError] = useState<string | null>(null);
   const [expiresInDays, setExpiresInDays] = useState(initialDraft.expiresInDays ?? 7);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const { isWrongNetwork } = useWalletStore();
+
+  const focusField = (elementId: string | null) => {
+    if (elementId) document.getElementById(elementId)?.focus();
+  };
 
   // Whatever is typed is kept for the next mount, so a disconnect in the middle
   // of filling the form costs nothing.
