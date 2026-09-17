@@ -82,6 +82,36 @@ describe('wallet-scoped invoice reads', () => {
     assert.equal(carolStats.total_invoices, 0);
     assert.equal(carolStats.pending_invoices, 0);
   });
+
+  it('filters invoices by search query within seller scope', async () => {
+    const storage = new MemoryInvoiceStorage(new InvoiceMemoryService(new MemoryStorage()));
+    const matching = await storage.createInvoice(
+      input(ALICE, { memo: 'QTN-ALPHA', description: 'Alpha payment' })
+    );
+    await storage.createInvoice(
+      input(ALICE, { memo: 'QTN-BETA', description: 'Beta payment' })
+    );
+    await storage.createInvoice(
+      input(BOB, { memo: 'QTN-ALPHA', description: 'Bob Alpha payment' })
+    );
+
+    const results = await storage.getInvoicesBySeller(ALICE, undefined, 50, 0, 'ALPHA');
+
+    assert.equal(results.length, 1);
+    assert.equal(results[0].id, matching.id);
+    assert.equal(results[0].sellerPublicKey, ALICE);
+  });
+
+  it('never leaks another seller invoices when searching', async () => {
+    const storage = new MemoryInvoiceStorage(new InvoiceMemoryService(new MemoryStorage()));
+    await storage.createInvoice(
+      input(BOB, { memo: 'QTN-SECRET', description: 'Bob secret' })
+    );
+
+    const results = await storage.getInvoicesBySeller(ALICE, undefined, 50, 0, 'SECRET');
+
+    assert.equal(results.length, 0);
+  });
 });
 
 /**
@@ -215,5 +245,46 @@ describe('wallet-scoped invoice endpoints', () => {
 
     assert.equal(list.statusCode, 400);
     assert.equal(stats.statusCode, 400);
+  });
+
+  it('filters invoices by search query through the endpoint', async () => {
+    const { handlers } = makeApi();
+    await seedThroughApi(handlers);
+
+    const aliceRes = await call(
+      handlers.getInvoices as any,
+      createReq({ query: { sellerPublicKey: ALICE, q: 'INV' } })
+    );
+
+    assert.equal(aliceRes.statusCode, 200);
+    assert.equal(aliceRes.body.data.length, 2);
+
+    const noMatchRes = await call(
+      handlers.getInvoices as any,
+      createReq({ query: { sellerPublicKey: ALICE, q: 'NONEXISTENT' } })
+    );
+
+    assert.equal(noMatchRes.statusCode, 200);
+    assert.equal(noMatchRes.body.data.length, 0);
+  });
+
+  it('endpoint never leaks another seller invoices when searching', async () => {
+    const { handlers } = makeApi();
+    await seedThroughApi(handlers);
+
+    const bobRes = await call(
+      handlers.getInvoices as any,
+      createReq({ query: { sellerPublicKey: BOB } })
+    );
+    const bobMemo = bobRes.body.data[0].memo;
+
+    const aliceRes = await call(
+      handlers.getInvoices as any,
+      createReq({ query: { sellerPublicKey: ALICE, q: bobMemo } })
+    );
+
+    assert.equal(aliceRes.statusCode, 200);
+    assert.ok(aliceRes.body.data.every((row: any) => row.sellerPublicKey === ALICE));
+    assert.ok(!aliceRes.body.data.some((row: any) => row.id === bobRes.body.data[0].id));
   });
 });

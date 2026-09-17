@@ -230,7 +230,8 @@ export class InvoiceService {
     sellerPublicKey: string,
     status?: string,
     limit: number = 50,
-    offset: number = 0
+    offset: number = 0,
+    q?: string
   ): Promise<Invoice[]> {
     if (!sellerPublicKey) {
       throw new Error('Seller public key is required');
@@ -242,8 +243,14 @@ export class InvoiceService {
     const params: any[] = [sellerPublicKey];
 
     if (status) {
-      query += ' AND status = $2';
       params.push(status);
+      query += ` AND status = $${params.length}`;
+    }
+
+    if (q && q.trim()) {
+      params.push(`%${q.trim()}%`);
+      const searchParamIndex = params.length;
+      query += ` AND (memo ILIKE $${searchParamIndex} OR id::text ILIKE $${searchParamIndex} OR customer_name ILIKE $${searchParamIndex} OR description ILIKE $${searchParamIndex})`;
     }
 
     query += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);

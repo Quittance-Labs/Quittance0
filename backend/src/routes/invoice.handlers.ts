@@ -188,7 +188,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
     async getInvoices(req: Request, res: Response) {
       try {
-        const { status, sellerPublicKey } = req.query;
+        const { status, sellerPublicKey, q } = req.query;
 
         if (!sellerPublicKey) {
           return sendFailure(res, 400, 'sellerPublicKey query parameter is required');
@@ -200,12 +200,14 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
         const limit = toPositiveInt(req.query.limit, 50);
         const offset = toPositiveInt(req.query.offset, 0);
+        const searchQuery = typeof q === 'string' && q.trim() ? q.trim() : undefined;
 
         const invoices = await storage.getInvoicesBySeller(
           sellerCheck.data,
           status as string | undefined,
           limit,
-          offset
+          offset,
+          searchQuery
         );
 
         sendSuccess(res, 200, invoices, {

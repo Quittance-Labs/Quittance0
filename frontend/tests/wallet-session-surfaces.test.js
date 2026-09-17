@@ -240,3 +240,71 @@ test('a typed create draft comes back after the form remounts', async () => {
     second.unmount();
   }
 });
+
+test('renders zero-invoice state when wallet has no invoices', async () => {
+  walletOnTestnet(ALICE);
+  primeFor([]);
+
+  const { container, unmount } = await render(React.createElement(bundle.DashboardPage));
+  try {
+    await settle();
+    assert.match(container.textContent, /No Invoices Yet/);
+    assert.match(container.textContent, /Create Invoice/);
+  } finally {
+    unmount();
+  }
+});
+
+test('renders status filtered-empty state when no invoices match filter', async () => {
+  walletOnTestnet(ALICE);
+  primeFor([invoice('inv_alice', ALICE, 11.11)]);
+
+  const { container, unmount } = await render(React.createElement(bundle.DashboardPage));
+  try {
+    await settle();
+    assert.match(container.textContent, /11\.11/);
+
+    bundle.setResponse('/invoices', { data: [] });
+    const paidButton = Array.from(container.querySelectorAll('button')).find(
+      (btn) => btn.textContent.includes('Paid')
+    );
+    assert.ok(paidButton, 'Paid filter button found');
+    paidButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    assert.match(container.textContent, /No Paid Invoices/);
+    assert.match(container.textContent, /Show All Invoices/);
+  } finally {
+    unmount();
+  }
+});
+
+test('renders search filtered-empty state when search produces no matches', async () => {
+  walletOnTestnet(ALICE);
+  primeFor([invoice('inv_alice', ALICE, 11.11)]);
+
+  const { container, unmount } = await render(React.createElement(bundle.DashboardPage));
+  try {
+    await settle();
+    assert.match(container.textContent, /11\.11/);
+
+    const searchInput =
+      container.querySelector('input[type="text"]') ||
+      container.querySelector('input[placeholder*="Search"]');
+    assert.ok(searchInput, 'search input exists');
+
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      'value'
+    ).set;
+    setter.call(searchInput, 'NO_MATCH_XYZ');
+    searchInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+    searchInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await settle();
+
+    assert.match(container.textContent, /No Matching Invoices/);
+    assert.match(container.textContent, /Clear Search/);
+  } finally {
+    unmount();
+  }
+});

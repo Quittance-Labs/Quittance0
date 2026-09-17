@@ -434,20 +434,29 @@ export default function DashboardPage() {
               <div className="card text-center py-12">
                 <FileText className="w-16 h-16 text-gray-500 mx-auto mb-4" aria-hidden="true" />
                 <h3 className="text-xl font-semibold text-gray-700 mb-2">
-                  {searchQuery
-                    ? 'No Matching Invoices'
-                    : hasAnyInvoices
-                      ? `No ${filter === 'all' ? '' : `${filter} `}Invoices`
-                      : 'No Invoices Yet'}
+                  {!hasAnyInvoices
+                    ? 'No Invoices Yet'
+                    : searchQuery
+                      ? 'No Matching Invoices'
+                      : filter !== 'all'
+                        ? `No ${statusText(filter).label} Invoices`
+                        : 'No Invoices Yet'}
                 </h3>
                 <p className="text-gray-600 mb-6">
-                  {searchQuery
-                    ? 'Try a different search term or clear your search.'
-                    : hasAnyInvoices
-                      ? 'Choose another status to see your other invoices.'
-                      : dashboardEmptyMessage(true)}
+                  {!hasAnyInvoices
+                    ? dashboardEmptyMessage(true)
+                    : searchQuery
+                      ? 'Try a different search term or clear your search.'
+                      : filter !== 'all'
+                        ? 'Choose another status to see your other invoices.'
+                        : dashboardEmptyMessage(true)}
                 </p>
-                {searchQuery ? (
+                {!hasAnyInvoices || (filter === 'all' && !searchQuery) ? (
+                  <Link href="/" className="btn btn-primary inline-flex items-center gap-2">
+                    <Plus className="w-5 h-5" aria-hidden="true" />
+                    Create Invoice
+                  </Link>
+                ) : searchQuery ? (
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
@@ -455,7 +464,7 @@ export default function DashboardPage() {
                   >
                     Clear Search
                   </button>
-                ) : hasAnyInvoices ? (
+                ) : (
                   <button
                     type="button"
                     onClick={() => setFilter('all')}
@@ -463,11 +472,6 @@ export default function DashboardPage() {
                   >
                     Show All Invoices
                   </button>
-                ) : (
-                  <Link href="/" className="btn btn-primary inline-flex items-center gap-2">
-                    <Plus className="w-5 h-5" aria-hidden="true" />
-                    Create Invoice
-                  </Link>
                 )}
               </div>
             ) : (
