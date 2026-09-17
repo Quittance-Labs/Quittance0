@@ -185,3 +185,58 @@ test('a rejected verify keeps the canonical message across every status', () => 
     );
   }
 });
+
+const {
+  SESSION_STATES,
+  isTerminalSessionStatus,
+  isSessionBusy,
+  isSessionResult,
+  shouldSessionPoll,
+  describeSessionState,
+} = require('../lib/payment-session');
+
+const ALL_SESSION_MODES = [
+  SESSION_STATES.LOADING,
+  SESSION_STATES.READY,
+  SESSION_STATES.PAYING,
+  SESSION_STATES.VERIFYING,
+  SESSION_STATES.PAID,
+  SESSION_STATES.REJECTED,
+  SESSION_STATES.UNAVAILABLE,
+];
+
+test('payment session status matrix accurately partitions all 7 modes', () => {
+  const pendingInv = { status: 'PENDING', expiresAt: '2099-01-01T00:00:00.000Z' };
+
+  for (const mode of ALL_SESSION_MODES) {
+    const isBusy = isSessionBusy(mode);
+    const isResult = isSessionResult(mode);
+    const isTerminal = isTerminalSessionStatus(mode);
+
+    assert.equal(isBusy, mode === 'paying' || mode === 'verifying');
+    assert.equal(isResult, mode === 'paid' || mode === 'rejected' || mode === 'unavailable');
+    assert.equal(isTerminal, mode === 'paid' || mode === 'unavailable');
+
+    const shouldPoll = shouldSessionPoll({ invoice: pendingInv, status: mode });
+    assert.equal(shouldPoll, !isTerminal);
+  }
+});
+
+test('every session mode produces distinct, descriptive announcements for assistive tech', () => {
+  const announcements = ALL_SESSION_MODES.map((mode) => {
+    return describeSessionState({
+      status: mode,
+      error: mode === 'rejected' ? 'Memo mismatch' : undefined,
+    });
+  });
+
+  for (const [index, mode] of ALL_SESSION_MODES.entries()) {
+    if (mode === SESSION_STATES.READY) {
+      assert.equal(announcements[index], '');
+    } else {
+      assert.ok(announcements[index].length > 10, `${mode} announcement is too terse`);
+      assert.ok(announcements[index].endsWith('.'), `${mode} announcement must end in period`);
+    }
+  }
+});
+

@@ -99,3 +99,17 @@ export function isBusyState(state?: PaymentState | null): boolean;
 export function isResultState(state?: PaymentState | null): boolean;
 export function paymentStateKind(state?: PaymentState | null): 'status' | 'error';
 export function describePaymentState(state?: PaymentState | null): string;
+
+export {
+  SESSION_STATES,
+  TERMINAL_SESSION_STATUSES,
+  isTerminalSessionStatus,
+  deriveSessionStatus,
+  initialSessionState,
+  sessionReducer,
+  isSessionBusy,
+  isSessionResult,
+  shouldSessionPoll,
+  describeSessionState,
+} from './payment-session';
+

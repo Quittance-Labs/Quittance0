@@ -14,10 +14,9 @@ import { toast } from 'sonner';
 import { Wallet, Loader2 } from 'lucide-react';
 import { invoiceApi } from '@/lib/api';
 import { showFreighterInstallPrompt, showFreighterWrongNetworkPrompt } from '@/components/FreighterInstallPrompt';
-import { describeVerifyError, normalizePayerDetails } from '@/lib/payment-page-state';
-import { resolveVerificationError } from '@/lib/verification';
 import { useWalletStore } from '@/lib/store';
 import { walletSessionGate } from '@/lib/wallet-session';
+import { executeFreighterPayment } from '@/lib/pay-freighter-action';
 
 interface PaymentButtonProps {
   destination: string;
@@ -38,6 +37,9 @@ interface PaymentButtonProps {
 
 const PAY_TOAST_ID = 'payment-flow';
 
+/**
+ * Interactive button triggering the Freighter wallet payment flow.
+ */
 export default function PaymentButton({
   destination,
   amount,
@@ -54,131 +56,81 @@ export default function PaymentButton({
 }: PaymentButtonProps) {
   const [loading, setLoading] = useState(false);
   const { publicKey, connected, network, freighterAvailable } = useWalletStore();
-  // Same session, same gate as the create form and the dashboard: a mismatch
-  // blocks all three from one place (issue #442).
   const gate = walletSessionGate(
     { freighterAvailable, connected, publicKey, network },
     EXPECTED_WALLET_NETWORK
   );
 
   const handlePayment = async () => {
-    if (!gate.ready) {
-      showFreighterInstallPrompt(gate);
-      onError?.(gate.message);
-      return;
-    }
-
-    if (invoiceStatus !== 'PENDING') {
-      const message = invoiceStatus === 'EXPIRED'
-        ? 'This invoice has expired and cannot be paid'
-        : invoiceStatus === 'CANCELLED'
-        ? 'This invoice was cancelled by the seller and cannot be paid'
-        : 'This invoice is not available for payment';
-      toast.error(message);
-      onError?.(message);
-      return;
-    }
-
-    // Payer details are validated by the shared state module, so the button,
-    // the page and the tests all agree on what a valid email is.
-    const payer = normalizePayerDetails({ payerName, payerEmail });
-    if (!payer.ok) {
-      toast.error(payer.error);
-      onError?.(payer.error);
-      return;
-    }
-
     setLoading(true);
-    onStart?.();
 
-    try {
-      const freighterInstalled = await checkWalletConnection();
-      if (!freighterInstalled) {
-        showFreighterInstallPrompt();
-        onError?.('Freighter is not installed');
-        return;
-      }
-
-      const allowed = await requestWalletAccess();
-      if (!allowed) {
-        toast.error('Freighter access was denied');
-        onError?.('Freighter access was denied');
-        return;
-      }
-
-      const netDetails = await getFreighterNetwork();
-      const wrong = isWrongNetwork(netDetails?.networkPassphrase || netDetails?.network);
-      if (wrong) {
-        showFreighterWrongNetworkPrompt(NETWORK_DISPLAY_NAME);
-        const wrongMsg = `Wallet is connected to the wrong network. Please switch to ${NETWORK_DISPLAY_NAME} in Freighter.`;
-        toast.error(wrongMsg);
-        onError?.(wrongMsg);
-        return;
-      }
-
-      toast.loading('Confirm in wallet...', { id: PAY_TOAST_ID });
-      const txHash = await sendPayment(destination, amount, memo, assetCode, assetIssuer);
-
-      if (invoiceId) {
-        toast.loading('Verifying payment...', { id: PAY_TOAST_ID });
-        try {
-          await invoiceApi.verify(invoiceId, txHash, payer.value);
+    await executeFreighterPayment({
+      destination,
+      amount,
+      memo,
+      assetCode,
+      assetIssuer,
+      invoiceId,
+      invoiceStatus,
+      payerName,
+      payerEmail,
+      walletGate: gate,
+      checkConnectionFn: checkWalletConnection,
+      requestAccessFn: requestWalletAccess,
+      getNetworkFn: getFreighterNetwork,
+      isWrongNetworkFn: isWrongNetwork,
+      sendPaymentFn: sendPayment,
+      verifyFn: invoiceApi.verify,
+      onStart: () => {
+        onStart?.();
+        toast.loading('Confirm in wallet...', { id: PAY_TOAST_ID });
+      },
+      onSent: () => {
+        if (invoiceId) {
+          toast.loading('Verifying payment...', { id: PAY_TOAST_ID });
+        }
+      },
+      onSuccess: (txHash) => {
+        if (invoiceId) {
           toast.success('Payment verified', {
             id: PAY_TOAST_ID,
             description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
           });
-        } catch (error) {
-          // The payment is on the ledger even though verification did not
-          // complete, so this is a warning and the flow still reports success.
-          console.error('Verification failed:', error);
-          // Surface the shared rejection message rather than a generic warning.
-          toast.warning('Payment sent but verification failed', {
+        } else {
+          toast.success('Payment successful', {
             id: PAY_TOAST_ID,
-            description: resolveVerificationError(
-              error,
-              'Refresh the page or wait for status to update'
-            ),
+            description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
           });
         }
-      } else {
-        toast.success('Payment successful', {
+        onSuccess?.(txHash);
+      },
+      onError: (title, description) => {
+        if (title === gate.message) {
+          showFreighterInstallPrompt(gate);
+        } else if (title === 'Freighter is not installed') {
+          showFreighterInstallPrompt();
+        } else if (title === 'Wallet is connected to the wrong network') {
+          showFreighterWrongNetworkPrompt(NETWORK_DISPLAY_NAME);
+        }
+        toast.error(title, {
           id: PAY_TOAST_ID,
-          description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
+          description,
+          duration: description?.includes('trustline') ? 10000 : undefined,
         });
-      }
+        onError?.(title);
+      },
+      onWarning: (warning) => {
+        toast.warning('Payment sent but verification failed', {
+          id: PAY_TOAST_ID,
+          description: warning || 'Refresh the page or wait for status to update',
+        });
+      },
+    });
 
-      onSuccess?.(txHash);
-    } catch (error: any) {
-      const missingTrustline =
-        assetCode !== 'XLM' && (
-          error.message?.toLowerCase().includes('trustline') ||
-          error.message?.toLowerCase().includes('op_no_trust')
-        );
-      const title = missingTrustline ? `${assetCode} trustline required` : 'Payment failed';
-      toast.error(title, {
-        id: PAY_TOAST_ID,
-        description: missingTrustline
-          ? `Please add a trustline for ${assetCode} in your wallet before paying.`
-          : (error.message || 'Try again'),
-        duration: missingTrustline ? 10000 : undefined,
-      });
-      onError?.(title);
-    } finally {
-      setLoading(false);
-    }
+    setLoading(false);
   };
 
   return (
-    /*
-     * The accessible name spells out the amount and asset (issue #289). "Pay
-     * with Freighter" on its own does not say what is about to leave the
-     * payer's wallet, and the amount lives in a separate panel rendered with
-     * `bg-clip-text`, so a screen-reader user confirming a payment had no way
-     * to hear the figure from the control itself.
-     *
-     * `aria-busy` reports the in-flight attempt; the label change to
-     * "Processing..." covers the visual side.
-     */
     <button
       type="button"
       onClick={handlePayment}

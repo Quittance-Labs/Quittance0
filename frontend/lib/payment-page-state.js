@@ -33,13 +33,23 @@ const PAY_STATES = Object.freeze({
   EXPIRED: 'expired',
 });
 
+const {
+  SESSION_STATES,
+  TERMINAL_SESSION_STATUSES,
+  isTerminalSessionStatus,
+  deriveSessionStatus,
+  initialSessionState,
+  sessionReducer,
+  isSessionBusy,
+  isSessionResult,
+  shouldSessionPoll,
+  describeSessionState,
+} = require('./payment-session');
+
 const TERMINAL_STATES = Object.freeze([PAY_STATES.PAID, PAY_STATES.EXPIRED]);
 const { isTerminalPayState } = require('./pay-terminal-guard.ts');
 const { effectiveInvoiceStatus, hasInvoiceExpired } = require('./invoice-lifecycle');
 const { walletSessionGate } = require('./wallet-session');
-// The canonical code -> message table. describeVerifyError resolves the
-// backend's stable rejection code through it, so a payer reads the same
-// sentence here as on every other surface.
 const { messageForCode } = require('./verification.js');
 
 const asInvoice = (statusOrInvoice) =>
@@ -329,7 +339,10 @@ function describePaymentState(state) {
 module.exports = {
   PAY_STATES,
   TERMINAL_STATES,
+  SESSION_STATES,
+  TERMINAL_SESSION_STATUSES,
   isTerminalPayState,
+  isTerminalSessionStatus,
   isExpiredInvoice,
   shouldShowPaymentControls,
   getPayPageView,
@@ -337,6 +350,13 @@ module.exports = {
   stateForStatus,
   initialPaymentState,
   paymentReducer,
+  deriveSessionStatus,
+  initialSessionState,
+  sessionReducer,
+  isSessionBusy,
+  isSessionResult,
+  shouldSessionPoll,
+  describeSessionState,
   shouldPoll,
   normalizePayerDetails,
   describeVerifyError,

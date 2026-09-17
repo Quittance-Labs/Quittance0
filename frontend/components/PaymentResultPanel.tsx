@@ -14,7 +14,6 @@ import { PAYMENT_RESULT_ID, announcementPoliteness, announcementRole } from '@/l
 
 interface PaymentResultPanelProps {
   state: PaymentState;
-  /** Rendered under the announcement — the receipt, the retry hint, and so on. */
   children?: React.ReactNode;
 }
 
@@ -46,7 +45,6 @@ export default function PaymentResultPanel({ state, children }: PaymentResultPan
 
   useEffect(() => {
     if (!isResult) {
-      // Leaving the result states re-arms the panel for the next attempt.
       announcedResult.current = false;
       return;
     }
@@ -59,14 +57,20 @@ export default function PaymentResultPanel({ state, children }: PaymentResultPan
   if (!message) return null;
 
   const icon = (() => {
-    switch (state.status) {
+    switch (state.status as string) {
       case PAY_STATES.PAID:
+      case 'paid':
         return <CheckCircle className="w-6 h-6 text-green-700" aria-hidden="true" />;
       case PAY_STATES.EXPIRED:
+      case 'unavailable':
       case PAY_STATES.ERROR:
+      case 'rejected':
         return <XCircle className="w-6 h-6 text-red-700" aria-hidden="true" />;
       case PAY_STATES.VERIFYING:
+      case 'verifying':
       case PAY_STATES.PAYING:
+      case 'paying':
+      case 'loading':
         return <Loader2 className="w-6 h-6 text-teal-800 animate-spin" aria-hidden="true" />;
       default:
         return <Clock className="w-6 h-6 text-gray-700" aria-hidden="true" />;
@@ -77,7 +81,6 @@ export default function PaymentResultPanel({ state, children }: PaymentResultPan
     <div
       id={PAYMENT_RESULT_ID}
       ref={panelRef}
-      // -1 keeps the panel out of the tab order but allows the focus() above.
       tabIndex={-1}
       role={announcementRole(kind)}
       aria-live={announcementPoliteness(kind)}
