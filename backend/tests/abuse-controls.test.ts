@@ -98,8 +98,15 @@ describe('Abuse Controls Suite', () => {
     app.use(express.json({ limit: '16kb' }));
     app.use(express.urlencoded({ extended: true, limit: '16kb' }));
 
+    const mockStellar = {
+      getTransaction: async () => {
+        throw new Error('Transaction not found');
+      },
+    };
+
     const router = createInvoiceRouter({
       storage: invoiceStorage,
+      stellar: mockStellar as any,
       enableRateLimiting: true,
       enableConcurrencyLock: true,
       enableCeilingCheck: true,

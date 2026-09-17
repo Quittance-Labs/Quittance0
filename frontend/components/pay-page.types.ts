@@ -1,33 +1,7 @@
-export interface PayPageInvoice {
-  [key: string]: unknown;
-  id: string;
-  amount: number;
-  assetCode: string;
-  assetIssuer?: string;
-  description?: string;
-  customerName?: string;
-  customerEmail?: string;
-  sellerPublicKey: string;
-  sellerName?: string;
-  sellerEmail?: string;
-  memo: string;
-  status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
-  createdAt: string;
-  expiresAt: string;
-  paidAt?: string;
-  cancelledAt?: string;
-  settledAt?: string;
-  settlementContext?: 'ON_TIME' | 'AFTER_EXPIRY' | 'AFTER_CANCEL';
-  priorStatus?: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
-  latePaymentWarningCode?: 'PAYMENT_RECEIVED_AFTER_EXPIRY' | 'PAYMENT_RECEIVED_AFTER_CANCEL';
-  paymentTxHash?: string;
-  payerName?: string;
-  payerEmail?: string;
-  payerPublicKey?: string;
-}
+import type { InvoiceDto, PaymentInfoResult } from '../../shared/invoice-contract';
 
-export interface PayPagePaymentInfo {
-  stellarQrCode?: string;
-  paymentUrl?: string;
-  statusPollingIntervalMs?: number;
-}
+/** Invoice representation used across payment page UI components. */
+export type PayPageInvoice = InvoiceDto;
+
+export type PayPagePaymentInfo = PaymentInfoResult;
+

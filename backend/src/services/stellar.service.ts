@@ -105,7 +105,7 @@ class StellarService {
         operations: operations.records,
       };
     } catch (error: any) {
-      console.error('Error fetching transaction:', error);
+      console.error('Error fetching transaction:', error?.message || error);
       throw new Error(`Transaction not found: ${error.message}`);
     }
   }

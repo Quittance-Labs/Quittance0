@@ -55,32 +55,9 @@ export function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => HTML_ESCAPE_CHARACTERS[character]);
 }
 
-interface Invoice {
-  id: string;
-  amount: number;
-  assetCode: string;
-  assetIssuer?: string;
-  description?: string;
-  customerName?: string;
-  customerEmail?: string;
-  sellerName?: string;
-  sellerEmail?: string;
-  payerName?: string;
-  payerEmail?: string;
-  status: string;
-  createdAt: string;
-  expiresAt: string;
-  paidAt?: string;
-  cancelledAt?: string;
-  settledAt?: string;
-  settlementContext?: 'ON_TIME' | 'AFTER_EXPIRY' | 'AFTER_CANCEL';
-  priorStatus?: string;
-  latePaymentWarningCode?: 'PAYMENT_RECEIVED_AFTER_EXPIRY' | 'PAYMENT_RECEIVED_AFTER_CANCEL';
-  memo: string;
-  sellerPublicKey: string;
-  payerPublicKey?: string;
-  paymentTxHash?: string;
-}
+import type { InvoiceDto } from '../../shared/invoice';
+
+type Invoice = InvoiceDto;
 
 function latePaymentWarning(invoice: Invoice): { title: string; body: string } | null {
   if (invoice.latePaymentWarningCode === 'PAYMENT_RECEIVED_AFTER_CANCEL') {

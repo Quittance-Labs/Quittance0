@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { invoiceApi } from '@/lib/api';
+import type { InvoiceDto, InvoiceStatsDto } from '../../../shared/invoice-contract';
 import InvoiceCard from '@/components/InvoiceCard';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
@@ -28,6 +29,7 @@ import {
   searchInvoices,
   sortInvoices,
   DashboardSortBy,
+  OwnedDashboardData,
 } from '@/lib/dashboard-history';
 import ApiErrorState from '@/components/ApiErrorState';
 // Shared resolver so the dashboard banner and invoice cards map stable
@@ -52,9 +54,7 @@ export default function DashboardPage() {
   // The key is a string, so the clearing effect below depends on the account
   // rather than on a fresh session object on every render.
   const sessionKey = walletSessionKey(session);
-  // Loaded data is tagged with the wallet it belongs to, so a response for a
-  // previous seller can never be rendered under the current one.
-  const [loaded, setLoaded] = useState<{ owner: string | null; invoices: any[]; stats: any }>({
+  const [loaded, setLoaded] = useState<OwnedDashboardData>({
     owner: null,
     invoices: [],
     stats: null,
@@ -120,10 +120,14 @@ export default function DashboardPage() {
         ]);
 
         if (!active) return;
+        const rawStats = statsResult?.data;
+        const normalizedStats: InvoiceStatsDto | null = rawStats
+          ? (Array.isArray(rawStats) ? rawStats[0] : rawStats)
+          : null;
         setLoaded({
           owner: publicKey,
           invoices: invoicesResult.data,
-          stats: statsResult.data[0] || {},
+          stats: normalizedStats,
         });
       } catch (error) {
         if (!active) return;

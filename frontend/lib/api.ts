@@ -43,70 +43,103 @@ api.interceptors.response.use(
   }
 );
 
+import type {
+  CancelInvoiceResponse,
+  CreateInvoiceRequest,
+  CreateInvoiceResponse,
+  GetInvoiceResponse,
+  GetStatsResponse,
+  ListInvoicesQuery,
+  ListInvoicesResponse,
+  PaymentInfoResponse,
+  VerifyPaymentResponse,
+} from '../../shared/invoice-contract';
+import {
+  parseCancelInvoiceResponse,
+  parseCreateInvoiceResponse,
+  parseGetInvoiceResponse,
+  parseGetStatsResponse,
+  parseListInvoicesResponse,
+  parsePaymentInfoResponse,
+  parseVerifyPaymentResponse,
+} from '../../shared/invoice-contract';
+
 export const invoiceApi = {
-  create: async (data: {
-    amount: number;
-    assetCode?: string;
-    assetIssuer?: string;
-    description?: string;
-    customerName?: string;
-    customerEmail?: string;
-    expiresInDays: number;
-    sellerPublicKey?: string;
-    sellerName?: string;
-    sellerEmail?: string;
-    network?: string;
-  }) => {
+  create: async (data: CreateInvoiceRequest): Promise<CreateInvoiceResponse> => {
     const normalizedAssetCode = data.assetCode ? data.assetCode.toUpperCase() : 'XLM';
     const response = await api.post('/invoices', {
       ...data,
       assetCode: normalizedAssetCode,
     });
-    return response.data;
+    const parsed = parseCreateInvoiceResponse(response.data);
+    if (!parsed.success) {
+      throw new Error(`Create invoice contract parse failure: ${parsed.error}`);
+    }
+    return parsed.data;
   },
 
-  getById: async (id: string) => {
+  getById: async (id: string): Promise<GetInvoiceResponse> => {
     const response = await api.get(`/invoices/${id}`);
-    return response.data;
+    const parsed = parseGetInvoiceResponse(response.data);
+    if (!parsed.success) {
+      throw new Error(`Get invoice contract parse failure: ${parsed.error}`);
+    }
+    return parsed.data;
   },
 
-  // Invoice history is scoped to the connected Freighter wallet, so the seller
-  // key is required for list and stats calls.
-  getAll: async (params: {
-    sellerPublicKey: string;
-    status?: string;
-    limit?: number;
-    offset?: number;
-  }) => {
+  getAll: async (params: ListInvoicesQuery): Promise<ListInvoicesResponse> => {
     const response = await api.get('/invoices', { params });
-    return response.data;
+    const parsed = parseListInvoicesResponse(response.data);
+    if (!parsed.success) {
+      throw new Error(`List invoices contract parse failure: ${parsed.error}`);
+    }
+    return parsed.data;
   },
 
-  getPaymentInfo: async (id: string) => {
+  getPaymentInfo: async (id: string): Promise<PaymentInfoResponse> => {
     const response = await api.get(`/invoices/${id}/payment-info`);
-    return response.data;
+    const parsed = parsePaymentInfoResponse(response.data);
+    if (!parsed.success) {
+      throw new Error(`Payment info contract parse failure: ${parsed.error}`);
+    }
+    return parsed.data;
   },
 
-  cancel: async (id: string, sellerPublicKey?: string) => {
+  cancel: async (id: string, sellerPublicKey?: string): Promise<CancelInvoiceResponse> => {
     const response = await api.post(`/invoices/${id}/cancel`, { sellerPublicKey });
-    return response.data;
+    const parsed = parseCancelInvoiceResponse(response.data);
+    if (!parsed.success) {
+      throw new Error(`Cancel invoice contract parse failure: ${parsed.error}`);
+    }
+    return parsed.data;
   },
 
-  verify: async (id: string, txHash: string, payerInfo?: { payerName?: string; payerEmail?: string }) => {
+  verify: async (
+    id: string,
+    txHash: string,
+    payerInfo?: { payerName?: string; payerEmail?: string }
+  ): Promise<VerifyPaymentResponse> => {
     const response = await api.post(`/invoices/${id}/verify`, {
       txHash,
-      // Lets the server reject a payment submitted from the wrong wallet network.
       network: process.env.NEXT_PUBLIC_STELLAR_NETWORK,
-      ...payerInfo
+      ...payerInfo,
     });
-    return response.data;
+    const parsed = parseVerifyPaymentResponse(response.data);
+    if (!parsed.success) {
+      throw new Error(`Verify payment contract parse failure: ${parsed.error}`);
+    }
+    return parsed.data;
   },
 
-  getStats: async (sellerPublicKey: string) => {
+  getStats: async (sellerPublicKey: string): Promise<GetStatsResponse> => {
     const response = await api.get('/invoices/stats', {
       params: { sellerPublicKey },
     });
-    return response.data;
+    const parsed = parseGetStatsResponse(response.data);
+    if (!parsed.success) {
+      throw new Error(`Get stats contract parse failure: ${parsed.error}`);
+    }
+    return parsed.data;
   },
 };
 
