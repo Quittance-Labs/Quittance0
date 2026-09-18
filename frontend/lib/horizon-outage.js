@@ -39,10 +39,11 @@ function isHorizonOutageError(error) {
   if (error == null) return false;
 
   if (isApiUnavailableError(error)) return true;
+  if (Boolean(error.retryable)) return true;
   if (matchesNetworkText(error)) return true;
 
   const status = error.response?.status ?? error.status ?? error.statusCode;
-  if (typeof status === 'number' && (status >= 500 || status === 429)) {
+  if (typeof status === 'number' && (status >= 500 || status === 429 || status === 413)) {
     return true;
   }
 

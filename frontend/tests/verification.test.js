@@ -82,6 +82,38 @@ test('falls back to server text, then the error message, then a default', () => 
   assert.equal(resolveVerificationError({}, 'Try again'), 'Try again');
 });
 
+test('rate limiting and payload size responses preserve server error message and do not map to payment codes', () => {
+  const rateLimitError = {
+    response: {
+      status: 429,
+      data: { code: 'RATE_LIMIT_EXCEEDED', error: 'Verification rate limit exceeded. Please try again later.' },
+    },
+  };
+  assert.equal(
+    resolveVerificationError(rateLimitError),
+    'Verification rate limit exceeded. Please try again later.'
+  );
+
+  const payloadError = {
+    response: {
+      status: 413,
+      data: { code: 'PAYLOAD_TOO_LARGE', error: 'Payload too large: request body exceeds 16 kB limit' },
+    },
+  };
+  assert.equal(
+    resolveVerificationError(payloadError),
+    'Payload too large: request body exceeds 16 kB limit'
+  );
+
+  const ceilingError = {
+    response: {
+      status: 503,
+      data: { code: 'INVOICE_STORE_FULL', error: 'Invoice capacity reached' },
+    },
+  };
+  assert.equal(resolveVerificationError(ceilingError), 'Invoice capacity reached');
+});
+
 test('covers every rejection code with a message', () => {
   const codes = [
     'MISSING_TX_HASH',

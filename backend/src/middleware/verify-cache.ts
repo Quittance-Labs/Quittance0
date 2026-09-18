@@ -98,9 +98,20 @@ class VerificationCache {
       }
     }
   }
+
+  reset(): void {
+    this.memoryCache.clear();
+  }
 }
 
 const cache = new VerificationCache();
+
+/**
+ * Clear the verification cache state.
+ */
+export function resetVerificationCache(): void {
+  cache.reset();
+}
 
 /**
  * Middleware that checks if a verification request has already been processed.

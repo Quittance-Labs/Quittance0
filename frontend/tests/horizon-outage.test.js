@@ -17,6 +17,8 @@ test('treats transport and Horizon availability failures as outages', () => {
   assert.equal(isHorizonOutageError({ response: { status: 503 } }), true);
   assert.equal(isHorizonOutageError({ response: { status: 500 } }), true);
   assert.equal(isHorizonOutageError({ response: { status: 429 } }), true);
+  assert.equal(isHorizonOutageError({ response: { status: 413 } }), true);
+  assert.equal(isHorizonOutageError({ retryable: true }), true);
   assert.equal(isHorizonOutageError({ code: 'API_UNREACHABLE' }), true);
   assert.equal(
     isHorizonOutageError(new Error('Stellar Horizon is temporarily unreachable.')),

@@ -8,11 +8,13 @@ import {
   verifyConcurrencyLock,
 } from '../middleware/rate-limit';
 import { createInvoiceCeilingMiddleware } from '../middleware/invoice-ceiling';
+import { verifyCacheMiddleware } from '../middleware/verify-cache';
 
 export interface InvoiceRouterOptions extends InvoiceHandlerOptions {
   enableRateLimiting?: boolean;
   enableConcurrencyLock?: boolean;
   enableCeilingCheck?: boolean;
+  enableVerifyCache?: boolean;
   invoiceCeiling?: number;
 }
 
@@ -48,16 +50,20 @@ export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
       process.env.NODE_ENV === 'production' ||
       options.invoiceCeiling !== undefined);
 
+  const enableVerifyCache =
+    options.enableVerifyCache ??
+    (process.env.ENABLE_VERIFY_CACHE !== 'false');
+
   const createMiddlewares: RequestHandler[] = [];
+  if (enableRateLimiting) {
+    createMiddlewares.push(...createInvoiceRateLimiters());
+  }
   if (enableCeilingCheck && options.storage.countInvoices) {
     createMiddlewares.push(
       createInvoiceCeilingMiddleware(() => options.storage.countInvoices!(), {
         ceiling: options.invoiceCeiling,
       })
     );
-  }
-  if (enableRateLimiting) {
-    createMiddlewares.push(...createInvoiceRateLimiters());
   }
 
   router.post('/invoices', ...createMiddlewares, handlers.createInvoice);
@@ -100,11 +106,14 @@ export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
   router.post('/invoices/:id/cancel', ...cancelMiddlewares, handlers.cancelInvoice);
 
   const verifyMiddlewares: RequestHandler[] = [];
+  if (enableRateLimiting) {
+    verifyMiddlewares.push(...createVerifyRateLimiters());
+  }
   if (enableConcurrencyLock) {
     verifyMiddlewares.push(verifyConcurrencyLock());
   }
-  if (enableRateLimiting) {
-    verifyMiddlewares.push(...createVerifyRateLimiters());
+  if (enableVerifyCache) {
+    verifyMiddlewares.push(verifyCacheMiddleware);
   }
   router.post('/invoices/:id/verify', ...verifyMiddlewares, handlers.verifyPayment);
 

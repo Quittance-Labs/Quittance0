@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
+import { resetVerificationCache } from './verify-cache';
 
 export interface RateLimitOptions {
   windowMs: number;
@@ -140,24 +141,34 @@ export function createRateLimiter(
 export function createInvoiceRateLimiters(
   store: MemoryRateLimiterStore = defaultLimiterStore
 ): RequestHandler[] {
+  const windowMs = process.env.RATE_LIMIT_WINDOW_MS
+    ? parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10)
+    : 60_000;
+  const shortMax = process.env.RATE_LIMIT_INVOICE_CREATE_PER_MIN
+    ? parseInt(process.env.RATE_LIMIT_INVOICE_CREATE_PER_MIN, 10)
+    : 5;
+  const longMax = process.env.RATE_LIMIT_INVOICE_CREATE_PER_10MIN
+    ? parseInt(process.env.RATE_LIMIT_INVOICE_CREATE_PER_10MIN, 10)
+    : 10;
+
   const shortLimiter = createRateLimiter(
     {
-      windowMs: 60_000,
-      max: 5,
+      windowMs,
+      max: shortMax,
       keyGenerator: (req) => `create_invoice:short:${getClientIp(req)}`,
       code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Rate limit exceeded for invoice creation. Max 5 invoices per minute.',
+      message: `Rate limit exceeded for invoice creation. Max ${shortMax} invoices per minute.`,
     },
     store
   );
 
   const longLimiter = createRateLimiter(
     {
-      windowMs: 600_000,
-      max: 10,
+      windowMs: windowMs * 10,
+      max: longMax,
       keyGenerator: (req) => `create_invoice:long:${getClientIp(req)}`,
       code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Rate limit exceeded for invoice creation. Max 10 invoices per 10 minutes.',
+      message: `Rate limit exceeded for invoice creation. Max ${longMax} invoices per 10 minutes.`,
     },
     store
   );
@@ -172,24 +183,36 @@ export function createInvoiceRateLimiters(
 export function createVerifyRateLimiters(
   store: MemoryRateLimiterStore = defaultLimiterStore
 ): RequestHandler[] {
+  const windowMs = process.env.RATE_LIMIT_WINDOW_MS
+    ? parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10)
+    : 60_000;
+  const ipMax = process.env.RATE_LIMIT_VERIFY_PER_MIN_IP
+    ? parseInt(process.env.RATE_LIMIT_VERIFY_PER_MIN_IP, 10)
+    : 30;
+  const invoiceMax = process.env.VERIFY_INVOICE_LIMIT
+    ? parseInt(process.env.VERIFY_INVOICE_LIMIT, 10)
+    : (process.env.RATE_LIMIT_VERIFY_PER_MIN_INVOICE
+        ? parseInt(process.env.RATE_LIMIT_VERIFY_PER_MIN_INVOICE, 10)
+        : 10);
+
   const ipLimiter = createRateLimiter(
     {
-      windowMs: 60_000,
-      max: 30,
+      windowMs,
+      max: ipMax,
       keyGenerator: (req) => `verify_invoice:ip:${getClientIp(req)}`,
       code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Rate limit exceeded for verification. Max 30 requests per minute per IP.',
+      message: `Rate limit exceeded for verification. Max ${ipMax} requests per minute per IP.`,
     },
     store
   );
 
   const invoiceLimiter = createRateLimiter(
     {
-      windowMs: 60_000,
-      max: 10,
+      windowMs,
+      max: invoiceMax,
       keyGenerator: (req) => `verify_invoice:target:${req.params.id || 'unknown'}`,
       code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Rate limit exceeded for this invoice. Max 10 verification requests per minute per invoice.',
+      message: `Rate limit exceeded for this invoice. Max ${invoiceMax} verification requests per minute per invoice.`,
     },
     store
   );
@@ -206,8 +229,12 @@ export function createVerifyRateLimiters(
  * (VERIFY_RATE_LIMIT_EXCEEDED) rather than the router's generic one. It keeps
  * its own key space so the two counters cannot charge one request twice.
  */
-export const VERIFY_PER_INVOICE_LIMIT = 10;
-export const VERIFY_PER_INVOICE_WINDOW_MS = 60_000;
+export const VERIFY_PER_INVOICE_LIMIT = process.env.VERIFY_INVOICE_LIMIT
+  ? parseInt(process.env.VERIFY_INVOICE_LIMIT, 10)
+  : 10;
+export const VERIFY_PER_INVOICE_WINDOW_MS = process.env.RATE_LIMIT_WINDOW_MS
+  ? parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10)
+  : 60_000;
 
 export function checkInvoiceVerifyLimit(
   invoiceId: string,
@@ -307,4 +334,5 @@ export function verifyConcurrencyLock(): RequestHandler {
 export function resetRateLimiters(): void {
   defaultLimiterStore.reset();
   inFlightVerifications.clear();
+  resetVerificationCache();
 }

@@ -65,7 +65,7 @@ function resolveApiConfig(configuredUrl, nodeEnv = 'development') {
 function toApiError(error) {
   if (error instanceof ApiUnavailableError || error instanceof ApiRequestError) return error;
 
-  const status = error?.response?.status;
+  const status = error?.response?.status ?? error?.status;
   const responseData = error?.response?.data;
   const networkFailure =
     !error?.response ||
@@ -74,18 +74,18 @@ function toApiError(error) {
 
   if (networkFailure) return new ApiUnavailableError(OFFLINE_MESSAGE, error);
 
-  // A stable verification code wins: it maps to the canonical message shared
-  // with the pay page, so every banner reads the same rejection copy.
   const canonical = messageForCode(responseData?.code);
-  return new ApiRequestError(
-    canonical || responseData?.error || error?.message || 'Quittance API request failed.',
-    {
-      cause: error,
-      code: responseData?.code,
-      status,
-      retryable: status === 408 || status === 429,
-    }
-  );
+  const message =
+    status === 429 || status === 413
+      ? responseData?.error || canonical || error?.message || 'Quittance API request failed.'
+      : canonical || responseData?.error || error?.message || 'Quittance API request failed.';
+
+  return new ApiRequestError(message, {
+    cause: error,
+    code: responseData?.code,
+    status,
+    retryable: status === 408 || status === 429 || status === 413,
+  });
 }
 
 function isApiUnavailableError(error) {

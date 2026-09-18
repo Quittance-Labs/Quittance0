@@ -85,3 +85,31 @@ test('an unknown verification code falls back to the server error text', () => {
   assert.equal(apiErrorMessage(error), 'Server said no');
   assert.equal(apiErrorMessage(error, 'Fallback'), 'Server said no');
 });
+
+test('payload too large (413) is normalized as retryable and prioritizes server error message', () => {
+  const error = {
+    response: {
+      status: 413,
+      data: { code: 'PAYLOAD_TOO_LARGE', error: 'Payload too large: request body exceeds 16 kB limit' },
+    },
+  };
+  const normalized = toApiError(error);
+  assert.ok(normalized instanceof ApiRequestError);
+  assert.equal(normalized.code, 'PAYLOAD_TOO_LARGE');
+  assert.equal(normalized.retryable, true);
+  assert.equal(apiErrorMessage(error), 'Payload too large: request body exceeds 16 kB limit');
+});
+
+test('rate limit exceeded (429) returns retryable and prioritizes server message', () => {
+  const error = {
+    response: {
+      status: 429,
+      data: { code: 'RATE_LIMIT_EXCEEDED', error: 'Too many invoice creation requests. Please try again later.' },
+    },
+  };
+  const normalized = toApiError(error);
+  assert.ok(normalized instanceof ApiRequestError);
+  assert.equal(normalized.code, 'RATE_LIMIT_EXCEEDED');
+  assert.equal(normalized.retryable, true);
+  assert.equal(apiErrorMessage(error), 'Too many invoice creation requests. Please try again later.');
+});

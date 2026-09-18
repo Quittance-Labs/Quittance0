@@ -91,7 +91,12 @@ const messageForCode = (code) =>
  * two sides drift; falls back to the server text, then a generic message.
  */
 const resolveVerificationError = (error, fallback = 'Verification failed') => {
+  const status = error?.response?.status ?? error?.status;
   const data = (error && error.response && error.response.data) || {};
+
+  if (status === 429 || status === 413 || status === 503) {
+    return data.error || (error && error.message) || fallback;
+  }
 
   const canonical = messageForCode(data.code);
   if (canonical) {
