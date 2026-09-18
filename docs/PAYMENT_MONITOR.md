@@ -39,10 +39,11 @@ temporary file plus rename, which preserves the cursor across process restarts.
 This only makes the monitor position durable; invoices remain subject to the
 selected storage adapter's persistence guarantees.
 
-## Matching contract
+## Multi-invoice watch lifecycle and matching contract
 
-An incoming operation settles exactly one invoice selected by its unique memo.
-It then passes the shared verification contract:
+The payment monitor maintains an active watch registry for pending invoices. Invoices enter the registry when created as PENDING, and are unregistered once settled (PAID), cancelled (CANCELLED), or expired (EXPIRED).
+
+An incoming operation settles exactly one invoice selected by its unique memo. It then passes the shared verification contract:
 
 - destination equals the invoice seller account;
 - amount equals the invoice amount at seven decimal places;
@@ -50,11 +51,16 @@ It then passes the shared verification contract:
 - credit assets match both code and issuer;
 - invoice status is still PENDING.
 
-A partial amount is recorded as PARTIAL_PAYMENT and leaves the invoice pending.
-Other mismatches are recorded as PAYMENT_REJECTED. Both are handled records, so
-they advance the cursor and cannot block later valid payments.
+### One-transaction-to-one-invoice attribution
 
-## Failure matrix
+- A transaction hash can settle at most one invoice. If Horizon delivers a payment whose transaction hash was already claimed by another invoice, the monitor catches `PaymentClaimError`, logs an audit event `PAYMENT_REJECTED` (`TX_HASH_ALREADY_USED`), and prevents cross-attribution.
+- If Horizon delivers a payment for an invoice that is already `PAID`:
+  - If the incoming transaction hash matches `invoice.paymentTxHash`, the event is treated as an idempotent replay and safely skipped.
+  - If the incoming transaction hash differs, the payment is rejected with audit code `INVOICE_ALREADY_PAID`.
+
+A partial amount is recorded as PARTIAL_PAYMENT and leaves the invoice pending. Other mismatches are recorded as PAYMENT_REJECTED. Both are handled records, so they advance the cursor and cannot block later valid payments.
+
+## Failure matrix and restart safety
 
 | Failure | Cursor effect | Retry or operator signal | Invoice effect |
 | --- | --- | --- | --- |
@@ -62,15 +68,27 @@ they advance the cursor and cannot block later valid payments.
 | Invalid or partial Horizon page | unchanged from last complete record | same retry path | later records are not skipped |
 | Transaction lookup failure | stops before that record | same retry path | unchanged |
 | Database write failure | stops before that record | same retry path | unchanged or safely replayed |
-| Crash after PAID, before cursor save | old token replays once | next process resumes automatically | remains PAID |
+| Crash after PAID, before cursor save | old token replays once | next process resumes automatically; duplicate hash skipped | remains PAID |
 | Memo has no invoice | advances | no retry needed | unchanged |
 | Partial or wrong payment | advances after audit event | visible in payment_events | remains PENDING |
 | More than 1,000 queued operations | commits first bounded batch | next poll continues | no unbounded request |
+| Duplicate paging tokens / pages | deduplicated against committed cursor | advances normally | no duplicate processing |
 
-Operators can inspect GET /api/payment/monitor/status. The pay page continues
-its invoice-status polling and manual verification path while the backend
-monitor retries, so a Horizon outage does not leave the user without a recovery
-action.
+## Monitor status and lag visibility
+
+Operators can inspect `GET /api/payment/monitor/status`. The status response exposes:
+- `state`: `'stopped' | 'starting' | 'running' | 'retrying'`
+- `account`: monitored seller public key
+- `cursor`: durable committed paging token
+- `ledger`: latest processed ledger sequence number
+- `watchedCount`: number of pending invoices actively watched
+- `lastPollAt`: ISO timestamp of the most recent poll attempt
+- `lastSuccessAt`: ISO timestamp of the most recent successful poll
+- `processedTotal`: cumulative count of processed Horizon payment records
+- `lagSeconds`: elapsed seconds since the last successful poll
+- `consecutiveFailures` & `nextRetryAt`: backoff state during Horizon interruptions
+
+The pay page continues its invoice-status polling and manual verification path while the backend monitor retries, so a Horizon outage does not leave the user without a recovery action.
 
 ## Testnet restart evidence
 
