@@ -96,11 +96,21 @@ export function cutoverDrainMode(env: RuntimeEnvironment = process.env): boolean
   return env.CUTOVER_DRAIN_MODE === 'true' || env.DRAIN_MODE === 'true';
 }
 
+/**
+ * Resolves the invoice storage mode from environment configuration.
+ *
+ * Checks INVOICE_STORAGE and STORAGE_MODE flags first. If neither is set,
+ * falls back to postgres when DATABASE_URL is defined, or memory otherwise.
+ *
+ * @param env - Environment variables map. Defaults to process.env.
+ * @returns The resolved storage mode identifier ('memory' | 'postgres').
+ */
 export function configuredStorageMode(
   env: RuntimeEnvironment = process.env
 ): 'memory' | 'postgres' {
-  if (env.INVOICE_STORAGE === 'memory' || env.INVOICE_STORAGE === 'postgres') {
-    return env.INVOICE_STORAGE;
+  const mode = env.INVOICE_STORAGE || env.STORAGE_MODE;
+  if (mode === 'memory' || mode === 'postgres') {
+    return mode;
   }
   return env.DATABASE_URL ? 'postgres' : 'memory';
 }

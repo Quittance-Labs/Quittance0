@@ -12,8 +12,8 @@ export class MemoryInvoiceStorage implements InvoiceStorage {
     return this.service.createInvoice(input);
   }
 
-  async getInvoiceById(id: string): Promise<StoredInvoice | null> {
-    const invoice = await this.service.getInvoiceById(id);
+  async getInvoiceById(id: string, sellerPublicKey?: string): Promise<StoredInvoice | null> {
+    const invoice = await this.service.getInvoiceById(id, sellerPublicKey);
     return invoice ?? null;
   }
 

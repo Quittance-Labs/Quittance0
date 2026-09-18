@@ -61,10 +61,16 @@ class MemoryStorage {
     return invoice;
   }
 
-  // Get invoice by ID
-  getInvoiceById(id: string): Invoice | undefined {
+  getInvoiceById(id: string, sellerPublicKey?: string): Invoice | undefined {
     this.markExpiredInvoices();
-    return this.invoices.get(id);
+    const invoice = this.invoices.get(id);
+    if (!invoice) {
+      return undefined;
+    }
+    if (sellerPublicKey && invoice.sellerPublicKey !== sellerPublicKey) {
+      return undefined;
+    }
+    return invoice;
   }
 
   // Get invoice by memo

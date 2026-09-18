@@ -67,7 +67,7 @@ export interface InvoiceStorage {
   readonly mode: string;
 
   createInvoice(input: CreateInvoiceInput): Promise<StoredInvoice>;
-  getInvoiceById(id: string): Promise<StoredInvoice | null>;
+  getInvoiceById(id: string, sellerPublicKey?: string): Promise<StoredInvoice | null>;
   getInvoicesBySeller(
     sellerPublicKey: string,
     status?: string,

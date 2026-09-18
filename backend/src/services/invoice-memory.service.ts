@@ -76,8 +76,8 @@ export class InvoiceMemoryService {
     return candidate;
   }
 
-  async getInvoiceById(id: string): Promise<StoredInvoice | null> {
-    const invoice = this.storage.getInvoiceById(id);
+  async getInvoiceById(id: string, sellerPublicKey?: string): Promise<StoredInvoice | null> {
+    const invoice = this.storage.getInvoiceById(id, sellerPublicKey);
     return invoice ?? null;
   }
 

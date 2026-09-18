@@ -127,6 +127,7 @@ CREATE INDEX IF NOT EXISTS idx_invoices_seller_created_at ON invoices(seller_pub
 CREATE INDEX IF NOT EXISTS idx_invoices_pending_expiry ON invoices(expires_at) WHERE status = 'PENDING';
 CREATE INDEX IF NOT EXISTS idx_transactions_tx_hash ON transactions(tx_hash);
 CREATE INDEX IF NOT EXISTS idx_transactions_invoice_id ON transactions(invoice_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_payment_tx_hash ON invoices(payment_tx_hash) WHERE payment_tx_hash IS NOT NULL;
 
 -- Sample view for invoice statistics
 CREATE OR REPLACE VIEW invoice_stats AS

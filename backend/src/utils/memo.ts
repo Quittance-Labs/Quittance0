@@ -1,7 +1,9 @@
-import { nanoid } from 'nanoid';
+import { customAlphabet, nanoid } from 'nanoid';
 import { hasInvoiceMemoPrefix } from './memo-prefix-check';
 
 export { hasInvoiceMemoPrefix } from './memo-prefix-check';
+
+const generateMemoSuffix = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', 8);
 
 /**
  * Generate a unique memo for invoice
@@ -9,7 +11,7 @@ export { hasInvoiceMemoPrefix } from './memo-prefix-check';
  */
 export const generateInvoiceMemo = (): string => {
   const timestamp = Date.now().toString(36).toUpperCase();
-  const random = nanoid(8).toUpperCase();
+  const random = generateMemoSuffix();
   return `INV-${timestamp}-${random}`;
 };
 

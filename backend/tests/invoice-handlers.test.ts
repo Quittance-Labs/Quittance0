@@ -103,7 +103,10 @@ function createFakePostgres() {
     }
 
     if (sql.startsWith('SELECT * FROM invoices WHERE id =')) {
-      const found = rows.filter(row => row.id === params[0]);
+      let found = rows.filter(row => row.id === params[0]);
+      if (sql.includes('AND seller_public_key =')) {
+        found = found.filter(row => row.seller_public_key === params[1]);
+      }
       return { rows: found.map(clone), rowCount: found.length };
     }
 

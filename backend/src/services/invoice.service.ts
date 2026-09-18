@@ -105,12 +105,21 @@ export class InvoiceService {
   }
 
   /**
-   * Get invoice by ID
+   * Retrieves an invoice by ID, optionally enforcing seller wallet isolation.
+   *
+   * @param id - Public invoice ID.
+   * @param sellerPublicKey - Optional seller public key to restrict access.
+   * @returns The invoice if found and authorized, or null otherwise.
    */
-  async getInvoiceById(id: string): Promise<Invoice | null> {
+  async getInvoiceById(id: string, sellerPublicKey?: string): Promise<Invoice | null> {
     await this.markExpiredInvoices();
-    const query = 'SELECT * FROM invoices WHERE id = $1';
-    const result = await this.db.query(query, [id]);
+    let query = 'SELECT * FROM invoices WHERE id = $1';
+    const params: any[] = [id];
+    if (sellerPublicKey) {
+      query += ' AND seller_public_key = $2';
+      params.push(sellerPublicKey);
+    }
+    const result = await this.db.query(query, params);
 
     if (result.rows.length === 0) {
       return null;

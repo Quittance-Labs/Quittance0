@@ -1,12 +1,15 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import routes from './routes';
+import path from 'path';
+import routes, { resolveDefaultStorage } from './routes';
 import { pool } from './config/database';
 import { validateStellarConfig, SELLER_PUBLIC_KEY } from './config/stellar';
 import paymentMonitorService from './services/payment-monitor.service';
-import { configuredFrontendOrigins, corsOptions } from './config/runtime';
-import postgresInvoiceStorage from './storage/postgres-invoice-storage';
+import invoiceService from './services/invoice.service';
+import invoiceMemoryService from './services/invoice-memory.service';
+import { FilePaymentMonitorCheckpointStore } from './services/payment-monitor-checkpoint';
+import { configuredFrontendOrigins, corsOptions, configuredStorageMode } from './config/runtime';
 
 dotenv.config();
 
@@ -26,11 +29,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.use('/api', routes);
 
 app.get('/', (req: Request, res: Response) => {
+  const storage = resolveDefaultStorage();
   res.json({
     name: 'Quittance API',
     version: '1.0.0',
     status: 'running',
-    mode: postgresInvoiceStorage.mode,
+    mode: storage.mode,
     documentation: '/api/health',
   });
 });
@@ -62,14 +66,40 @@ app.use((req: Request, res: Response) => {
 async function initialize() {
   try {
     console.log('Starting server...');
-    await pool.query('SELECT NOW()');
-    console.log('Database connected');
+    const mode = configuredStorageMode();
 
-    if (SELLER_PUBLIC_KEY) {
-      validateStellarConfig();
-      paymentMonitorService.start();
+    if (mode === 'postgres') {
+      await pool.query('SELECT NOW()');
+      console.log('Database connected');
+
+      if (SELLER_PUBLIC_KEY) {
+        validateStellarConfig();
+        paymentMonitorService.configure({
+          invoices: invoiceService,
+          database: pool,
+        });
+        paymentMonitorService.start();
+      } else {
+        console.log('Wallet-scoped mode: no SELLER_PUBLIC_KEY, payment monitor disabled');
+      }
     } else {
-      console.log('Wallet-scoped mode: no SELLER_PUBLIC_KEY, payment monitor disabled');
+      console.log('In-memory mode: database connection bypassed');
+
+      if (SELLER_PUBLIC_KEY) {
+        validateStellarConfig();
+        paymentMonitorService.configure({
+          invoices: invoiceMemoryService,
+          database: undefined,
+          checkpoints: new FilePaymentMonitorCheckpointStore(
+            process.env.PAYMENT_MONITOR_CURSOR_FILE
+              ? path.resolve(process.env.PAYMENT_MONITOR_CURSOR_FILE)
+              : path.resolve('data/payment-monitor-checkpoint.json')
+          ),
+        });
+        paymentMonitorService.start();
+      } else {
+        console.log('Wallet-scoped mode: no SELLER_PUBLIC_KEY, payment monitor disabled');
+      }
     }
   } catch (error) {
     console.error('Failed to initialize:', error);
@@ -77,15 +107,22 @@ async function initialize() {
   }
 }
 
+/**
+ * Starts the Express server listener on the specified port.
+ *
+ * @param port - Network port number or path string to bind. Defaults to PORT.
+ * @returns Running HTTP server instance.
+ */
 export function startServer(port: number | string = PORT) {
   return app.listen(port, async () => {
     await initialize();
-    console.log('\n🚀 Quittance Backend (Postgres Mode)');
+    const mode = configuredStorageMode();
+    console.log(`\n🚀 Quittance Backend (${mode === 'postgres' ? 'Postgres' : 'In-Memory'} Mode)`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log(`✅ Server running on port ${port}`);
     console.log(`📍 API: http://localhost:${port}/api`);
     console.log(`🏥 Health: http://localhost:${port}/api/health`);
-    console.log(`💾 Storage: PostgreSQL`);
+    console.log(`💾 Storage: ${mode === 'postgres' ? 'PostgreSQL' : 'In-Memory'}`);
     console.log(`💰 Dynamic Seller: Each user uses their own wallet!`);
     console.log(`🌐 Frontends: ${configuredFrontendOrigins().join(', ') || 'not configured'}`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
@@ -100,14 +137,18 @@ if (/server(\.[cm]?[jt]s)?$/.test(entryPoint)) {
 process.on('SIGTERM', async () => {
   console.log('Shutting down...');
   paymentMonitorService.stop();
-  await pool.end();
+  if (configuredStorageMode() === 'postgres') {
+    await pool.end();
+  }
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('Shutting down...');
   paymentMonitorService.stop();
-  await pool.end();
+  if (configuredStorageMode() === 'postgres') {
+    await pool.end();
+  }
   process.exit(0);
 });
 
