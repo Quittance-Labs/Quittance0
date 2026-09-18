@@ -34,6 +34,18 @@ const api = axios.create({
   },
 });
 
+api.interceptors.request.use((config) => {
+  if (!config.headers['x-correlation-id'] && !config.headers['X-Correlation-Id']) {
+    const id =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `req-${Math.random().toString(16).slice(2, 10)}${Math.random().toString(16).slice(2, 10)}`;
+    config.headers['X-Correlation-Id'] = id;
+    config.headers['X-Request-Id'] = id;
+  }
+  return config;
+});
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {

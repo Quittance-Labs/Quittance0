@@ -11,10 +11,27 @@
 import { Request, Response } from 'express';
 import { buildQuittanceProof, serializeQuittanceProof, checkQuittanceProofInvariants } from '../services/quittance-proof.service';
 import { sendSuccess, sendFailure } from '../types/api';
-import { createRequestId } from '../utils/request-correlation-id';
+import {
+  createRequestId,
+  getRequestCorrelationId,
+} from '../utils/request-correlation-id';
+import {
+  emitEvent,
+  logReference,
+  LogContext,
+} from '../observability/log-events';
 
 export async function getQuittanceProof(req: Request, res: Response): Promise<void> {
-  const requestId = createRequestId();
+  const requestId =
+    (req as any).id ||
+    (req as any).requestId ||
+    getRequestCorrelationId() ||
+    createRequestId();
+  const context: LogContext = {
+    requestId,
+    service: 'api',
+    environment: process.env.NODE_ENV || 'development',
+  };
   try {
     const { id } = req.params;
     const network = req.query.network as string | undefined;
@@ -61,6 +78,11 @@ export async function getQuittanceProof(req: Request, res: Response): Promise<vo
     }
 
     // Return the canonical JSON proof
+    emitEvent('info', 'proof.downloaded', context, {
+      invoiceRef: logReference(id),
+      txRef: logReference(invoice.paymentTxHash),
+      proofFormat: 'json',
+    });
     sendSuccess(res, 200, {
       ...proof,
     });
@@ -71,7 +93,16 @@ export async function getQuittanceProof(req: Request, res: Response): Promise<vo
 }
 
 export async function getQuittanceProofPDF(req: Request, res: Response): Promise<void> {
-  const requestId = createRequestId();
+  const requestId =
+    (req as any).id ||
+    (req as any).requestId ||
+    getRequestCorrelationId() ||
+    createRequestId();
+  const context: LogContext = {
+    requestId,
+    service: 'api',
+    environment: process.env.NODE_ENV || 'development',
+  };
   try {
     const { id } = req.params;
     const network = req.query.network as string | undefined;
@@ -118,6 +149,12 @@ export async function getQuittanceProofPDF(req: Request, res: Response): Promise
 
     // Generate HTML for PDF (same format as client-side, but server-rendered)
     const html = generateProofHTML(proof, invoice);
+
+    emitEvent('info', 'proof.downloaded', context, {
+      invoiceRef: logReference(id),
+      txRef: logReference(invoice.paymentTxHash),
+      proofFormat: 'pdf',
+    });
 
     // Set headers for browser print/PDF save
     res.set('Content-Type', 'text/html; charset=utf-8');

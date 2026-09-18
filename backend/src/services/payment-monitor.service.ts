@@ -14,6 +14,12 @@ import {
   PaymentMonitorCheckpointStore,
   PostgresPaymentMonitorCheckpointStore,
 } from './payment-monitor-checkpoint';
+import { createRequestId } from '../utils/request-correlation-id';
+import {
+  emitEvent,
+  logReference,
+  LogContext,
+} from '../observability/log-events';
 
 export interface PaymentPageSource {
   getPaymentsPage(account: string, cursor: string, limit: number): Promise<PaymentPageRecord[]>;
@@ -174,6 +180,18 @@ export class PaymentMonitorService {
         lastError: error?.message || String(error),
         nextRetryAt: new Date(Date.now() + retryMs).toISOString(),
       };
+      const context: LogContext = {
+        requestId: createRequestId(),
+        service: 'payment-monitor',
+        environment: process.env.NODE_ENV || 'development',
+      };
+      emitEvent('error', 'horizon.request.failed', context, {
+        operation: 'getPaymentsPage',
+        errorCode: 'HORIZON_UNAVAILABLE',
+        network: this.network,
+        attempt: failures,
+        durationMs: 0,
+      });
       console.error(`Payment monitor failed; retrying in ${retryMs}ms`, error);
       this.schedule(retryMs);
     } finally {
@@ -225,6 +243,19 @@ export class PaymentMonitorService {
     const payable = checkInvoiceIsPayable(invoice.status);
     if (!payable.ok && invoice.status !== 'CANCELLED') return;
 
+    const startTime = Date.now();
+    const context: LogContext = {
+      requestId: createRequestId(),
+      service: 'payment-monitor',
+      environment: process.env.NODE_ENV || 'development',
+    };
+
+    emitEvent('info', 'payment.verify.started', context, {
+      invoiceRef: logReference(invoice.id),
+      txRef: logReference(payment.txHash),
+      network: this.network,
+    });
+
     const isNative = payment.assetCode === 'XLM' && !payment.assetIssuer;
     const verification = verifyHorizonPayment({
       txHash: payment.txHash,
@@ -250,6 +281,13 @@ export class PaymentMonitorService {
     });
 
     if (!verification.ok) {
+      emitEvent('warn', 'payment.verify.rejected', context, {
+        invoiceRef: logReference(invoice.id),
+        txRef: logReference(payment.txHash),
+        errorCode: verification.code,
+        network: this.network,
+        durationMs: Date.now() - startTime,
+      });
       await this.invoices.logPaymentEvent(
         invoice.id,
         verification.code === 'AMOUNT_TOO_LOW' || verification.code === 'AMOUNT_MISMATCH'
@@ -268,6 +306,13 @@ export class PaymentMonitorService {
 
     const settledAt = parseSettlementTime(payment.createdAt) ?? verification.value.settledAt;
     if (invoice.status === 'CANCELLED' && !settledAt) {
+      emitEvent('warn', 'payment.verify.rejected', context, {
+        invoiceRef: logReference(invoice.id),
+        txRef: logReference(payment.txHash),
+        errorCode: 'TRANSACTION_CLOSE_TIME_UNAVAILABLE',
+        network: this.network,
+        durationMs: Date.now() - startTime,
+      });
       throw new SettlementTimeUnavailableError();
     }
 
@@ -279,6 +324,16 @@ export class PaymentMonitorService {
       undefined,
       { settledAt }
     );
+
+    emitEvent('info', 'invoice.paid', context, {
+      invoiceRef: logReference(invoice.id),
+      sellerRef: logReference(invoice.sellerPublicKey),
+      txRef: logReference(payment.txHash),
+      assetCode: invoice.assetCode,
+      network: this.network,
+      storage: process.env.STORAGE_MODE || 'postgres',
+      durationMs: Date.now() - startTime,
+    });
   }
 
   private async saveTransaction(payment: PaymentRecord, invoiceId: string) {

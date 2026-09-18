@@ -17,7 +17,7 @@ export const LOG_EVENTS = [
 export type LogEventName = typeof LOG_EVENTS[number];
 export type LogLevel = 'info' | 'warn' | 'error';
 
-const EVENT_FIELDS: Record<LogEventName, readonly string[]> = {
+export const EVENT_FIELDS: Record<LogEventName, readonly string[]> = {
   'invoice.create.started': ['sellerRef', 'assetCode', 'network', 'storage'],
   'invoice.create.succeeded': ['sellerRef', 'invoiceRef', 'assetCode', 'network', 'storage', 'durationMs'],
   'invoice.create.rejected': ['sellerRef', 'errorCode', 'network', 'storage', 'durationMs'],
@@ -45,6 +45,15 @@ export interface StructuredLogRecord {
   service: 'api' | 'web';
   environment?: string;
   [field: string]: string | number | boolean | undefined;
+}
+
+let activeLogSink: ((record: StructuredLogRecord) => void) | null = null;
+
+/**
+ * Configure an in-memory test log sink to capture structured log events.
+ */
+export function setLogSink(sink: ((record: StructuredLogRecord) => void) | null): void {
+  activeLogSink = sink;
 }
 
 /**
@@ -90,13 +99,37 @@ export function buildLogRecord(
   return record;
 }
 
+/**
+ * Emit a structured log record to configured destinations.
+ */
 export function emitLog(record: StructuredLogRecord): void {
+  if (activeLogSink) {
+    activeLogSink(record);
+  }
   const output = JSON.stringify(record);
   if (record.level === 'error') console.error(output);
   else if (record.level === 'warn') console.warn(output);
   else console.log(output);
 }
 
+/**
+ * Build and emit a structured log record in one step.
+ */
+export function emitEvent(
+  level: LogLevel,
+  event: LogEventName,
+  context: LogContext,
+  fields: Record<string, unknown> = {},
+  now: Date = new Date()
+): StructuredLogRecord {
+  const record = buildLogRecord(level, event, context, fields, now);
+  emitLog(record);
+  return record;
+}
+
+/**
+ * Return the allowlisted field names for a given log event name.
+ */
 export function requiredLogFields(event: LogEventName): readonly string[] {
   return EVENT_FIELDS[event];
 }

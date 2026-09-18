@@ -1,33 +1,33 @@
-// Request correlation id helper.
-//
-// Every invoice handler log line should include a short, unique identifier so
-// that a single request can be traced across logs. This module provides a
-// pure generator that returns a compact, URL-safe id suitable for log prefixing.
-
 import { randomBytes } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import type { Request, Response, NextFunction } from 'express';
 
-/**
- * Number of random bytes used to generate the id.
- * 8 bytes = 64 bits of entropy, base16-encoded to 16 hex characters.
- */
 export const REQUEST_ID_BYTES = 8;
+export const REQUEST_ID_PREFIX = 'req';
+
+export interface RequestStore {
+  requestId: string;
+}
+
+export const requestContext = new AsyncLocalStorage<RequestStore>();
 
 /**
- * Prefix applied to every generated id so it is visually distinguishable
- * from other identifiers (invoice memo, tx hash, etc.) in log output.
+ * Retrieve the active correlation ID from async storage.
  */
-export const REQUEST_ID_PREFIX = 'req';
+export function getRequestCorrelationId(): string | undefined {
+  return requestContext.getStore()?.requestId;
+}
+
+/**
+ * Run a synchronous or asynchronous callback within a correlation context.
+ */
+export function runWithRequestId<T>(requestId: string, fn: () => T): T {
+  return requestContext.run({ requestId }, fn);
+}
 
 /**
  * Generate a short, unique correlation id for request tracing.
- *
- * The format is `req-<16 hex chars>` (e.g. `req-a1b2c3d4e5f6a7b8`).
- *
- * - No arguments are required; the function is self-contained.
- * - The return value is always a lowercase hex string with the prefix.
- * - Collisions are astronomically unlikely (2^64 space).
- *
- * @returns A unique request id string in the format `req-<hex>`.
+ * Format is req-<16 hex chars>.
  */
 export const createRequestId = (): string => {
   const bytes = randomBytes(REQUEST_ID_BYTES);
@@ -35,8 +35,60 @@ export const createRequestId = (): string => {
   return `${REQUEST_ID_PREFIX}-${hex}`;
 };
 
+/**
+ * Validate an inbound correlation identifier to prevent log injection.
+ * Accepts alphanumeric strings, hyphens, and underscores up to 64 characters.
+ */
+export function validateCorrelationId(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > 64) {
+    return null;
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
+/**
+ * Express middleware to extract or generate a correlation ID, echo it on
+ * response headers (X-Request-Id and X-Correlation-Id), and bind it to
+ * the request object and AsyncLocalStorage context.
+ */
+export function correlationMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const headers = (req && req.headers) || {};
+  const rawHeader =
+    headers['x-correlation-id'] ||
+    headers['x-request-id'] ||
+    (req as any)?.id ||
+    (req as any)?.requestId;
+
+  const headerValue = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+  const validated = validateCorrelationId(headerValue);
+  const requestId = validated || createRequestId();
+
+  (req as any).id = requestId;
+  (req as any).requestId = requestId;
+  (req as any).correlationId = requestId;
+
+  res.setHeader('X-Request-Id', requestId);
+  res.setHeader('X-Correlation-Id', requestId);
+
+  runWithRequestId(requestId, () => {
+    next();
+  });
+}
+
 export default {
   createRequestId,
+  validateCorrelationId,
+  getRequestCorrelationId,
+  runWithRequestId,
+  correlationMiddleware,
+  requestContext,
   REQUEST_ID_BYTES,
   REQUEST_ID_PREFIX,
 };
