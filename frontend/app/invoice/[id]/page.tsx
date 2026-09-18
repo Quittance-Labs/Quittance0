@@ -209,7 +209,7 @@ export default function InvoiceDetailPage() {
                 <Link href={`/pay/${id}`} className="text-cyan-700 hover:underline">
                   payment page
                 </Link>{' '}
-                if you're paying this invoice.
+                if you&apos;re paying this invoice.
               </p>
               <div className="flex justify-center">
                 <WalletConnect />
@@ -219,7 +219,7 @@ export default function InvoiceDetailPage() {
             <>
               <h1 className="text-2xl font-bold text-red-700 mb-2">Access Restricted</h1>
               <p className="text-gray-700 mb-6">
-                This invoice belongs to another seller wallet. If you're the customer paying
+                This invoice belongs to another seller wallet. If you&apos;re the customer paying
                 this invoice, use the{' '}
                 <Link href={`/pay/${id}`} className="text-cyan-700 hover:underline">
                   payment page

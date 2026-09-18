@@ -431,10 +431,33 @@ fallback UX without Google login, and demonstration instructions are in
 
 ## Tests & CI
 
-Every pull request and every push to `main` runs the same three jobs defined in
-[`.github/workflows/ci.yml`](./.github/workflows/ci.yml). All of them are
-reproducible locally with the commands below — CI runs nothing you cannot run
+Every pull request and every push to `main` runs the jobs defined in
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml): `backend`, `frontend`,
+`root-tests`, and optional `evidence-smoke`. All of them are reproducible locally
+with root commands or individual project commands — CI runs nothing you cannot run
 yourself.
+
+### Root orchestration commands
+
+```bash
+# Full local CI mirror (install dependencies, lint, typecheck, tests, a11y)
+npm run ci
+
+# Run all test suites (shared, backend, frontend)
+npm test
+
+# Run individual suites from the repository root
+npm run test:shared
+npm run test:backend
+npm run test:frontend
+npm run test:a11y
+
+# Run lint and typecheck across projects
+npm run lint:frontend
+npm run typecheck
+```
+
+### Individual project commands
 
 ```bash
 # Backend: typecheck + unit and integration tests
@@ -474,7 +497,11 @@ refuse, this test fails.
 
 ### Environment variables in CI
 
-No secrets are required. The workflow sets only:
+No secrets are required for standard PR runs. The optional `evidence-smoke` job
+is gated by `EVIDENCE_PAYER_SECRET` and `EVIDENCE_SELLER_PUBLIC_KEY` secrets,
+skipping safely when secrets are absent (such as on fork PRs).
+
+The workflow sets only:
 
 | Variable | Job | Why |
 |---|---|---|

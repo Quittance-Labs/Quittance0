@@ -1,0 +1,16 @@
+{
+  "name": "quittance0",
+  "private": true,
+  "description": "Root test/lint/typecheck orchestration. See README.md's \"Tests & CI\" section: these scripts are the exact local mirror of .github/workflows/ci.yml's jobs.",
+  "scripts": {
+    "test:shared": "node --test \"tests/**/*.test.mjs\"",
+    "test:backend": "npm --prefix backend test",
+    "test:frontend": "npm --prefix frontend test",
+    "test:a11y": "npm --prefix frontend run test:a11y",
+    "lint": "npm run lint:frontend",
+    "lint:frontend": "npm --prefix frontend run lint",
+    "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
+    "test": "npm run test:shared && npm run test:backend && npm run test:frontend",
+    "ci": "npm --prefix backend ci && npm --prefix frontend ci && npm run lint:frontend && npm run typecheck && npm run test && npm run test:a11y"
+  }
+}

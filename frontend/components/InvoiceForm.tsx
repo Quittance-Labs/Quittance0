@@ -15,10 +15,24 @@ import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
 import { showFreighterInstallPrompt } from './FreighterInstallPrompt';
 import { parseAmountInput } from '@/lib/parse-amount-input';
 import { clearInvoiceDraft, loadInvoiceDraft, saveInvoiceDraft } from '@/lib/invoice-draft';
+import {
+  fieldErrorSummary,
+  fieldErrorsFromApiError,
+  firstInvalidFieldId,
+  formFieldErrors,
+} from '@/lib/invoice-form-validation';
 
 interface InvoiceFormProps {
   onSuccess?: (invoice: any) => void;
   userWallet?: string;
+}
+
+function focusField(fieldId: string | null) {
+  if (!fieldId) return;
+  const element = document.getElementById(fieldId);
+  if (element instanceof HTMLElement) {
+    element.focus();
+  }
 }
 
 export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps) {
@@ -37,6 +51,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   const [customerName, setCustomerName] = useState(initialDraft.customerName ?? '');
   const [customerEmail, setCustomerEmail] = useState(initialDraft.customerEmail ?? '');
   const [apiError, setApiError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [expiresInDays, setExpiresInDays] = useState(initialDraft.expiresInDays ?? 7);
   const { isWrongNetwork } = useWalletStore();
 
