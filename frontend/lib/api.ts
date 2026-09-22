@@ -65,8 +65,14 @@ export const invoiceApi = {
     return response.data;
   },
 
-  getById: async (id: string) => {
-    const response = await api.get(`/invoices/${id}`);
+  getById: async (id: string, sellerPublicKey?: string) => {
+    const config = sellerPublicKey
+      ? {
+          params: { sellerPublicKey },
+          headers: { 'x-seller-public-key': sellerPublicKey },
+        }
+      : undefined;
+    const response = await api.get(`/invoices/${id}`, config);
     return response.data;
   },
 

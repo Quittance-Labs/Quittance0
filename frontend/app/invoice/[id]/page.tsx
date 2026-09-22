@@ -46,6 +46,7 @@ export default function InvoiceDetailPage() {
     EXPECTED_WALLET_NETWORK
   );
   const userWallet = gate.ready ? publicKey : null;
+  const activeWallet = userWallet || (connected ? storePublicKey : null);
 
   const [invoice, setInvoice] = useState<any>(null);
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
@@ -65,7 +66,7 @@ export default function InvoiceDetailPage() {
     setLoadError(null);
     try {
       const [invoiceResult, paymentResult] = await Promise.allSettled([
-        invoiceApi.getById(id),
+        invoiceApi.getById(id, activeWallet || undefined),
         invoiceApi.getPaymentInfo(id),
       ]);
 
@@ -84,7 +85,7 @@ export default function InvoiceDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, activeWallet]);
 
   useEffect(() => {
     void loadInvoice();
@@ -127,8 +128,6 @@ export default function InvoiceDetailPage() {
       toast.error('Could not copy the payment link — select it on the payment page instead');
     }
   };
-
-  const activeWallet = userWallet || (connected ? storePublicKey : null);
 
   const handleCancel = async () => {
     if (!window.confirm('Cancel this invoice?')) return;

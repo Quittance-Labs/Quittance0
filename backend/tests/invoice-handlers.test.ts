@@ -35,11 +35,12 @@ function createRes(): FakeResponse & Response {
   return res;
 }
 
-function createReq(init: { body?: any; params?: any; query?: any } = {}): Request {
+function createReq(init: { body?: any; params?: any; query?: any; headers?: any } = {}): Request {
   return {
     body: init.body || {},
     params: init.params || {},
     query: init.query || {},
+    headers: init.headers || {},
   } as unknown as Request;
 }
 
@@ -307,7 +308,30 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       assert.equal(got.statusCode, 200);
       assert.equal(got.body.data.sellerName, sellerName);
       assert.equal(got.body.data.assetIssuer, USDC_ISSUER);
-      assert.equal(got.body.data.customerEmail, customerEmail);
+      assert.equal(got.body.data.customerEmail, undefined);
+      assert.equal('customerEmail' in got.body.data, false);
+
+      const gotSeller = await call(
+        handlers().getInvoice,
+        createReq({
+          params: { id: created.id },
+          headers: { 'x-seller-public-key': SELLER_A },
+        })
+      );
+      assert.equal(gotSeller.statusCode, 200);
+      assert.equal(gotSeller.body.data.customerEmail, customerEmail);
+      assert.equal(gotSeller.body.data.customerName, customerName);
+
+      const gotForeign = await call(
+        handlers().getInvoice,
+        createReq({
+          params: { id: created.id },
+          headers: { 'x-seller-public-key': PAYER },
+        })
+      );
+      assert.equal(gotForeign.statusCode, 200);
+      assert.equal(gotForeign.body.data.customerEmail, undefined);
+      assert.equal('customerEmail' in gotForeign.body.data, false);
 
       transaction = {
         transaction: { memo: created.memo },

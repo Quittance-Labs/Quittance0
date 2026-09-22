@@ -13,6 +13,7 @@ import {
   stellarPublicKeySchema,
 } from '../utils/validation';
 import { firstCreateInvoiceMessage } from '../../../shared/invoice-validation';
+import { toPublicInvoiceDto, toSellerInvoiceDto } from '../../../shared/invoice';
 import { generatePaymentQR, generateStellarPaymentQR } from '../utils/qrcode';
 import {
   sendFailure,
@@ -186,7 +187,18 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           return sendFailure(res, 404, 'Invoice not found');
         }
 
-        sendSuccess(res, 200, invoice);
+        const candidateKey =
+          (typeof req.headers?.['x-seller-public-key'] === 'string' && req.headers['x-seller-public-key'].trim()) ||
+          (typeof req.query?.sellerPublicKey === 'string' && req.query.sellerPublicKey.trim()) ||
+          undefined;
+
+        const isSeller = Boolean(candidateKey && candidateKey === invoice.sellerPublicKey);
+
+        if (isSeller) {
+          return sendSuccess(res, 200, toSellerInvoiceDto(invoice));
+        }
+
+        return sendSuccess(res, 200, toPublicInvoiceDto(invoice));
       } catch (error: any) {
         logError('Get invoice error:', error);
         sendFailure(res, 500, error.message || 'Failed to get invoice');
@@ -234,7 +246,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
         const payment = await buildPaymentPayload(invoice);
 
-        sendSuccess(res, 200, { ...payment, invoice });
+        sendSuccess(res, 200, { ...payment, invoice: toPublicInvoiceDto(invoice) });
       } catch (error: any) {
         logError('Get payment info error:', error);
         sendFailure(res, 500, error.message || 'Failed to get payment info');
