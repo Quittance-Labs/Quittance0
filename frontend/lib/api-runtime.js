@@ -65,6 +65,14 @@ function resolveApiConfig(configuredUrl, nodeEnv = 'development') {
 function toApiError(error) {
   if (error instanceof ApiUnavailableError || error instanceof ApiRequestError) return error;
 
+  if (
+    error?.name === 'CanceledError' ||
+    error?.code === 'ERR_CANCELED' ||
+    error?.name === 'AbortError'
+  ) {
+    return error;
+  }
+
   const status = error?.response?.status;
   const responseData = error?.response?.data;
   const networkFailure =

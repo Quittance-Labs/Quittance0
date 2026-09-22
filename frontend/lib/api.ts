@@ -37,6 +37,14 @@ const api = axios.create({
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (
+      axios.isCancel?.(error) ||
+      error?.name === 'CanceledError' ||
+      error?.code === 'ERR_CANCELED' ||
+      error?.name === 'AbortError'
+    ) {
+      return Promise.reject(error);
+    }
     const normalized = toApiError(error);
     console.error('API Error:', normalized.code, normalized.message);
     return Promise.reject(normalized);
@@ -65,8 +73,8 @@ export const invoiceApi = {
     return response.data;
   },
 
-  getById: async (id: string) => {
-    const response = await api.get(`/invoices/${id}`);
+  getById: async (id: string, options?: { signal?: AbortSignal }) => {
+    const response = await api.get(`/invoices/${id}`, { signal: options?.signal });
     return response.data;
   },
 
@@ -82,8 +90,8 @@ export const invoiceApi = {
     return response.data;
   },
 
-  getPaymentInfo: async (id: string) => {
-    const response = await api.get(`/invoices/${id}/payment-info`);
+  getPaymentInfo: async (id: string, options?: { signal?: AbortSignal }) => {
+    const response = await api.get(`/invoices/${id}/payment-info`, { signal: options?.signal });
     return response.data;
   },
 
@@ -92,13 +100,22 @@ export const invoiceApi = {
     return response.data;
   },
 
-  verify: async (id: string, txHash: string, payerInfo?: { payerName?: string; payerEmail?: string }) => {
-    const response = await api.post(`/invoices/${id}/verify`, {
-      txHash,
-      // Lets the server reject a payment submitted from the wrong wallet network.
-      network: process.env.NEXT_PUBLIC_STELLAR_NETWORK,
-      ...payerInfo
-    });
+  verify: async (
+    id: string,
+    txHash: string,
+    payerInfo?: { payerName?: string; payerEmail?: string },
+    options?: { signal?: AbortSignal }
+  ) => {
+    const response = await api.post(
+      `/invoices/${id}/verify`,
+      {
+        txHash,
+        // Lets the server reject a payment submitted from the wrong wallet network.
+        network: process.env.NEXT_PUBLIC_STELLAR_NETWORK,
+        ...payerInfo,
+      },
+      { signal: options?.signal }
+    );
     return response.data;
   },
 

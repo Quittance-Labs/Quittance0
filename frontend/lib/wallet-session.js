@@ -137,9 +137,26 @@ function shouldClearSellerState(previous, next) {
   return normalizeWalletSession(previous).publicKey !== after.publicKey;
 }
 
+/**
+ * Whether in-flight payment or verification work must be reset on wallet change.
+ *
+ * True whenever the active public key changes between sessions, such as on an
+ * account switch, a disconnect, or a new connection.
+ *
+ * @param {object} [previous]
+ * @param {object} [next]
+ * @returns {boolean}
+ */
+function shouldResetPaySession(previous, next) {
+  const before = normalizeWalletSession(previous);
+  const after = normalizeWalletSession(next);
+  return before.publicKey !== after.publicKey;
+}
+
 module.exports = {
   normalizeWalletSession,
   shouldClearSellerState,
+  shouldResetPaySession,
   walletSessionChanged,
   walletSessionGate,
   walletSessionKey,

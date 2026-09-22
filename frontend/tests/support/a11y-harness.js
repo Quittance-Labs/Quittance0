@@ -55,6 +55,15 @@ const ALIASES = {
 /** Everything the audit renders, re-exported from one entry point. */
 const ENTRY_SOURCE = `
 export { setResponse, resetResponses } from 'axios';
+export {
+  setSendPaymentStub,
+  resetSendPaymentStub,
+  setWalletConnectionStub,
+  resetWalletConnectionStub,
+  setWalletAccessStub,
+  resetWalletAccessStub,
+} from '@/lib/stellar';
+export { invoiceApi } from '@/lib/api';
 export { useWalletStore } from '@/lib/store';
 export { default as HomePage } from '@/app/page';
 export { default as DashboardPage } from '@/app/dashboard/page';

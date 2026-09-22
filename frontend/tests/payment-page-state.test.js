@@ -470,3 +470,34 @@ test('an absent state is handled without throwing', () => {
   assert.equal(describePaymentState(undefined), '');
   assert.equal(paymentStateKind(null), 'status');
 });
+
+test('WALLET_SWITCHED resets in-flight pay session but preserves settled paid state', () => {
+  const paying = paymentReducer(idleOn(pending), {
+    type: 'PAY_STARTED',
+    paymentTxHash: 'b'.repeat(64),
+  });
+  const verifying = paymentReducer(paying, {
+    type: 'VERIFY_STARTED',
+    paymentTxHash: 'b'.repeat(64),
+  });
+  const resetAfterVerifying = paymentReducer(verifying, { type: 'WALLET_SWITCHED' });
+  assert.equal(resetAfterVerifying.status, PAY_STATES.IDLE);
+  assert.ok(!resetAfterVerifying.paymentTxHash);
+  assert.equal(resetAfterVerifying.error, null);
+
+  const failed = paymentReducer(idleOn(pending), {
+    type: 'VERIFY_FAILED',
+    error: 'Verification timed out',
+  });
+  const resetAfterFailed = paymentReducer(failed, { type: 'WALLET_SWITCHED' });
+  assert.equal(resetAfterFailed.status, PAY_STATES.IDLE);
+  assert.equal(resetAfterFailed.error, null);
+
+  const settled = paymentReducer(idleOn(pending), {
+    type: 'VERIFY_SUCCEEDED',
+    invoice: paid,
+  });
+  const switchedSettled = paymentReducer(settled, { type: 'WALLET_SWITCHED' });
+  assert.equal(switchedSettled.status, PAY_STATES.PAID);
+  assert.equal(switchedSettled.invoice.status, 'PAID');
+});

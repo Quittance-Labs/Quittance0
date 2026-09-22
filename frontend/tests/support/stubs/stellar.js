@@ -8,8 +8,30 @@
 export const server = { payments: () => ({ forAccount: () => ({ cursor: () => ({ stream: () => () => {} }) }) }) };
 export const EXPECTED_WALLET_NETWORK = 'TESTNET';
 export const NETWORK_DISPLAY_NAME = 'Testnet';
-export const checkWalletConnection = async () => false;
-export const requestWalletAccess = async () => false;
+let customWalletConnection = null;
+let customWalletAccess = null;
+
+export const setWalletConnectionStub = (fn) => {
+  customWalletConnection = fn;
+};
+export const resetWalletConnectionStub = () => {
+  customWalletConnection = null;
+};
+export const setWalletAccessStub = (fn) => {
+  customWalletAccess = fn;
+};
+export const resetWalletAccessStub = () => {
+  customWalletAccess = null;
+};
+
+export const checkWalletConnection = async () => {
+  if (customWalletConnection) return customWalletConnection();
+  return false;
+};
+export const requestWalletAccess = async () => {
+  if (customWalletAccess) return customWalletAccess();
+  return false;
+};
 export const getUserPublicKey = async () => null;
 export const getFreighterNetwork = async () => ({ network: 'TESTNET', networkPassphrase: 'Test SDF Network ; September 2015' });
 export const readFreighterSession = async () => ({
@@ -21,7 +43,18 @@ export const readFreighterSession = async () => ({
 });
 export const stopFreighterWalletWatcher = () => () => {};
 export const getAccountBalance = async () => [];
-export const sendPayment = async () => '';
+
+let customSendPayment = null;
+export const setSendPaymentStub = (fn) => {
+  customSendPayment = fn;
+};
+export const resetSendPaymentStub = () => {
+  customSendPayment = null;
+};
+export const sendPayment = async (...args) => {
+  if (customSendPayment) return customSendPayment(...args);
+  return '';
+};
 export const getExplorerTransactionUrl = (txHash) =>
   `https://stellar.expert/explorer/testnet/tx/${txHash}`;
 export const getExplorerAccountUrl = (publicKey) =>

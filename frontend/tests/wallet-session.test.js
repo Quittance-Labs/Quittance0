@@ -13,6 +13,7 @@ const assert = require('node:assert/strict');
 const {
   normalizeWalletSession,
   shouldClearSellerState,
+  shouldResetPaySession,
   walletSessionChanged,
   walletSessionGate,
   walletSessionKey,
@@ -129,4 +130,13 @@ test('seller rows are dropped on an account switch, not on a network switch', ()
 test('a session that has not been read yet clears rather than caches', () => {
   assert.equal(shouldClearSellerState(session(), null), true);
   assert.equal(shouldClearSellerState(session(), {}), true);
+});
+
+test('pay session resets on account switch or disconnect, but preserves on network change', () => {
+  assert.equal(shouldResetPaySession(session(), session({ publicKey: BOB })), true);
+  assert.equal(shouldResetPaySession(session(), session({ connected: false, publicKey: null })), true);
+  assert.equal(shouldResetPaySession(null, session()), true);
+  assert.equal(shouldResetPaySession(session(), session({ network: 'PUBLIC' })), false);
+  assert.equal(shouldResetPaySession(session(), session({ balance: '500.00' })), false);
+  assert.equal(shouldResetPaySession(null, null), false);
 });

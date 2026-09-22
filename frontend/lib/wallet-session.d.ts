@@ -31,3 +31,7 @@ export function shouldClearSellerState(
   previous?: Partial<WalletSession> | null,
   next?: Partial<WalletSession> | null
 ): boolean;
+export function shouldResetPaySession(
+  previous?: Partial<WalletSession> | null,
+  next?: Partial<WalletSession> | null
+): boolean;

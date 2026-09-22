@@ -42,7 +42,9 @@ export type PaymentEvent =
   | { type: 'VERIFY_FAILED'; error?: string }
   | { type: 'VERIFY_UNAVAILABLE' }
   | { type: 'COPIED'; key?: string }
-  | { type: 'RESET' };
+  | { type: 'RESET' }
+  | { type: 'WALLET_SWITCHED' }
+  | { type: 'RESET_PAY_SESSION' };
 
 export interface PayerDetails {
   payerName?: string;

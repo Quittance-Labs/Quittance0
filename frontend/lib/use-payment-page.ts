@@ -14,32 +14,73 @@ import {
   paymentReducer,
   shouldPoll,
 } from './payment-page-state';
+import { normalizeWalletSession, shouldResetPaySession } from './wallet-session';
 import type { PayPageInvoice, PayPagePaymentInfo } from '@/components/pay-page.types';
 import { toast } from 'sonner';
 import { useWalletStore } from './store';
 
+/**
+ * State and lifecycle hook for the payment surface.
+ *
+ * @param id The unique identifier of the invoice being paid.
+ * @returns State, dispatchers, and action handlers for the payment page.
+ */
 export function usePaymentPage(id: string) {
   const [payment, dispatch] = useReducer(paymentReducer, undefined, () => initialPaymentState(null));
   const [loading, setLoading] = useState(true);
   const [paymentInfo, setPaymentInfo] = useState<PayPagePaymentInfo | null>(null);
-  const { publicKey, connected } = useWalletStore();
+  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
+  const session = normalizeWalletSession({ publicKey, connected, network, freighterAvailable });
+  const activePublicKey = session.publicKey;
+
   const [txHash, setTxHash] = useState('');
   const [payerName, setPayerName] = useState('');
   const [payerEmail, setPayerEmail] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
+
   const generation = useRef(0);
+  const previousSession = useRef<ReturnType<typeof normalizeWalletSession> | null>(null);
+  const boundPublicKey = useRef<string | null>(activePublicKey);
+  const verifyAbortController = useRef<AbortController | null>(null);
+  const fetchAbortController = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const previous = previousSession.current;
+    if (previous !== null && shouldResetPaySession(previous, session)) {
+      verifyAbortController.current?.abort();
+      verifyAbortController.current = null;
+
+      fetchAbortController.current?.abort();
+      generation.current += 1;
+
+      setTxHash('');
+      dispatch({ type: 'WALLET_SWITCHED' });
+    }
+    previousSession.current = session;
+    boundPublicKey.current = activePublicKey;
+  }, [activePublicKey, session]);
+
+  useEffect(() => {
+    return () => {
+      verifyAbortController.current?.abort();
+      fetchAbortController.current?.abort();
+    };
+  }, []);
 
   const load = useCallback(async () => {
+    fetchAbortController.current?.abort();
+    const controller = new AbortController();
+    fetchAbortController.current = controller;
     const request = generation.current;
     setLoadError(null);
 
     try {
       const [invoiceResult, infoResult] = await Promise.allSettled([
-        invoiceApi.getById(id),
-        invoiceApi.getPaymentInfo(id),
+        invoiceApi.getById(id, { signal: controller.signal }),
+        invoiceApi.getPaymentInfo(id, { signal: controller.signal }),
       ]);
 
-      if (request !== generation.current) return;
+      if (request !== generation.current || controller.signal.aborted) return;
       if (invoiceResult.status === 'rejected') throw invoiceResult.reason;
 
       dispatch({ type: 'INVOICE_LOADED', invoice: invoiceResult.value.data });
@@ -48,13 +89,22 @@ export function usePaymentPage(id: string) {
       } else {
         setLoadError(apiErrorMessage(infoResult.reason));
       }
-    } catch (error) {
-      if (request !== generation.current) return;
+    } catch (error: any) {
+      if (
+        request !== generation.current ||
+        controller.signal.aborted ||
+        error?.name === 'CanceledError' ||
+        error?.name === 'AbortError'
+      ) {
+        return;
+      }
       const message = apiErrorMessage(error, 'Failed to load invoice');
       if (isApiUnavailableError(error)) setLoadError(message);
       toast.error(message);
     } finally {
-      if (request === generation.current) setLoading(false);
+      if (request === generation.current && !controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   }, [id]);
 
@@ -79,7 +129,8 @@ export function usePaymentPage(id: string) {
         if (request !== generation.current || result.data.status === 'PENDING') return;
         dispatch({ type: 'POLL_RESULT', invoice: result.data });
         if (result.data.status === 'PAID') toast.success('Payment confirmed!');
-      } catch (error) {
+      } catch (error: any) {
+        if (request !== generation.current || error?.name === 'CanceledError' || error?.name === 'AbortError') return;
         console.error('Invoice status polling failed:', error);
         if (isApiUnavailableError(error)) setLoadError(apiErrorMessage(error));
         else if (isHorizonOutageError(error)) setLoadError(HORIZON_OUTAGE_MESSAGE);
@@ -93,19 +144,39 @@ export function usePaymentPage(id: string) {
     if (!checked.ok) return toast.error(checked.error);
     const payer = normalizePayerDetails({ payerName, payerEmail });
     if (!payer.ok) return toast.error(payer.error);
-    dispatch({ type: 'VERIFY_STARTED' });
+
+    verifyAbortController.current?.abort();
+    const controller = new AbortController();
+    verifyAbortController.current = controller;
+    const startingKey = activePublicKey;
     const request = generation.current;
+
+    dispatch({ type: 'VERIFY_STARTED' });
     try {
-      const result = await invoiceApi.verify(id, checked.value, payer.value);
-      if (request !== generation.current) return;
+      const result = await invoiceApi.verify(id, checked.value, payer.value, {
+        signal: controller.signal,
+      });
+      if (
+        controller.signal.aborted ||
+        request !== generation.current ||
+        boundPublicKey.current !== startingKey
+      ) {
+        return;
+      }
       dispatch({ type: 'VERIFY_SUCCEEDED', invoice: result?.data ?? null });
       toast.success('Transaction verified!');
       void load();
-    } catch (error) {
-      if (request !== generation.current) return;
+    } catch (error: any) {
+      if (
+        controller.signal.aborted ||
+        request !== generation.current ||
+        boundPublicKey.current !== startingKey ||
+        error?.name === 'CanceledError' ||
+        error?.name === 'AbortError'
+      ) {
+        return;
+      }
 
-      // A Horizon or transport failure is not a rejection: keep the session,
-      // say it is retryable, and leave the verify control in place.
       if (isHorizonOutageError(error)) {
         setLoadError(HORIZON_OUTAGE_MESSAGE);
         dispatch({ type: 'VERIFY_UNAVAILABLE' });
@@ -117,6 +188,10 @@ export function usePaymentPage(id: string) {
       if (isApiUnavailableError(error)) setLoadError(apiErrorMessage(error));
       dispatch({ type: 'VERIFY_FAILED', error: message });
       toast.error(message);
+    } finally {
+      if (verifyAbortController.current === controller) {
+        verifyAbortController.current = null;
+      }
     }
   };
 
@@ -126,7 +201,7 @@ export function usePaymentPage(id: string) {
     loading,
     loadError,
     paymentInfo,
-    wallet: connected ? publicKey : null,
+    wallet: session.connected ? activePublicKey : null,
     txHash,
     setTxHash,
     payerName,

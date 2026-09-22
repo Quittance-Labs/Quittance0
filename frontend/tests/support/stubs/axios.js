@@ -22,7 +22,13 @@ function resetResponses() {
   routes.clear();
 }
 
-function resolve(url) {
+function resolve(url, config) {
+  if (config?.signal?.aborted) {
+    const error = new Error('canceled');
+    error.name = 'CanceledError';
+    error.code = 'ERR_CANCELED';
+    return Promise.reject(error);
+  }
   const matches = [...routes.keys()]
     .filter((key) => url.endsWith(key) || url.startsWith(key))
     .sort((a, b) => b.length - a.length);
@@ -33,7 +39,11 @@ function resolve(url) {
     return Promise.reject(error);
   }
 
-  return Promise.resolve({ data: routes.get(matches[0]) });
+  const payload = routes.get(matches[0]);
+  if (typeof payload === 'function') {
+    return Promise.resolve(payload(config));
+  }
+  return Promise.resolve({ data: payload });
 }
 
 function createInstance() {
@@ -42,13 +52,14 @@ function createInstance() {
       request: { use() {} },
       response: { use() {} },
     },
-    get: (url) => resolve(url),
-    post: (url) => resolve(url),
+    get: (url, config) => resolve(url, config),
+    post: (url, data, config) => resolve(url, config),
   };
 }
 
 const axios = {
   create: createInstance,
+  isCancel: (error) => Boolean(error && (error.name === 'CanceledError' || error.code === 'ERR_CANCELED' || error.name === 'AbortError')),
   setResponse,
   resetResponses,
 };

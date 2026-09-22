@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   EXPECTED_WALLET_NETWORK,
   sendPayment,
@@ -54,12 +54,25 @@ export default function PaymentButton({
 }: PaymentButtonProps) {
   const [loading, setLoading] = useState(false);
   const { publicKey, connected, network, freighterAvailable } = useWalletStore();
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const activeKeyRef = useRef(publicKey);
+
   // Same session, same gate as the create form and the dashboard: a mismatch
   // blocks all three from one place (issue #442).
   const gate = walletSessionGate(
     { freighterAvailable, connected, publicKey, network },
     EXPECTED_WALLET_NETWORK
   );
+
+  useEffect(() => {
+    if (loading && activeKeyRef.current !== publicKey) {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+      toast.dismiss(PAY_TOAST_ID);
+      setLoading(false);
+    }
+    activeKeyRef.current = publicKey;
+  }, [publicKey, connected, loading]);
 
   const handlePayment = async () => {
     if (!gate.ready) {
@@ -88,11 +101,24 @@ export default function PaymentButton({
       return;
     }
 
+    const startingPublicKey = publicKey;
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     onStart?.();
 
     try {
       const freighterInstalled = await checkWalletConnection();
+      if (
+        controller.signal.aborted ||
+        useWalletStore.getState().publicKey !== startingPublicKey ||
+        !useWalletStore.getState().connected
+      ) {
+        toast.dismiss(PAY_TOAST_ID);
+        return;
+      }
       if (!freighterInstalled) {
         showFreighterInstallPrompt();
         onError?.('Freighter is not installed');
@@ -100,6 +126,14 @@ export default function PaymentButton({
       }
 
       const allowed = await requestWalletAccess();
+      if (
+        controller.signal.aborted ||
+        useWalletStore.getState().publicKey !== startingPublicKey ||
+        !useWalletStore.getState().connected
+      ) {
+        toast.dismiss(PAY_TOAST_ID);
+        return;
+      }
       if (!allowed) {
         toast.error('Freighter access was denied');
         onError?.('Freighter access was denied');
@@ -107,6 +141,14 @@ export default function PaymentButton({
       }
 
       const netDetails = await getFreighterNetwork();
+      if (
+        controller.signal.aborted ||
+        useWalletStore.getState().publicKey !== startingPublicKey ||
+        !useWalletStore.getState().connected
+      ) {
+        toast.dismiss(PAY_TOAST_ID);
+        return;
+      }
       const wrong = isWrongNetwork(netDetails?.networkPassphrase || netDetails?.network);
       if (wrong) {
         showFreighterWrongNetworkPrompt(NETWORK_DISPLAY_NAME);
@@ -119,15 +161,44 @@ export default function PaymentButton({
       toast.loading('Confirm in wallet...', { id: PAY_TOAST_ID });
       const txHash = await sendPayment(destination, amount, memo, assetCode, assetIssuer);
 
+      if (
+        controller.signal.aborted ||
+        useWalletStore.getState().publicKey !== startingPublicKey ||
+        !useWalletStore.getState().connected
+      ) {
+        toast.dismiss(PAY_TOAST_ID);
+        return;
+      }
+
       if (invoiceId) {
         toast.loading('Verifying payment...', { id: PAY_TOAST_ID });
         try {
-          await invoiceApi.verify(invoiceId, txHash, payer.value);
+          await invoiceApi.verify(invoiceId, txHash, payer.value, {
+            signal: controller.signal,
+          });
+          if (
+            controller.signal.aborted ||
+            useWalletStore.getState().publicKey !== startingPublicKey ||
+            !useWalletStore.getState().connected
+          ) {
+            toast.dismiss(PAY_TOAST_ID);
+            return;
+          }
           toast.success('Payment verified', {
             id: PAY_TOAST_ID,
             description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
           });
-        } catch (error) {
+        } catch (error: any) {
+          if (
+            controller.signal.aborted ||
+            useWalletStore.getState().publicKey !== startingPublicKey ||
+            !useWalletStore.getState().connected ||
+            error?.name === 'CanceledError' ||
+            error?.name === 'AbortError'
+          ) {
+            toast.dismiss(PAY_TOAST_ID);
+            return;
+          }
           // The payment is on the ledger even though verification did not
           // complete, so this is a warning and the flow still reports success.
           console.error('Verification failed:', error);
@@ -141,14 +212,40 @@ export default function PaymentButton({
           });
         }
       } else {
+        if (
+          controller.signal.aborted ||
+          useWalletStore.getState().publicKey !== startingPublicKey ||
+          !useWalletStore.getState().connected
+        ) {
+          toast.dismiss(PAY_TOAST_ID);
+          return;
+        }
         toast.success('Payment successful', {
           id: PAY_TOAST_ID,
           description: `TX: ${txHash.slice(0, 8)}...${txHash.slice(-8)}`,
         });
       }
 
+      if (
+        controller.signal.aborted ||
+        useWalletStore.getState().publicKey !== startingPublicKey ||
+        !useWalletStore.getState().connected
+      ) {
+        toast.dismiss(PAY_TOAST_ID);
+        return;
+      }
       onSuccess?.(txHash);
     } catch (error: any) {
+      if (
+        controller.signal.aborted ||
+        useWalletStore.getState().publicKey !== startingPublicKey ||
+        !useWalletStore.getState().connected ||
+        error?.name === 'CanceledError' ||
+        error?.name === 'AbortError'
+      ) {
+        toast.dismiss(PAY_TOAST_ID);
+        return;
+      }
       const missingTrustline =
         assetCode !== 'XLM' && (
           error.message?.toLowerCase().includes('trustline') ||
@@ -164,6 +261,9 @@ export default function PaymentButton({
       });
       onError?.(title);
     } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
       setLoading(false);
     }
   };
