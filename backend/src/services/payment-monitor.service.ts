@@ -4,7 +4,7 @@ import invoiceService, { InvoiceService, Queryable } from './invoice.service';
 import { SELLER_PUBLIC_KEY, STELLAR_NETWORK } from '../config/stellar';
 import { pool } from '../config/database';
 import { checkInvoiceIsPayable, verifyHorizonPayment } from './payment-verification';
-import { PaymentClaimError } from '../domain/payment-attribution';
+import { PaymentClaimError, claimPayment } from '../domain/payment-attribution';
 import {
   parseSettlementTime,
   SettlementTimeUnavailableError,
@@ -23,6 +23,7 @@ export interface PaymentPageSource {
 
 export interface MonitorInvoiceService {
   getInvoiceByMemo(memo: string): ReturnType<InvoiceService['getInvoiceByMemo']>;
+  getInvoiceById?: InvoiceService['getInvoiceById'];
   markAsPaid: InvoiceService['markAsPaid'];
   markExpiredInvoices: InvoiceService['markExpiredInvoices'];
   logPaymentEvent: InvoiceService['logPaymentEvent'];
@@ -501,19 +502,21 @@ export class PaymentMonitorService {
     }
 
     try {
-      await this.saveTransaction(payment, invoice.id);
-      await this.invoices.markAsPaid(
-        invoice.id,
-        payment.txHash,
-        payment.from,
-        undefined,
-        { settledAt }
-      );
+      const claimResult = await claimPayment({
+        storage: this.invoices,
+        invoiceId: invoice.id,
+        txHash: payment.txHash,
+        payerPublicKey: payment.from,
+        options: { settledAt },
+      });
+
+      if (claimResult.kind === 'settled') {
+        await this.saveTransaction(payment, invoice.id);
+      }
       this.processedTxHashes.add(payment.txHash);
       this.unregisterWatch(invoice.id);
     } catch (error) {
       if (error instanceof PaymentClaimError) {
-        // A transaction that already settled another invoice must not settle this one
         await this.invoices.logPaymentEvent(
           invoice.id,
           'PAYMENT_REJECTED',

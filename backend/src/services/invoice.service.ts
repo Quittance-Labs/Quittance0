@@ -9,6 +9,7 @@ import {
   type LatePaymentWarningCode,
   type SettlementContext,
 } from '../domain/invoice-settlement';
+import { PaymentClaimError } from '../domain/payment-attribution';
 import type { MarkAsPaidOptions } from '../storage/invoice-storage';
 
 // PostgreSQL invoice service. Kept behaviourally identical to
@@ -205,7 +206,17 @@ export class InvoiceService {
 
       if (result.rows.length === 0) {
         const existing = await this.db.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
-        if (existing.rows[0]?.status === 'CANCELLED' && !settledAt) {
+        if (existing.rows.length === 0) {
+          throw new Error('Invoice not found');
+        }
+        const inv = existing.rows[0];
+        if (inv.status === 'PAID') {
+          if (inv.payment_tx_hash === txHash) {
+            return this.mapRowToInvoice(inv);
+          }
+          throw new PaymentClaimError(txHash, invoiceId, inv.id);
+        }
+        if (inv.status === 'CANCELLED' && !settledAt) {
           throw new SettlementTimeUnavailableError();
         }
         throw new Error('Invoice not found, expired, or already processed');
@@ -215,8 +226,28 @@ export class InvoiceService {
 
       return this.mapRowToInvoice(result.rows[0]);
     } catch (error: any) {
-      if (error instanceof SettlementTimeUnavailableError) {
+      if (error instanceof SettlementTimeUnavailableError || error instanceof PaymentClaimError) {
         throw error;
+      }
+      if (error?.code === '23505') {
+        const isTxHashViolation =
+          error.constraint === 'uq_invoices_payment_tx_hash' ||
+          error.detail?.includes('payment_tx_hash') ||
+          error.message?.includes('payment_tx_hash');
+
+        if (isTxHashViolation) {
+          try {
+            const existingClaim = await this.db.query(
+              'SELECT id FROM invoices WHERE payment_tx_hash = $1',
+              [txHash]
+            );
+            const settledInvoiceId = existingClaim.rows[0]?.id || 'unknown';
+            throw new PaymentClaimError(txHash, invoiceId, settledInvoiceId);
+          } catch (lookupErr) {
+            if (lookupErr instanceof PaymentClaimError) throw lookupErr;
+            throw new PaymentClaimError(txHash, invoiceId, 'unknown');
+          }
+        }
       }
       console.error('Error marking invoice as paid:', error);
       throw new Error(`Failed to update invoice: ${error.message}`);

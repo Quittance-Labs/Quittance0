@@ -129,29 +129,25 @@ column to add, populated from the claim.
 
 ## Uniqueness: what this does now, and what the database should do next
 
-**Memory MVP (this PR).** Both rules live in the process. Stated plainly as a
-ceiling: the claim index is lost on restart and is not shared between instances,
-so a second instance would not see another instance's claims. That is correct
-for the single-instance memory backend and is the reason the durable form
-belongs in Postgres.
+**In-Process Mutex and Attribution Path.** Both manual `POST /api/invoices/:id/verify`
+and the background `PaymentMonitorService` now route through a single shared claim path
+`claimPayment(...)`. Claims are serialized per `txHash` using `TxClaimLock` (promise queue
+per normalized hash), preventing race conditions where both callers attempt to attribute
+the same transaction concurrently.
 
-**Postgres (recommended, not in this PR).** `db/schema.sql` already indexes
-memo, but not uniquely, and `payment_tx_hash` carries no constraint at all:
+**Postgres Durable Guard.** `db/schema.sql` enforces a unique partial index on `payment_tx_hash`:
 
 ```sql
--- replaces idx_invoices_memo, which becomes redundant
-CREATE UNIQUE INDEX IF NOT EXISTS uq_invoices_memo ON invoices (memo);
-
 CREATE UNIQUE INDEX IF NOT EXISTS uq_invoices_payment_tx_hash
   ON invoices (payment_tx_hash)
   WHERE payment_tx_hash IS NOT NULL;
 ```
 
-Why it is not in this PR: the Postgres path cannot be exercised by this
-repository's default test run (`npm run test:pg` needs a live database), and an
-unverified migration is worse than a documented one. Until it lands, the two
-backends differ on this rule — worth saying out loud rather than leaving to be
-discovered.
+Any concurrent or distributed race that bypasses in-memory locking triggers a PostgreSQL
+`23505` unique violation on `payment_tx_hash`. `InvoiceService` intercepts this violation
+and translates it into a typed `PaymentClaimError` (`TX_HASH_ALREADY_USED`). Both the HTTP
+verify handler (returning HTTP 409) and the payment monitor (logging `PAYMENT_REJECTED`
+and cleanly exiting) handle this rejection code gracefully without throwing unhandled 500 errors.
 
 ## Coverage
 

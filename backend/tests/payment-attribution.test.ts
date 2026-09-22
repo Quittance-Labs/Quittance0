@@ -16,6 +16,8 @@ import {
   MemoCollisionError,
   PaymentClaimError,
   PaymentClaimIndex,
+  TxClaimLock,
+  claimPayment,
 } from '../src/domain/payment-attribution';
 import { SettlementTimeUnavailableError } from '../src/domain/invoice-settlement';
 import { MemoryStorage } from '../src/storage/memory-storage';
@@ -183,3 +185,126 @@ describe('memo uniqueness', () => {
     await assert.rejects(() => service.createInvoice(invoiceInput()), MemoCollisionError);
   });
 });
+
+describe('TxClaimLock', () => {
+  it('serializes concurrent operations on the same transaction hash', async () => {
+    const lock = new TxClaimLock();
+    const order: string[] = [];
+
+    const p1 = lock.acquire(TX_A, async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      order.push('first');
+    });
+
+    const p2 = lock.acquire(TX_A, async () => {
+      order.push('second');
+    });
+
+    await Promise.all([p1, p2]);
+    assert.deepEqual(order, ['first', 'second']);
+  });
+
+  it('allows concurrent operations on different transaction hashes', async () => {
+    const lock = new TxClaimLock();
+    const active: string[] = [];
+
+    const p1 = lock.acquire(TX_A, async () => {
+      active.push('A-start');
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      active.push('A-end');
+    });
+
+    const p2 = lock.acquire(TX_B, async () => {
+      active.push('B-start');
+      active.push('B-end');
+    });
+
+    await Promise.all([p1, p2]);
+    assert.equal(active[0], 'A-start');
+    assert.equal(active[1], 'B-start');
+  });
+
+  it('releases lock and cleans up queue on completion', async () => {
+    const lock = new TxClaimLock();
+    assert.equal(lock.isLocked(TX_A), false);
+
+    const promise = lock.acquire(TX_A, async () => {
+      assert.equal(lock.isLocked(TX_A), true);
+      return 'done';
+    });
+
+    const res = await promise;
+    assert.equal(res, 'done');
+    assert.equal(lock.isLocked(TX_A), false);
+  });
+});
+
+describe('claimPayment', () => {
+  it('settles a pending invoice via the shared claim path', async () => {
+    const storage = new MemoryStorage();
+    const invoice = seed(storage, 'INV-CLAIM-1');
+
+    const res = await claimPayment({
+      storage,
+      invoiceId: invoice.id,
+      txHash: TX_A,
+      payerPublicKey: SELLER,
+    });
+
+    assert.equal(res.kind, 'settled');
+    assert.equal(res.invoice.status, 'PAID');
+    assert.equal(res.invoice.paymentTxHash, TX_A);
+  });
+
+  it('returns replay when called repeatedly with the same hash', async () => {
+    const storage = new MemoryStorage();
+    const invoice = seed(storage, 'INV-REPLAY-1');
+
+    const first = await claimPayment({
+      storage,
+      invoiceId: invoice.id,
+      txHash: TX_A,
+      payerPublicKey: SELLER,
+    });
+    assert.equal(first.kind, 'settled');
+
+    const second = await claimPayment({
+      storage,
+      invoiceId: invoice.id,
+      txHash: TX_A,
+      payerPublicKey: SELLER,
+    });
+    assert.equal(second.kind, 'replay');
+    assert.equal(second.invoice.id, invoice.id);
+  });
+
+  it('rejects with PaymentClaimError when hash was already used by another invoice', async () => {
+    const storage = new MemoryStorage();
+    const first = seed(storage, 'INV-ONE');
+    const second = seed(storage, 'INV-TWO');
+
+    await claimPayment({
+      storage,
+      invoiceId: first.id,
+      txHash: TX_A,
+      payerPublicKey: SELLER,
+    });
+
+    await assert.rejects(
+      () =>
+        claimPayment({
+          storage,
+          invoiceId: second.id,
+          txHash: TX_A,
+          payerPublicKey: SELLER,
+        }),
+      (err: any) => {
+        assert.ok(err instanceof PaymentClaimError);
+        assert.equal(err.code, 'TX_HASH_ALREADY_USED');
+        assert.equal(err.settledInvoiceId, first.id);
+        return true;
+      }
+    );
+  });
+});
+

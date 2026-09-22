@@ -30,7 +30,11 @@ import {
   messageForCode,
   verifyHorizonPayment,
 } from '../services/payment-verification';
-import { PaymentClaimError } from '../domain/payment-attribution';
+import {
+  PaymentClaimError,
+  claimPayment,
+  type ClaimPaymentResult,
+} from '../domain/payment-attribution';
 import {
   SettlementTimeUnavailableError,
   warningForLatePayment,
@@ -452,24 +456,30 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           );
         }
 
-        let updatedInvoice: StoredInvoice;
+        let claimResult: ClaimPaymentResult;
         try {
-          updatedInvoice = await storage.markAsPaid(
-            id,
-            verification.value.txHash,
-            verification.value.from,
-            payerCheck.value,
-            { settledAt: verification.value.settledAt }
-          );
+          claimResult = await claimPayment({
+            storage,
+            invoiceId: id,
+            txHash: verification.value.txHash,
+            payerPublicKey: verification.value.from,
+            payerInfo: payerCheck.value,
+            options: { settledAt: verification.value.settledAt },
+          });
+          if (claimResult.kind === 'replay') {
+            return sendVerificationFailure(
+              res,
+              400,
+              'INVOICE_ALREADY_PAID',
+              'Invoice has already been paid'
+            );
+          }
+
           options.paymentMonitor?.unregisterWatch(id);
           
-          // Cache successful verification
           await cacheVerificationResult(id, hashCheck.value, 'verified');
         } catch (error) {
           if (error instanceof PaymentClaimError) {
-            // A transaction that already settled another invoice must not settle
-            // this one as well. 409, not 400: the request is well formed and it
-            // is the server's recorded state that refuses it.
             return sendVerificationFailure(res, 409, error.code, messageForCode(error.code));
           }
           if (error instanceof SettlementTimeUnavailableError) {
@@ -480,8 +490,6 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
               messageForCode('TRANSACTION_CLOSE_TIME_UNAVAILABLE')
             );
           }
-          // The payment lookup can cross expiresAt after the first status read.
-          // Re-read so that race still returns the public expiry contract.
           const latest = await storage.getInvoiceById(id);
           const latestStatus = latest && checkInvoiceIsPayable(latest.status);
           if (latestStatus && !latestStatus.ok) {
@@ -494,6 +502,8 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           }
           throw error;
         }
+
+        const updatedInvoice = claimResult.invoice;
 
         sendSuccess(res, 200, updatedInvoice, {
           message: 'Payment verified on Stellar',

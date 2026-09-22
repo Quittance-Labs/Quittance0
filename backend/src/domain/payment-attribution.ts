@@ -114,3 +114,178 @@ export class MemoCollisionError extends Error {
   }
 }
 
+import type {
+  StoredInvoice,
+  MarkAsPaidOptions,
+  PayerInfo,
+} from '../storage/invoice-storage';
+
+/**
+ * In-process promise queue mutex per transaction hash.
+ * Serializes concurrent payment claims targeting the same transaction.
+ */
+export class TxClaimLock {
+  private readonly tails = new Map<string, Promise<void>>();
+
+  /**
+   * Acquire a lock on the given transaction hash for the duration of the provided callback.
+   */
+  async acquire<T>(txHash: string, fn: () => Promise<T>): Promise<T> {
+    const key = txHash.toLowerCase();
+    const prev = this.tails.get(key) ?? Promise.resolve();
+    let release: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const next = prev.then(
+      () => current,
+      () => current
+    );
+    this.tails.set(key, next);
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release!();
+      if (this.tails.get(key) === next) {
+        this.tails.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Determine whether a lock is currently active for the given transaction hash.
+   */
+  isLocked(txHash: string): boolean {
+    return this.tails.has(txHash.toLowerCase());
+  }
+
+  /**
+   * Reset all lock queues.
+   */
+  clear(): void {
+    this.tails.clear();
+  }
+}
+
+export const txClaimLock = new TxClaimLock();
+
+/**
+ * Storage interface required by the shared payment claim function.
+ */
+export interface ClaimPaymentStorage {
+  getInvoiceById?(id: string): Promise<StoredInvoice | null> | StoredInvoice | null;
+  markAsPaid(
+    id: string,
+    txHash: string,
+    payerPublicKey: string,
+    payerInfo?: PayerInfo,
+    options?: MarkAsPaidOptions
+  ): Promise<StoredInvoice | undefined> | StoredInvoice | undefined;
+  logPaymentEvent?(invoiceId: string, eventType: string, eventData: any): Promise<void> | void;
+  getPaymentClaim?(txHash: string): PaymentClaim | undefined;
+}
+
+/**
+ * Input arguments for the shared claimPayment function.
+ */
+export interface ClaimPaymentParams {
+  storage: ClaimPaymentStorage;
+  invoiceId: string;
+  txHash: string;
+  payerPublicKey: string;
+  payerInfo?: PayerInfo;
+  options?: MarkAsPaidOptions;
+}
+
+/**
+ * Result returned by the shared claimPayment function.
+ */
+export type ClaimPaymentResult =
+  | { kind: 'settled'; invoice: StoredInvoice }
+  | { kind: 'replay'; invoice: StoredInvoice };
+
+/**
+ * Shared single claim path used by both manual verify and background payment monitor.
+ * Serializes settlement per txHash to prevent concurrent race conditions.
+ */
+export async function claimPayment(
+  params: ClaimPaymentParams,
+  lock: TxClaimLock = txClaimLock
+): Promise<ClaimPaymentResult> {
+  const { storage, invoiceId, txHash, payerPublicKey, payerInfo, options } = params;
+
+  return await lock.acquire(txHash, async () => {
+    if (typeof storage.getPaymentClaim === 'function') {
+      const existingClaim = storage.getPaymentClaim(txHash);
+      if (existingClaim && existingClaim.invoiceId !== invoiceId) {
+        throw new PaymentClaimError(txHash, invoiceId, existingClaim.invoiceId);
+      }
+    }
+
+    const current = typeof storage.getInvoiceById === 'function'
+      ? await storage.getInvoiceById(invoiceId)
+      : null;
+
+    if (current && current.status === 'PAID') {
+      if (current.paymentTxHash === txHash) {
+        return { kind: 'replay', invoice: current };
+      }
+      throw new PaymentClaimError(txHash, invoiceId, current.id);
+    }
+
+    try {
+      const settled = await storage.markAsPaid(
+        invoiceId,
+        txHash,
+        payerPublicKey,
+        payerInfo,
+        options
+      );
+
+      if (!settled) {
+        const latest = typeof storage.getInvoiceById === 'function'
+          ? await storage.getInvoiceById(invoiceId)
+          : null;
+        if (latest && latest.status === 'PAID' && latest.paymentTxHash === txHash) {
+          return { kind: 'replay', invoice: latest };
+        }
+        throw new Error('Invoice not found, expired, or already processed');
+      }
+
+      return { kind: 'settled', invoice: settled };
+    } catch (error: any) {
+      if (error instanceof PaymentClaimError) {
+        throw error;
+      }
+
+      if (
+        error?.code === '23505' ||
+        error?.constraint === 'uq_invoices_payment_tx_hash' ||
+        error?.message?.includes('uq_invoices_payment_tx_hash') ||
+        (error?.message?.includes('payment_tx_hash') && error?.message?.includes('duplicate key'))
+      ) {
+        throw new PaymentClaimError(txHash, invoiceId, 'already-claimed');
+      }
+
+      if (
+        error?.message?.includes('already processed') ||
+        error?.message?.includes('Invoice not found, expired, or already processed')
+      ) {
+        const latest = typeof storage.getInvoiceById === 'function'
+          ? await storage.getInvoiceById(invoiceId)
+          : null;
+        if (latest && latest.status === 'PAID') {
+          if (latest.paymentTxHash === txHash) {
+            return { kind: 'replay', invoice: latest };
+          }
+          throw new PaymentClaimError(txHash, invoiceId, latest.id);
+        }
+      }
+
+      throw error;
+    }
+  });
+}
+
+
