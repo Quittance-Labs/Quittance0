@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   EXPECTED_WALLET_NETWORK,
   sendPayment,
+  loadAccount,
   checkWalletConnection,
   requestWalletAccess,
   getFreighterNetwork,
@@ -18,6 +19,7 @@ import { describeVerifyError, normalizePayerDetails } from '@/lib/payment-page-s
 import { resolveVerificationError } from '@/lib/verification';
 import { useWalletStore } from '@/lib/store';
 import { walletSessionGate } from '@/lib/wallet-session';
+import { checkPayerTrustline, type TrustlinePreflightResult } from '@/lib/trustline-preflight';
 
 interface PaymentButtonProps {
   destination: string;
@@ -29,6 +31,7 @@ interface PaymentButtonProps {
   payerName?: string;
   payerEmail?: string;
   invoiceStatus?: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
+  trustlineGate?: TrustlinePreflightResult;
   /** Fired when the payer commits to paying, before the wallet is opened. */
   onStart?: () => void;
   onSuccess?: (txHash: string) => void;
@@ -48,6 +51,7 @@ export default function PaymentButton({
   payerName,
   payerEmail,
   invoiceStatus = 'PENDING',
+  trustlineGate,
   onStart,
   onSuccess,
   onError,
@@ -62,6 +66,15 @@ export default function PaymentButton({
   );
 
   const handlePayment = async () => {
+    if (trustlineGate && !trustlineGate.canPay) {
+      toast.error(trustlineGate.title, {
+        id: PAY_TOAST_ID,
+        description: trustlineGate.message || undefined,
+      });
+      onError?.(trustlineGate.message || trustlineGate.title);
+      return;
+    }
+
     if (!gate.ready) {
       showFreighterInstallPrompt(gate);
       onError?.(gate.message);
@@ -114,6 +127,25 @@ export default function PaymentButton({
         toast.error(wrongMsg);
         onError?.(wrongMsg);
         return;
+      }
+
+      if (assetCode && assetCode !== 'XLM') {
+        const preflight = await checkPayerTrustline({
+          loadAccountFn: loadAccount,
+          publicKey,
+          assetCode,
+          assetIssuer,
+        });
+
+        if (!preflight.canPay) {
+          setLoading(false);
+          toast.error(preflight.title, {
+            id: PAY_TOAST_ID,
+            description: preflight.message || undefined,
+          });
+          onError?.(preflight.message || preflight.title);
+          return;
+        }
       }
 
       toast.loading('Confirm in wallet...', { id: PAY_TOAST_ID });
@@ -182,13 +214,27 @@ export default function PaymentButton({
     <button
       type="button"
       onClick={handlePayment}
-      disabled={loading || !destination || !amount || invoiceStatus !== 'PENDING'}
-      aria-disabled={!gate.ready}
+      disabled={
+        loading ||
+        !destination ||
+        !amount ||
+        invoiceStatus !== 'PENDING' ||
+        Boolean(trustlineGate && !trustlineGate.canPay)
+      }
+      aria-disabled={!gate.ready || Boolean(trustlineGate && !trustlineGate.canPay)}
       aria-busy={loading}
-      data-payment-state={loading ? 'processing' : gate.status}
+      data-payment-state={
+        loading
+          ? 'processing'
+          : trustlineGate && !trustlineGate.canPay
+          ? trustlineGate.status
+          : gate.status
+      }
       aria-label={
         loading
           ? `Processing payment of ${amount} ${assetCode}`
+          : trustlineGate && !trustlineGate.canPay
+          ? trustlineGate.message || `${assetCode} trustline required`
           : gate.ready
             ? `Pay ${amount} ${assetCode} with Freighter`
             : gate.message

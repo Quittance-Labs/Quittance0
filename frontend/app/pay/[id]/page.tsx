@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Loader2, AlertTriangle, CheckCircle2, RefreshCw, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import PayPageHeader from '@/components/PayPageHeader';
 import PayAmountBlock from '@/components/PayAmountBlock';
@@ -22,81 +22,97 @@ import { emailPaymentProof, openInvoicePDF, shareInvoiceByEmail } from '@/lib/ex
 import { getPayPageView, getPayPageWalletGate } from '@/lib/payment-page-state';
 import { PAYMENT_STATUS_POLL_INTERVAL_MS } from '@/lib/api';
 import { memoPaymentHint } from '@/lib/pay-memo-hint';
-// Payment and verification errors on the pay page resolve through the shared
-// canonical rejection code table, ensuring consistent English copy across all views.
 import { usePaymentPage } from '@/lib/use-payment-page';
 import { MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';
 import { useWalletStore } from '@/lib/store';
-import { EXPECTED_WALLET_NETWORK, NETWORK_DISPLAY_NAME } from '@/lib/stellar';
+import { EXPECTED_WALLET_NETWORK, NETWORK_DISPLAY_NAME, loadAccount, addTrustline } from '@/lib/stellar';
 import { detectDevice } from '@/lib/mobile-detection';
+import { checkPayerTrustline, isNativeAsset, type TrustlinePreflightResult } from '@/lib/trustline-preflight';
+import type { PayPageInvoice } from '@/components/pay-page.types';
 
-export default function PaymentPage() {
-  const id = useParams().id as string;
-  const page = usePaymentPage(id);
+function PayPageLoaded({
+  invoice,
+  page,
+}: {
+  invoice: PayPageInvoice;
+  page: ReturnType<typeof usePaymentPage>;
+}) {
   const walletSession = useWalletStore();
   const isWrongNetwork = useWalletStore((s) => s.isWrongNetwork);
   const [isMobile, setIsMobile] = useState(false);
   const [showDesktopWalletAnyway, setShowDesktopWalletAnyway] = useState(false);
+  const [trustlinePreflight, setTrustlinePreflight] = useState<TrustlinePreflightResult | null>(null);
+  const [isCheckingTrustline, setIsCheckingTrustline] = useState(false);
+  const [isAddingTrustline, setIsAddingTrustline] = useState(false);
 
   useEffect(() => {
     setIsMobile(detectDevice().isMobile);
   }, []);
 
-  if (page.loading) {
-    return (
-      <main
-        id={MAIN_CONTENT_ID}
-        tabIndex={-1}
-        className="min-h-screen bg-logo-pattern relative flex items-center justify-center"
-      >
-        <div className="orb orb-1"></div>
-        <div className="orb orb-2"></div>
-        <div className="orb orb-3"></div>
-        <div className="relative" role="status" aria-live="polite">
-          <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full blur-2xl opacity-30"></div>
-          <Loader2 className="w-16 h-16 animate-spin text-teal-800 relative z-10" aria-hidden="true" />
-          <span className="sr-only">Loading this invoice.</span>
-        </div>
-      </main>
-    );
-  }
-
-  if (!page.invoice) {
-    if (page.loadError) {
-      return (
-        <div className="min-h-screen bg-logo-pattern flex items-center justify-center px-4">
-          <div className="max-w-lg w-full">
-            <ApiErrorState message={page.loadError} onRetry={() => void page.reload()} />
-          </div>
-        </div>
-      );
-    }
-    return (
-      <main
-        id={MAIN_CONTENT_ID}
-        tabIndex={-1}
-        className="min-h-screen bg-logo-pattern relative flex items-center justify-center"
-      >
-        <div className="orb orb-1"></div>
-        <div className="orb orb-2"></div>
-        <div className="orb orb-3"></div>
-        <div className="card text-center max-w-md relative z-10" role="alert">
-          <h1 className="text-2xl font-bold text-red-700 mb-2">Invoice Not Found</h1>
-          <p className="text-gray-700">
-            {page.loadError ?? 'The invoice you are looking for does not exist.'}
-          </p>
-        </div>
-      </main>
-    );
-  }
-
-  const invoice = page.invoice;
   const view = getPayPageView(invoice);
   const walletPaymentGate = getPayPageWalletGate(
     invoice,
     walletSession,
     EXPECTED_WALLET_NETWORK
   );
+
+  const runTrustlineCheck = useCallback(async () => {
+    if (
+      !invoice ||
+      isNativeAsset(invoice.assetCode) ||
+      !walletSession.publicKey ||
+      isWrongNetwork ||
+      !walletPaymentGate.ready
+    ) {
+      setTrustlinePreflight(null);
+      return;
+    }
+    setIsCheckingTrustline(true);
+    try {
+      const result = await checkPayerTrustline({
+        loadAccountFn: loadAccount,
+        publicKey: walletSession.publicKey,
+        assetCode: invoice.assetCode,
+        assetIssuer: invoice.assetIssuer,
+      });
+      setTrustlinePreflight(result);
+    } finally {
+      setIsCheckingTrustline(false);
+    }
+  }, [
+    invoice,
+    walletSession.publicKey,
+    isWrongNetwork,
+    walletPaymentGate.ready,
+  ]);
+
+  useEffect(() => {
+    void runTrustlineCheck();
+  }, [runTrustlineCheck]);
+
+  const handleAddTrustline = async () => {
+    if (!invoice?.assetCode || !invoice?.assetIssuer) {
+      return;
+    }
+    setIsAddingTrustline(true);
+    const toastId = 'trustline-add';
+    toast.loading(`Establishing ${invoice.assetCode} trustline in Freighter...`, {
+      id: toastId,
+    });
+    try {
+      await addTrustline(invoice.assetCode, invoice.assetIssuer);
+      toast.success(`${invoice.assetCode} trustline established`, { id: toastId });
+      await runTrustlineCheck();
+    } catch (err: any) {
+      toast.error('Failed to add trustline', {
+        id: toastId,
+        description: err?.message || 'Transaction was rejected or cancelled.',
+      });
+    } finally {
+      setIsAddingTrustline(false);
+    }
+  };
+
   const copy = async (value: string, label: string) => {
     if (await copyToClipboard(value)) toast.success(`${label} copied`);
   };
@@ -155,12 +171,134 @@ export default function PaymentPage() {
           </div>
 
           {invoice.assetCode && invoice.assetCode !== 'XLM' && view.showPaymentControls && (
-            <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900 flex items-start gap-3">
-              <div>
-                <span className="font-semibold block mb-0.5">{invoice.assetCode} Trustline Notice</span>
-                <span>Please ensure your Stellar wallet has established a trustline for {invoice.assetCode} before submitting payment.</span>
-              </div>
-            </div>
+            <>
+              {(!walletPaymentGate.ready || isWrongNetwork || !trustlinePreflight) && (
+                <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" aria-hidden="true" />
+                  <div>
+                    <span className="font-semibold block mb-0.5">{invoice.assetCode} Trustline Notice</span>
+                    <span>Please ensure your Stellar wallet has established a trustline for {invoice.assetCode} before submitting payment.</span>
+                  </div>
+                </div>
+              )}
+              {walletPaymentGate.ready && !isWrongNetwork && trustlinePreflight?.status === 'trustline_exists' && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="mb-6 bg-emerald-50 border border-emerald-300 rounded-lg p-4 text-sm text-emerald-900 flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" aria-hidden="true" />
+                    <div>
+                      <span className="font-semibold block">{invoice.assetCode} Trustline Verified</span>
+                      <span className="text-xs text-emerald-800">Your connected wallet can receive and hold this asset.</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void runTrustlineCheck()}
+                    disabled={isCheckingTrustline}
+                    className="text-xs text-emerald-700 hover:text-emerald-900 underline flex items-center gap-1 shrink-0"
+                    aria-label={`Recheck ${invoice.assetCode} trustline`}
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isCheckingTrustline ? 'animate-spin' : ''}`} aria-hidden="true" />
+                    <span>Recheck</span>
+                  </button>
+                </div>
+              )}
+              {walletPaymentGate.ready && !isWrongNetwork && trustlinePreflight?.status === 'missing_trustline' && (
+                <div
+                  role="alert"
+                  aria-live="polite"
+                  className="mb-6 bg-amber-50 border border-amber-300 rounded-lg p-4 text-sm text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
+                    <div>
+                      <span className="font-semibold block mb-0.5">{invoice.assetCode} Trustline Required</span>
+                      <span className="text-xs sm:text-sm text-amber-800">{trustlinePreflight.message}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleAddTrustline}
+                      disabled={isAddingTrustline}
+                      className="btn btn-primary text-xs sm:text-sm px-3 py-1.5 flex items-center gap-1.5"
+                    >
+                      {isAddingTrustline ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                          <span>Adding...</span>
+                        </>
+                      ) : (
+                        <span>Add {invoice.assetCode} Trustline</span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void runTrustlineCheck()}
+                      disabled={isCheckingTrustline}
+                      className="btn btn-secondary text-xs sm:text-sm px-3 py-1.5 flex items-center gap-1"
+                      aria-label="Recheck trustline"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isCheckingTrustline ? 'animate-spin' : ''}`} aria-hidden="true" />
+                      <span>Recheck</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+              {walletPaymentGate.ready && !isWrongNetwork && trustlinePreflight?.status === 'no_account' && (
+                <div
+                  role="alert"
+                  aria-live="polite"
+                  className="mb-6 bg-amber-50 border border-amber-300 rounded-lg p-4 text-sm text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
+                    <div>
+                      <span className="font-semibold block mb-0.5">Account Not Funded</span>
+                      <span className="text-xs sm:text-sm text-amber-800">{trustlinePreflight.message}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void runTrustlineCheck()}
+                    disabled={isCheckingTrustline}
+                    className="btn btn-secondary text-xs sm:text-sm px-3 py-1.5 flex items-center gap-1 shrink-0"
+                    aria-label="Recheck account status"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isCheckingTrustline ? 'animate-spin' : ''}`} aria-hidden="true" />
+                    <span>Recheck</span>
+                  </button>
+                </div>
+              )}
+              {walletPaymentGate.ready && !isWrongNetwork && trustlinePreflight?.status === 'outage' && (
+                <div
+                  role="alert"
+                  aria-live="polite"
+                  className="mb-6 bg-red-50 border border-red-300 rounded-lg p-4 text-sm text-red-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" aria-hidden="true" />
+                    <div>
+                      <span className="font-semibold block mb-0.5">Stellar Network Unavailable</span>
+                      <span className="text-xs sm:text-sm text-red-800">{trustlinePreflight.message}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void runTrustlineCheck()}
+                    disabled={isCheckingTrustline}
+                    className="btn btn-secondary text-xs sm:text-sm px-3 py-1.5 flex items-center gap-1 shrink-0"
+                    aria-label="Retry network check"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isCheckingTrustline ? 'animate-spin' : ''}`} aria-hidden="true" />
+                    <span>Retry Check</span>
+                  </button>
+                </div>
+              )}
+            </>
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
@@ -297,6 +435,7 @@ export default function PaymentPage() {
                         payerName={page.payerName}
                         payerEmail={page.payerEmail}
                         invoiceStatus={view.expired ? 'EXPIRED' : invoice.status}
+                        trustlineGate={trustlinePreflight ?? undefined}
                         onStart={() => page.dispatch({ type: 'PAY_STARTED' })}
                         onSuccess={(txHash) => {
                           page.dispatch({ type: 'PAY_SENT', txHash });
@@ -338,6 +477,64 @@ export default function PaymentPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * Renders the public payment page for an invoice.
+ */
+export default function PaymentPage() {
+  const id = useParams().id as string;
+  const page = usePaymentPage(id);
+
+  if (page.loading) {
+    return (
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className="min-h-screen bg-logo-pattern relative flex items-center justify-center"
+      >
+        <div className="orb orb-1"></div>
+        <div className="orb orb-2"></div>
+        <div className="orb orb-3"></div>
+        <div className="relative" role="status" aria-live="polite">
+          <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full blur-2xl opacity-30"></div>
+          <Loader2 className="w-16 h-16 animate-spin text-teal-800 relative z-10" aria-hidden="true" />
+          <span className="sr-only">Loading this invoice.</span>
+        </div>
+      </main>
+    );
+  }
+
+  if (!page.invoice) {
+    if (page.loadError) {
+      return (
+        <div className="min-h-screen bg-logo-pattern flex items-center justify-center px-4">
+          <div className="max-w-lg w-full">
+            <ApiErrorState message={page.loadError} onRetry={() => void page.reload()} />
+          </div>
+        </div>
+      );
+    }
+    return (
+      <main
+        id={MAIN_CONTENT_ID}
+        tabIndex={-1}
+        className="min-h-screen bg-logo-pattern relative flex items-center justify-center"
+      >
+        <div className="orb orb-1"></div>
+        <div className="orb orb-2"></div>
+        <div className="orb orb-3"></div>
+        <div className="card text-center max-w-md relative z-10" role="alert">
+          <h1 className="text-2xl font-bold text-red-700 mb-2">Invoice Not Found</h1>
+          <p className="text-gray-700">
+            {page.loadError ?? 'The invoice you are looking for does not exist.'}
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  return <PayPageLoaded invoice={page.invoice} page={page} />;
 }
 
 function PayerField({
