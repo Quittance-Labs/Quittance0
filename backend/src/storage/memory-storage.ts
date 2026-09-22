@@ -10,6 +10,7 @@ import {
 } from '../domain/payment-attribution';
 import type { PaymentClaim } from '../domain/payment-attribution';
 import type { MarkAsPaidOptions, StoredInvoice } from './invoice-storage';
+import { isMemoByteLengthValid } from '../utils/memo';
 
 export interface MemoryPaymentEvent {
   id: string;
@@ -47,9 +48,10 @@ class MemoryStorage {
       metadata: data.metadata,
     };
 
-    // The memo index is keyed by memo, so a second invoice carrying the same
-    // memo would overwrite the first one's entry and leave it unreachable by
-    // the payment monitor. Refuse instead, and let creation draw another memo.
+    if (invoice.memo && !isMemoByteLengthValid(invoice.memo)) {
+      throw new Error(`Invoice memo exceeds 28 bytes: ${invoice.memo}`);
+    }
+
     if (this.invoicesByMemo.has(invoice.memo)) {
       throw new MemoCollisionError(invoice.memo);
     }

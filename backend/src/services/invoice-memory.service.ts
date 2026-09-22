@@ -1,5 +1,5 @@
 import { MemoCollisionError } from '../domain/payment-attribution';
-import { generateInvoiceMemo } from '../utils/memo';
+import { generateInvoiceMemo, isValidMemo, isMemoByteLengthValid } from '../utils/memo';
 import { generatePublicInvoiceId } from '../utils/memory-public-id';
 import { CreateInvoiceInput } from '../utils/validation';
 import memoryStorage, { MemoryStorage, MemoryPaymentEvent } from '../storage/memory-storage';
@@ -71,6 +71,10 @@ export class InvoiceMemoryService {
 
     if (this.storage.hasMemo(candidate)) {
       throw new MemoCollisionError(candidate);
+    }
+
+    if (!isMemoByteLengthValid(candidate)) {
+      throw new Error(`Invoice memo exceeds 28 bytes: ${candidate}`);
     }
 
     return candidate;

@@ -104,6 +104,7 @@ test('covers every rejection code with a message', () => {
     'ASSET_MISMATCH',
     'NETWORK_MISMATCH',
     'TX_HASH_ALREADY_USED',
+    'INVALID_MEMO_TYPE',
   ];
 
   assert.deepEqual(Object.keys(VERIFICATION_MESSAGES).sort(), codes.sort());

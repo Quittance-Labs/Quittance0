@@ -18,7 +18,8 @@ export type VerificationCode =
   | 'AMOUNT_TOO_HIGH'
   | 'ASSET_MISMATCH'
   | 'NETWORK_MISMATCH'
-  | 'TX_HASH_ALREADY_USED';
+  | 'TX_HASH_ALREADY_USED'
+  | 'INVALID_MEMO_TYPE';
 
 export interface VerificationFailure {
   ok: false;

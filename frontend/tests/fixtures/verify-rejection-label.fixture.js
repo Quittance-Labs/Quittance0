@@ -26,6 +26,7 @@ const KNOWN_CODE_FIXTURES = [
   { code: 'ASSET_MISMATCH', label: 'Asset mismatch' },
   { code: 'NETWORK_MISMATCH', label: 'Network mismatch' },
   { code: 'TX_HASH_ALREADY_USED', label: 'Transaction already used' },
+  { code: 'INVALID_MEMO_TYPE', label: 'Invalid memo type' },
 ];
 
 const UNKNOWN_CODE_FIXTURES = [

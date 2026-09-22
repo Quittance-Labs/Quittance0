@@ -19,6 +19,11 @@ import {
 import { amountsMatch as stroopAmountsMatch } from '../utils/verify-amount-tolerance';
 import { describeAmountDelta } from '../utils/safe-amount-compare';
 import { parseSettlementTime } from '../domain/invoice-settlement';
+import {
+  isMemoByteLengthValid,
+  isTextMemoType,
+  normalizeMemo,
+} from '../../../shared/memo';
 
 import {
   messageForCode,
@@ -273,10 +278,6 @@ export interface VerifyPaymentInput {
   network?: string;
 }
 
-function normalizeMemo(memo: unknown): string {
-  return typeof memo === 'string' ? memo : '';
-}
-
 export function transactionSettlementTime(transaction: HorizonTransactionLike): Date | undefined {
   return parseSettlementTime(transaction?.created_at) ?? undefined;
 }
@@ -329,6 +330,21 @@ export function verifyHorizonPayment(input: VerifyPaymentInput): VerificationRes
   const paymentOp = findPaymentOperation(operations, expected.destination);
   if (!paymentOp) {
     return failure('NO_PAYMENT_OPERATION');
+  }
+
+  const memoType = (transaction?.memo_type || '').toLowerCase();
+  const hasExpectedMemo = Boolean(normalizeMemo(expected.memo));
+
+  if (memoType && memoType !== 'none' && !isTextMemoType(memoType)) {
+    return failure('INVALID_MEMO_TYPE');
+  }
+
+  if (hasExpectedMemo && memoType === 'none' && transaction?.memo) {
+    return failure('INVALID_MEMO_TYPE');
+  }
+
+  if (transaction?.memo && !isMemoByteLengthValid(transaction.memo)) {
+    return failure('INVALID_MEMO_TYPE');
   }
 
   if (normalizeMemo(transaction?.memo) !== normalizeMemo(expected.memo)) {

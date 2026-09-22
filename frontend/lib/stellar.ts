@@ -17,6 +17,7 @@ import {
   wrongNetworkMessage,
 } from './freighter-availability';
 import { networkDisplayName } from './network-display-name';
+import { isMemoByteLengthValid, normalizeMemo } from '../../shared/memo.ts';
 
 // Network configuration
 export const STELLAR_NETWORK = process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET';
@@ -343,6 +344,11 @@ export const sendPayment = async (
     const session = await assertFreighterReady();
     const userPublicKey = session.publicKey as string;
 
+    const normalizedMemo = normalizeMemo(memo);
+    if (!normalizedMemo || !isMemoByteLengthValid(normalizedMemo)) {
+      throw new Error('Invoice memo must be text of at most 28 bytes');
+    }
+
     // Load account
     let account;
     try {
@@ -382,7 +388,7 @@ export const sendPayment = async (
           amount,
         })
       )
-      .addMemo(StellarSdk.Memo.text(memo))
+      .addMemo(StellarSdk.Memo.text(normalizedMemo))
       .setTimeout(180)
       .build();
 

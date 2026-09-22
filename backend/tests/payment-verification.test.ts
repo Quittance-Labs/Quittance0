@@ -143,6 +143,34 @@ describe('verifyHorizonPayment — rejections', () => {
     assert.equal(result.ok ? '' : result.error, 'Memo mismatch');
   });
 
+  it('rejects non-text memo types with INVALID_MEMO_TYPE', () => {
+    assert.equal(
+      codeOf(verifyHorizonPayment(input({ transaction: { memo: 'INV-2K4H9', memo_type: 'hash' } }))),
+      'INVALID_MEMO_TYPE'
+    );
+    assert.equal(
+      codeOf(verifyHorizonPayment(input({ transaction: { memo: 'INV-2K4H9', memo_type: 'id' } }))),
+      'INVALID_MEMO_TYPE'
+    );
+    assert.equal(
+      codeOf(verifyHorizonPayment(input({ transaction: { memo: 'INV-2K4H9', memo_type: 'return' } }))),
+      'INVALID_MEMO_TYPE'
+    );
+    assert.equal(
+      codeOf(verifyHorizonPayment(input({ transaction: { memo: 'INV-2K4H9', memo_type: 'none' } }))),
+      'INVALID_MEMO_TYPE'
+    );
+  });
+
+  it('rejects memos exceeding 28 bytes with INVALID_MEMO_TYPE', () => {
+    const overlengthMemo = 'INV-' + 'A'.repeat(25);
+    const result = verifyHorizonPayment(
+      input({ transaction: { memo: overlengthMemo, memo_type: 'text' } })
+    );
+    assert.equal(codeOf(result), 'INVALID_MEMO_TYPE');
+    assert.equal(result.ok ? '' : result.error, 'Transaction memo type must be text');
+  });
+
   it('rejects a missing memo', () => {
     assert.equal(codeOf(verifyHorizonPayment(input({ transaction: {} }))), 'MEMO_MISMATCH');
   });

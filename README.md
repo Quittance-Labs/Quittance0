@@ -110,6 +110,7 @@ Rejections return a stable `code` alongside the human-readable `error`:
 | `TRANSACTION_NOT_FOUND` | Transaction not found on Stellar | 404 |
 | `NO_PAYMENT_OPERATION` | No payment operation found in transaction | 400 |
 | `MEMO_MISMATCH` | Memo mismatch | 400 |
+| `INVALID_MEMO_TYPE` | Transaction memo type must be text | 400 |
 | `DESTINATION_MISMATCH` | Payment destination mismatch | 400 |
 | `AMOUNT_MISMATCH` | Amount mismatch | 400 |
 | `AMOUNT_TOO_LOW` | Payment is less than the invoice amount | 400 |

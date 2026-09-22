@@ -12,7 +12,12 @@ import { describe, it } from 'node:test';
 import { createInvoiceHandlers } from '../src/routes/invoice.handlers.ts';
 import { MemoryInvoiceStorage } from '../src/storage/memory-invoice-storage.ts';
 import { createInvoiceFieldErrors, createInvoiceSchema } from '../src/utils/validation.ts';
-import { generateInvoiceMemo, hasInvoiceMemoPrefix, isValidMemo } from '../src/utils/memo.ts';
+import {
+  generateInvoiceMemo,
+  hasInvoiceMemoPrefix,
+  isMemoByteLengthValid,
+  isValidMemo,
+} from '../src/utils/memo.ts';
 import {
   CREATE_INVOICE_MESSAGES,
   collectCreateInvoiceFieldErrors,
@@ -208,13 +213,15 @@ describe('create-invoice endpoint - the refusal names its fields', () => {
     // tail from nanoid's default alphabet made this fail about one run in
     // five, because '-' and '_' are valid nanoid output and invalid memos.
     const memos = new Set<string>();
-    for (let index = 0; index < 500; index += 1) {
+    for (let index = 0; index < 1000; index += 1) {
       const memo = generateInvoiceMemo();
       assert.equal(isValidMemo(memo), true, `generated memo is unparseable: ${memo}`);
       assert.equal(hasInvoiceMemoPrefix(memo), true, `generated memo lost its prefix: ${memo}`);
+      assert.equal(isMemoByteLengthValid(memo), true, `generated memo exceeds byte limit: ${memo}`);
+      assert.equal(Buffer.byteLength(memo, 'utf8') <= 28, true);
       memos.add(memo);
     }
-    assert.equal(memos.size, 500, 'generated memos are expected to be unique');
+    assert.equal(memos.size, 1000, 'generated memos are expected to be unique');
   });
 
   it('still creates an invoice for a valid payload', async () => {

@@ -24,7 +24,7 @@
 //   'NO_PAYMENT_OPERATION' | 'MEMO_MISMATCH' | 'DESTINATION_MISMATCH' |
 //   'AMOUNT_MISMATCH' | 'AMOUNT_TOO_LOW' | 'AMOUNT_TOO_HIGH' |
 //   'ASSET_MISMATCH' | 'NETWORK_MISMATCH' |
-//   'TX_HASH_ALREADY_USED' | 'UNKNOWN_VERIFICATION_ERROR'} VerificationCodeLabel
+//   'TX_HASH_ALREADY_USED' | 'INVALID_MEMO_TYPE' | 'UNKNOWN_VERIFICATION_ERROR'} VerificationCodeLabel
 
 const UNKNOWN_LABEL = 'Unknown verification error';
 
@@ -59,6 +59,7 @@ const REJECTION_LABELS: Record<string, string> = {
   ASSET_MISMATCH: 'Asset mismatch',
   NETWORK_MISMATCH: 'Network mismatch',
   TX_HASH_ALREADY_USED: 'Transaction already used',
+  INVALID_MEMO_TYPE: 'Invalid memo type',
   UNKNOWN_VERIFICATION_ERROR: UNKNOWN_LABEL,
 };
 

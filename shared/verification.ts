@@ -54,7 +54,8 @@ export type VerificationCode =
   | 'AMOUNT_TOO_HIGH'
   | 'ASSET_MISMATCH'
   | 'NETWORK_MISMATCH'
-  | 'TX_HASH_ALREADY_USED';
+  | 'TX_HASH_ALREADY_USED'
+  | 'INVALID_MEMO_TYPE';
 
 /**
  * The rejection code each check produces when it fails.
@@ -102,6 +103,7 @@ export const VERIFICATION_MESSAGES: Record<VerificationCode, string> = {
   ASSET_MISMATCH: 'Asset mismatch',
   NETWORK_MISMATCH: 'Transaction is on a different Stellar network',
   TX_HASH_ALREADY_USED: 'Transaction already settled another invoice',
+  INVALID_MEMO_TYPE: 'Transaction memo type must be text',
 };
 
 /** The stable set of rejection codes, in declaration order. */

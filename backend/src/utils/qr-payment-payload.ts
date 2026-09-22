@@ -6,6 +6,7 @@
 // any QR generation library.
 
 import { Keypair } from '@stellar/stellar-sdk';
+import { normalizeMemo } from './memo';
 
 /**
  * Asset description used inside a QR payment payload.
@@ -127,8 +128,9 @@ export const formatQrPaymentPayload = (
     params.asset_issuer = assetIssuer;
   }
 
-  if (memo !== undefined && memo !== null && memo !== '') {
-    params.memo = memo;
+  const normalizedMemo = normalizeMemo(memo);
+  if (normalizedMemo !== '') {
+    params.memo = normalizedMemo;
     params.memo_type = 'MEMO_TEXT';
   }
 

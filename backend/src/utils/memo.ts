@@ -1,51 +1,68 @@
 import { customAlphabet, nanoid } from 'nanoid';
-import { hasInvoiceMemoPrefix } from './memo-prefix-check';
+import {
+  STELLAR_MAX_MEMO_BYTES,
+  INVOICE_MEMO_PREFIX,
+  MEMO_ALPHABET,
+  MEMO_FORMAT_PATTERN,
+  hasInvoiceMemoPrefix,
+  getMemoByteLength,
+  isMemoByteLengthValid,
+  normalizeMemo,
+  isValidMemo,
+  isTextMemoType,
+} from '../../../shared/memo';
 
-export { hasInvoiceMemoPrefix } from './memo-prefix-check';
+export {
+  STELLAR_MAX_MEMO_BYTES,
+  INVOICE_MEMO_PREFIX,
+  MEMO_ALPHABET,
+  MEMO_FORMAT_PATTERN,
+  hasInvoiceMemoPrefix,
+  getMemoByteLength,
+  isMemoByteLengthValid,
+  normalizeMemo,
+  isValidMemo,
+  isTextMemoType,
+};
 
-/**
- * The random tail of an invoice memo is drawn from an alphabet that cannot
- * produce anything but `INV-TIMESTAMP-RANDOM`.
- *
- * nanoid's default alphabet includes `-` and `_`, and both of them break the
- * format the rest of the system assumes: `isValidMemo` rejects a memo with a
- * second dash or an underscore, and `hasInvoiceMemoPrefix` only anchors the
- * front of the string. With two bad characters in a 64-character alphabet,
- * roughly a fifth of generated memos failed the API's own validator -- which
- * is how the create-invoice regression test became flaky rather than wrong.
- */
-const MEMO_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 const memoRandom = customAlphabet(MEMO_ALPHABET, 8);
+const shortReferenceRandom = customAlphabet(MEMO_ALPHABET, 10);
 
 /**
- * Generate a unique memo for invoice
+ * Generate a unique memo for invoice.
  * Format: INV-TIMESTAMP-RANDOM
+ *
+ * @returns An invoice memo guaranteed to satisfy isValidMemo and fit within 28 bytes.
  */
 export const generateInvoiceMemo = (): string => {
   const timestamp = Date.now().toString(36).toUpperCase();
-  return `INV-${timestamp}-${memoRandom()}`;
-};
-
-/**
- * Validate memo format
- */
-export const isValidMemo = (memo: string): boolean => {
-  if (!hasInvoiceMemoPrefix(memo)) {
-    return false;
+  const memo = `INV-${timestamp}-${memoRandom()}`;
+  if (!isValidMemo(memo)) {
+    throw new Error(`Generated invoice memo is invalid: ${memo}`);
   }
-  return /^INV-[A-Z0-9]+-[A-Z0-9]+$/.test(memo);
+  return memo;
 };
 
 /**
- * Generate short payment reference
+ * Generate short payment reference.
+ *
+ * @returns An uppercase random reference string.
  */
 export const generateShortReference = (): string => {
-  return nanoid(10).toUpperCase();
+  return shortReferenceRandom();
 };
 
 export default {
-  generateInvoiceMemo,
+  STELLAR_MAX_MEMO_BYTES,
+  INVOICE_MEMO_PREFIX,
+  MEMO_ALPHABET,
+  MEMO_FORMAT_PATTERN,
+  hasInvoiceMemoPrefix,
+  getMemoByteLength,
+  isMemoByteLengthValid,
+  normalizeMemo,
   isValidMemo,
+  isTextMemoType,
+  generateInvoiceMemo,
   generateShortReference,
 };
-
