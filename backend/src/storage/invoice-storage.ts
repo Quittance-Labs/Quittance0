@@ -87,4 +87,6 @@ export interface InvoiceStorage {
   markExpiredInvoices(now?: Date): Promise<number>;
   /** Returns total count of invoices currently stored. */
   countInvoices?(): Promise<number>;
+  /** Retrieves pending unexpired invoices bounded by limit. */
+  getPendingInvoices?(sellerPublicKey?: string, limit?: number): Promise<StoredInvoice[]>;
 }

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import stellarService, { PaymentPageRecord, PaymentRecord } from './stellar.service';
-import invoiceService, { InvoiceService, Queryable } from './invoice.service';
+import invoiceService, { Invoice, InvoiceService, Queryable } from './invoice.service';
+import type { StoredInvoice } from '../storage/invoice-storage';
 import { SELLER_PUBLIC_KEY, STELLAR_NETWORK } from '../config/stellar';
 import { pool } from '../config/database';
 import { checkInvoiceIsPayable, verifyHorizonPayment } from './payment-verification';
@@ -26,6 +27,16 @@ export interface MonitorInvoiceService {
   markAsPaid: InvoiceService['markAsPaid'];
   markExpiredInvoices: InvoiceService['markExpiredInvoices'];
   logPaymentEvent: InvoiceService['logPaymentEvent'];
+  getPendingInvoices?(
+    sellerPublicKey?: string,
+    limit?: number
+  ): Promise<Array<WatchedInvoice | StoredInvoice | Invoice>> | Array<WatchedInvoice | StoredInvoice | Invoice>;
+  getInvoicesBySeller?(
+    sellerPublicKey: string,
+    status?: string,
+    limit?: number,
+    offset?: number
+  ): Promise<Array<WatchedInvoice | StoredInvoice | Invoice>> | Array<WatchedInvoice | StoredInvoice | Invoice>;
 }
 
 export interface WatchedInvoice {
@@ -61,6 +72,7 @@ export interface PaymentMonitorOptions {
   pollIntervalMs?: number;
   pageSize?: number;
   maxPagesPerRun?: number;
+  hydrateLimit?: number;
   source?: PaymentPageSource;
   invoices?: MonitorInvoiceService;
   checkpoints?: PaymentMonitorCheckpointStore;
@@ -93,6 +105,7 @@ export class PaymentMonitorService {
   private pollIntervalMs: number;
   private pageSize: number;
   private maxPagesPerRun: number;
+  private hydrateLimit: number;
   private source: PaymentPageSource;
   private invoices: MonitorInvoiceService;
   private checkpoints: PaymentMonitorCheckpointStore;
@@ -119,6 +132,7 @@ export class PaymentMonitorService {
     this.pollIntervalMs = options.pollIntervalMs ?? Number(process.env.PAYMENT_MONITOR_POLL_MS || 5_000);
     this.pageSize = Math.min(200, Math.max(1, options.pageSize ?? 100));
     this.maxPagesPerRun = Math.max(1, options.maxPagesPerRun ?? 10);
+    this.hydrateLimit = Math.max(1, options.hydrateLimit ?? Number(process.env.PAYMENT_MONITOR_HYDRATE_LIMIT || 500));
     this.source = options.source ?? stellarService;
     this.invoices = options.invoices ?? invoiceService;
     this.database = 'database' in options ? options.database : (process.env.STORAGE_MODE === 'memory' ? undefined : pool);
@@ -135,6 +149,7 @@ export class PaymentMonitorService {
     if (options.pollIntervalMs !== undefined) this.pollIntervalMs = options.pollIntervalMs;
     if (options.pageSize !== undefined) this.pageSize = Math.min(200, Math.max(1, options.pageSize));
     if (options.maxPagesPerRun !== undefined) this.maxPagesPerRun = Math.max(1, options.maxPagesPerRun);
+    if (options.hydrateLimit !== undefined) this.hydrateLimit = Math.max(1, options.hydrateLimit);
     if (options.source !== undefined) this.source = options.source;
     if (options.invoices !== undefined) this.invoices = options.invoices;
     if ('database' in options) this.database = options.database;
@@ -235,7 +250,39 @@ export class PaymentMonitorService {
     return this.watchedInvoices.has(invoiceId);
   }
 
-  start() {
+  /**
+   * Hydrates the watch registry from storage on monitor start.
+   * Loads PENDING unexpired invoices bounded by limit.
+   * Scoped to this.account when configured; otherwise unscoped.
+   */
+  async hydrate(limit: number = this.hydrateLimit): Promise<number> {
+    if (!this.invoices) return 0;
+
+    let pending: Array<WatchedInvoice | StoredInvoice | Invoice> = [];
+    const sellerScope = this.account || undefined;
+
+    if (typeof this.invoices.getPendingInvoices === 'function') {
+      pending = await this.invoices.getPendingInvoices(sellerScope, limit);
+    } else if (typeof this.invoices.getInvoicesBySeller === 'function' && sellerScope) {
+      pending = await this.invoices.getInvoicesBySeller(sellerScope, 'PENDING', limit, 0);
+    }
+
+    let hydratedCount = 0;
+    const now = Date.now();
+    for (const inv of pending) {
+      if (!inv || !inv.id || !inv.memo) continue;
+      if (inv.status && inv.status !== 'PENDING') continue;
+      if (inv.expiresAt && new Date(inv.expiresAt).getTime() <= now) continue;
+
+      this.registerWatch(inv);
+      hydratedCount += 1;
+    }
+
+    this.snapshot.watchedCount = this.watchedInvoices.size;
+    return hydratedCount;
+  }
+
+  async start(): Promise<void> {
     if (this.isRunning) return;
     if (!this.account) throw new Error('Payment monitor requires SELLER_PUBLIC_KEY');
     this.isRunning = true;
@@ -247,12 +294,19 @@ export class PaymentMonitorService {
       watchedCount: this.watchedInvoices.size,
       processedTotal: this.processedTotal,
     };
+    try {
+      await this.hydrate();
+    } catch (error) {
+      console.error('Failed to hydrate payment monitor watches on start:', error);
+    }
+    if (!this.isRunning) return;
     this.expirationTimer = setInterval(() => {
       this.pruneExpiredWatches();
       void this.invoices.markExpiredInvoices().catch((error) => {
         console.error('Error checking expired invoices:', error);
       });
     }, 60_000);
+    this.expirationTimer.unref?.();
     this.schedule(0);
   }
 
@@ -309,6 +363,7 @@ export class PaymentMonitorService {
     if (!this.isRunning) return;
     if (this.pollTimer) clearTimeout(this.pollTimer);
     this.pollTimer = setTimeout(() => void this.tick(), delayMs);
+    this.pollTimer.unref?.();
   }
 
   private async tick() {

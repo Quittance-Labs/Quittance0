@@ -118,6 +118,13 @@ export class InvoiceMemoryService {
     return invoices.slice(offset, offset + limit);
   }
 
+  /**
+   * Retrieves pending unexpired invoices bounded by limit.
+   */
+  async getPendingInvoices(sellerPublicKey?: string, limit: number = 500): Promise<StoredInvoice[]> {
+    return this.storage.getPendingInvoices(sellerPublicKey, limit);
+  }
+
   async cancelInvoice(invoiceId: string, sellerPublicKey?: string): Promise<StoredInvoice> {
     const updated = this.storage.cancelInvoice(invoiceId, sellerPublicKey);
     if (!updated) {

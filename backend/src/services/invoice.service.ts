@@ -254,6 +254,27 @@ export class InvoiceService {
   }
 
   /**
+   * Retrieves pending unexpired invoices bounded by limit.
+   */
+  async getPendingInvoices(sellerPublicKey?: string, limit: number = 500): Promise<Invoice[]> {
+    await this.markExpiredInvoices();
+
+    let query = "SELECT * FROM invoices WHERE status = 'PENDING' AND expires_at > NOW()";
+    const params: any[] = [];
+
+    if (sellerPublicKey) {
+      params.push(sellerPublicKey);
+      query += ` AND seller_public_key = $${params.length}`;
+    }
+
+    params.push(limit);
+    query += ` ORDER BY created_at DESC LIMIT $${params.length}`;
+
+    const result = await this.db.query(query, params);
+    return result.rows.map((row) => this.mapRowToInvoice(row));
+  }
+
+  /**
    * Cancel an invoice
    */
   async cancelInvoice(invoiceId: string, sellerPublicKey?: string): Promise<Invoice> {

@@ -76,7 +76,7 @@ async function initialize() {
 
     if (SELLER_PUBLIC_KEY) {
       validateStellarConfig();
-      paymentMonitorService.start();
+      await paymentMonitorService.start();
     } else {
       console.log('Wallet-scoped mode: no SELLER_PUBLIC_KEY, payment monitor disabled');
     }

@@ -51,6 +51,10 @@ export class MemoryInvoiceStorage implements InvoiceStorage {
   async countInvoices(): Promise<number> {
     return this.service.countInvoices();
   }
+
+  async getPendingInvoices(sellerPublicKey?: string, limit: number = 500): Promise<StoredInvoice[]> {
+    return this.service.getPendingInvoices(sellerPublicKey, limit);
+  }
 }
 
 export default new MemoryInvoiceStorage();

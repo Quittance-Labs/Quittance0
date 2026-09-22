@@ -179,6 +179,24 @@ class MemoryStorage {
     return invoices.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
+  /**
+   * Retrieves pending unexpired invoices bounded by limit.
+   */
+  getPendingInvoices(sellerPublicKey?: string, limit: number = 500): Invoice[] {
+    this.markExpiredInvoices();
+    const now = Date.now();
+    let pending = Array.from(this.invoices.values()).filter(
+      (inv) => inv.status === 'PENDING' && new Date(inv.expiresAt).getTime() > now
+    );
+
+    if (sellerPublicKey) {
+      pending = pending.filter((inv) => inv.sellerPublicKey === sellerPublicKey);
+    }
+
+    pending.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return pending.slice(0, limit);
+  }
+
   // Get stats
   getStats(sellerPublicKey: string): InvoiceStats {
     this.markExpiredInvoices();

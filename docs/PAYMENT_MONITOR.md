@@ -60,6 +60,26 @@ An incoming operation settles exactly one invoice selected by its unique memo. I
 
 A partial amount is recorded as PARTIAL_PAYMENT and leaves the invoice pending. Other mismatches are recorded as PAYMENT_REJECTED. Both are handled records, so they advance the cursor and cannot block later valid payments.
 
+### Restart watch hydration contract
+
+On startup (`PaymentMonitorService.start()`), the monitor hydrates its in-memory watch registry from the active storage engine (PostgreSQL or in-memory MVP) before resuming its durable polling loop:
+
+1. **Storage Query**:
+   - Queries `getPendingInvoices(sellerPublicKey, limit)` on the configured invoice service / storage engine.
+   - Restricts queries strictly to invoices where `status = 'PENDING'` and `expires_at > NOW()`.
+   - Scoped to the monitored seller account (`account` / `SELLER_PUBLIC_KEY`) when set; unscoped in MVP memory mode when running without a single seller filter.
+2. **Bounded Hydration Pass**:
+   - Strictly bounded by `hydrateLimit` (default `500`, configurable via `PAYMENT_MONITOR_HYDRATE_LIMIT` or constructor options).
+   - Prevents memory exhaustion and avoids full ledger replay or unbounded database fetching.
+3. **Cursor Preservation**:
+   - Hydration populates the in-memory memo-to-invoice index; it does not alter or rewind the durable checkpoint cursor.
+   - Polling resumes from the durable checkpoint cursor saved on disk or in the database.
+4. **Lifecycle & Pruning**:
+   - Watched invoices are automatically unregistered when transitioning to `PAID`, `CANCELLED`, or `EXPIRED`.
+   - The expiration check interval prunes expired watches every 60 seconds.
+5. **No Double-Settlement**:
+   - Invoices hydrated on restart enforce the exact same single-settlement invariant. A payment transaction hash claimed by one invoice cannot settle any other invoice.
+
 ## Failure matrix and restart safety
 
 | Failure | Cursor effect | Retry or operator signal | Invoice effect |

@@ -123,7 +123,9 @@ app.use((req: Request, res: Response) => {
 export function startServer(port: number | string = PORT) {
   if (SELLER_PUBLIC_KEY) {
     try {
-      paymentMonitorService.start();
+      void paymentMonitorService.start().catch((error) => {
+        console.warn('Payment monitor start error:', error);
+      });
     } catch (error) {
       console.warn('Payment monitor not started:', error);
     }
