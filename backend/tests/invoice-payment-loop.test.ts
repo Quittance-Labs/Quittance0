@@ -89,23 +89,21 @@ function jsonRequest(
   });
 }
 
-/** A Horizon transaction/operations pair describing one successful payment. */
 function paymentOn(overrides: {
   memo?: string;
   amount?: string;
   to?: string;
   assetType?: string;
   assetCode?: string;
+  operations?: any[];
 }) {
   return (path: string) => {
-    // Match the path instead of comparing it with one constant, so each test
-    // can use its own hash.
     if (/^\/transactions\/[0-9a-f]{64}\/operations$/.test(path)) {
       return {
         status: 200,
         body: {
           _embedded: {
-            records: [
+            records: overrides.operations ?? [
               {
                 id: '1',
                 type: 'payment',
@@ -432,6 +430,75 @@ describe('invoice payment loop', () => {
     assert.equal(second.body.code, 'MEMO_MISMATCH');
 
     const fetched = await jsonRequest(port, 'GET', `/api/invoices/${other.id}`);
+    assert.equal(fetched.body.data.status, 'PENDING');
+  });
+
+  it('marks an invoice PAID when Horizon returns multiple operations (trustline + pay)', async () => {
+    const invoice = await createInvoice(port);
+    const txHash = '1111111111111111111111111111111111111111111111111111111111111111';
+
+    horizonResponder = paymentOn({
+      memo: invoice.memo,
+      operations: [
+        {
+          id: '1',
+          type: 'change_trust',
+          from: PAYER,
+        },
+        {
+          id: '2',
+          type: 'payment',
+          from: PAYER,
+          to: SELLER,
+          amount: '25.0000000',
+          asset_type: 'native',
+        },
+      ],
+    });
+
+    const verified = await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, {
+      txHash,
+    });
+    assert.equal(verified.status, 200, JSON.stringify(verified.body));
+    assert.equal(verified.body.data.status, 'PAID');
+
+    const fetched = await jsonRequest(port, 'GET', `/api/invoices/${invoice.id}`);
+    assert.equal(fetched.body.data.status, 'PAID');
+  });
+
+  it('refuses to settle when Horizon returns two matching payment operations in one transaction', async () => {
+    const invoice = await createInvoice(port);
+    const txHash = '2222222222222222222222222222222222222222222222222222222222222222';
+
+    horizonResponder = paymentOn({
+      memo: invoice.memo,
+      operations: [
+        {
+          id: '1',
+          type: 'payment',
+          from: PAYER,
+          to: SELLER,
+          amount: '25.0000000',
+          asset_type: 'native',
+        },
+        {
+          id: '2',
+          type: 'payment',
+          from: PAYER,
+          to: SELLER,
+          amount: '25.0000000',
+          asset_type: 'native',
+        },
+      ],
+    });
+
+    const verified = await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, {
+      txHash,
+    });
+    assert.equal(verified.status, 400);
+    assert.equal(verified.body.code, 'MULTIPLE_PAYMENT_OPERATIONS');
+
+    const fetched = await jsonRequest(port, 'GET', `/api/invoices/${invoice.id}`);
     assert.equal(fetched.body.data.status, 'PENDING');
   });
 });

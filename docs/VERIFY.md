@@ -26,6 +26,32 @@ Checks run in a fixed order so every caller reports the same *first* failure:
    (`abc`, an empty string, a missing operation field)
 7. **Asset** — code *and* issuer (`ASSET_MISMATCH`)
 
+## Multi-operation transactions and operation matching
+
+Horizon transactions frequently bundle multiple operations in a single envelope:
+a `change_trust` establishing an asset trustline followed by payment, fee-bump inner
+transactions, or auxiliary payments.
+
+The verification pipeline processes multi-operation envelopes under the following rules:
+
+1. **Non-payment operations are ignored**: Operations such as `change_trust`,
+   `manage_data`, or `create_account` are bypassed. Only payment-delivering
+   operations (`payment`, `path_payment_strict_receive`, `path_payment_strict_send`)
+   are evaluated.
+2. **Unique matching payment op required**: The walker searches for a payment
+   operation that uniquely matches the invoice destination, exact amount, and
+   asset code/issuer.
+3. **No aggregation of partial payments**: Multiple partial payments are never summed
+   to satisfy an invoice amount. Each payment op is evaluated independently.
+4. **Fail closed on ambiguity**:
+   - If **more than one** payment operation matches destination, amount, and asset,
+     the transaction fails closed with `MULTIPLE_PAYMENT_OPERATIONS` and does not settle.
+   - If **zero** payment operations match all three criteria, the engine diagnoses the
+     first failure according to the canonical order of checks (`DESTINATION_MISMATCH`,
+     `AMOUNT_TOO_LOW`, `AMOUNT_TOO_HIGH`, `AMOUNT_MISMATCH`, or `ASSET_MISMATCH`).
+   - If a transaction contains payment to an unrelated destination alongside the
+     seller payment, the unrelated payment is ignored and the valid matching payment settles.
+
 ## Amount policy
 
 An invoice settles on the exact amount, not on at-least. A payment one stroop
@@ -71,6 +97,9 @@ Two of those rows are the reason this exists:
 Every code has one user-facing message, defined once in
 `VERIFICATION_MESSAGES` and mirrored in `frontend/lib/verification.js`.
 
+When a transaction contains multiple matching payment operations that make settlement
+ambiguous, `MULTIPLE_PAYMENT_OPERATIONS` is returned.
+
 ## Tests
 
 ```bash
@@ -81,6 +110,8 @@ cd backend && npm test
   fake-`XLM` and unpinned cases
 - `tests/payment-verification.test.ts` — the full check order and every
   rejection
+- `tests/multi-operation-payment.test.ts` — multi-operation scenarios: trustline + pay,
+  multiple matching payments, payment order, and non-payment filtering
 - `tests/invoice-payment-loop.test.ts` — create → pay → verify → `PAID` against
   the real Express app with a stubbed Horizon, including a concurrent
   double-POST of one verification

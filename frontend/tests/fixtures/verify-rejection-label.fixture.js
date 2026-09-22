@@ -18,6 +18,7 @@ const KNOWN_CODE_FIXTURES = [
   { code: 'TRANSACTION_NOT_FOUND', label: 'Transaction not found' },
   { code: 'TRANSACTION_CLOSE_TIME_UNAVAILABLE', label: 'Close time unavailable' },
   { code: 'NO_PAYMENT_OPERATION', label: 'No payment operation' },
+  { code: 'MULTIPLE_PAYMENT_OPERATIONS', label: 'Multiple payment operations' },
   { code: 'MEMO_MISMATCH', label: 'Memo mismatch' },
   { code: 'DESTINATION_MISMATCH', label: 'Destination mismatch' },
   { code: 'AMOUNT_MISMATCH', label: 'Amount mismatch' },

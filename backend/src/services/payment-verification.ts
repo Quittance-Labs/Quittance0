@@ -141,6 +141,11 @@ export interface HorizonTransactionLike {
   memo?: string | null;
   memo_type?: string | null;
   created_at?: string | null;
+  inner_transaction?: {
+    memo?: string | null;
+    memo_type?: string | null;
+    created_at?: string | null;
+  } | null;
 }
 
 export interface HorizonOperationLike {
@@ -220,16 +225,73 @@ export function normalizePaymentOperation(
 }
 
 /**
- * Finds the payment-delivering operation for an invoice.
- * If destination is given, prioritizes an operation paying that destination.
+ * Checks whether a normalized payment operation matches expected payment criteria.
+ *
+ * @param op - Normalized payment operation.
+ * @param expected - Expected payment parameters.
+ * @param invoiceAsset - Resolved invoice asset identity.
+ * @returns True if destination, amount, and asset code/issuer all match.
+ */
+export function isMatchingPayment(
+  op: NormalizedPaymentOperation,
+  expected: ExpectedPayment,
+  invoiceAsset: ReturnType<typeof resolveInvoiceAsset>,
+): boolean {
+  if (op.to !== expected.destination) {
+    return false;
+  }
+  if (!amountsMatch(op.amount, expected.amount)) {
+    return false;
+  }
+  const paidAsset = resolvePaymentAsset({
+    assetType: op.assetType,
+    assetCode: op.assetCode,
+    assetIssuer: op.assetIssuer,
+  });
+  return assetsMatch(invoiceAsset, paidAsset);
+}
+
+/**
+ * Selects the unique payment operation matching expected payment parameters.
  *
  * @param operations - List of operations from Horizon.
- * @param destination - Target payment destination.
+ * @param expected - Target payment parameters (destination, amount, asset).
+ * @returns Object with unique matching operation if exactly one, or match count.
+ */
+export function selectMatchingPaymentOperation(
+  operations: HorizonOperationLike[],
+  expected: ExpectedPayment,
+): { match: NormalizedPaymentOperation | null; matchCount: number } {
+  const paymentOps = (operations || [])
+    .map(normalizePaymentOperation)
+    .filter((op): op is NormalizedPaymentOperation => op !== null);
+
+  const invoiceAsset = resolveInvoiceAsset({
+    assetCode: expected.assetCode,
+    assetIssuer: expected.assetIssuer,
+  });
+
+  const matchingOps = paymentOps.filter((op) =>
+    isMatchingPayment(op, expected, invoiceAsset)
+  );
+
+  return {
+    match: matchingOps.length === 1 ? matchingOps[0] : null,
+    matchCount: matchingOps.length,
+  };
+}
+
+/**
+ * Finds the payment-delivering operation for an invoice.
+ * If expected payment or destination is given, prioritizes matching operation.
+ *
+ * @param operations - List of operations from Horizon.
+ * @param destinationOrExpected - Target payment destination or expected payment parameters.
  * @returns Normalized payment operation or null.
  */
 export function findPaymentOperation(
   operations: HorizonOperationLike[],
-  destination?: string,
+  destinationOrExpected?: string | ExpectedPayment,
 ): NormalizedPaymentOperation | null {
   const candidates = (operations || [])
     .map(normalizePaymentOperation)
@@ -239,8 +301,15 @@ export function findPaymentOperation(
     return null;
   }
 
-  if (destination) {
-    const match = candidates.find((op) => op.to === destination);
+  if (typeof destinationOrExpected === 'object' && destinationOrExpected !== null) {
+    const { match } = selectMatchingPaymentOperation(operations, destinationOrExpected);
+    if (match) {
+      return match;
+    }
+  }
+
+  if (typeof destinationOrExpected === 'string') {
+    const match = candidates.find((op) => op.to === destinationOrExpected);
     if (match) {
       return match;
     }
@@ -277,8 +346,25 @@ function normalizeMemo(memo: unknown): string {
   return typeof memo === 'string' ? memo : '';
 }
 
+/**
+ * Extracts and normalizes the memo from a transaction or its fee-bump inner transaction.
+ *
+ * @param transaction - Horizon transaction representation.
+ * @returns The resolved memo string, or an empty string if absent.
+ */
+export function resolveTransactionMemo(transaction: HorizonTransactionLike | undefined): string {
+  if (typeof transaction?.memo === 'string') {
+    return transaction.memo;
+  }
+  if (typeof transaction?.inner_transaction?.memo === 'string') {
+    return transaction.inner_transaction.memo;
+  }
+  return '';
+}
+
 export function transactionSettlementTime(transaction: HorizonTransactionLike): Date | undefined {
-  return parseSettlementTime(transaction?.created_at) ?? undefined;
+  const timeStr = transaction?.created_at ?? transaction?.inner_transaction?.created_at;
+  return parseSettlementTime(timeStr) ?? undefined;
 }
 
 export function amountsMatch(actual: unknown, expected: string | number): boolean {
@@ -313,6 +399,8 @@ export function amountRejectionCode(
  *
  * Checks run in a fixed order so every caller reports the same first failure:
  * tx hash, network, payment operation, memo, destination, amount, asset.
+ * Multi-operation transactions select the unique matching payment op,
+ * and fail closed if zero or more than one payment op matches.
  */
 export function verifyHorizonPayment(input: VerifyPaymentInput): VerificationResult<VerifiedPayment> {
   const hashCheck = checkTxHash(input.txHash);
@@ -326,53 +414,72 @@ export function verifyHorizonPayment(input: VerifyPaymentInput): VerificationRes
     return failure('NETWORK_MISMATCH');
   }
 
-  const paymentOp = findPaymentOperation(operations, expected.destination);
-  if (!paymentOp) {
+  const paymentOps = (operations || [])
+    .map(normalizePaymentOperation)
+    .filter((op): op is NormalizedPaymentOperation => op !== null);
+
+  if (paymentOps.length === 0) {
     return failure('NO_PAYMENT_OPERATION');
   }
 
-  if (normalizeMemo(transaction?.memo) !== normalizeMemo(expected.memo)) {
+  const txMemo = resolveTransactionMemo(transaction);
+  if (normalizeMemo(txMemo) !== normalizeMemo(expected.memo)) {
     return failure('MEMO_MISMATCH');
-  }
-
-  if (paymentOp.to !== expected.destination) {
-    return failure('DESTINATION_MISMATCH');
-  }
-
-  if (!amountsMatch(paymentOp.amount, expected.amount)) {
-    return failure(amountRejectionCode(paymentOp.amount, expected.amount));
   }
 
   const invoiceAsset = resolveInvoiceAsset({
     assetCode: expected.assetCode,
     assetIssuer: expected.assetIssuer,
   });
-  const paidAsset = resolvePaymentAsset({
-    assetType: paymentOp.assetType,
-    assetCode: paymentOp.assetCode,
-    assetIssuer: paymentOp.assetIssuer,
-  });
 
-  if (!assetsMatch(invoiceAsset, paidAsset)) {
-    return failure('ASSET_MISMATCH');
+  const matchingOps = paymentOps.filter((op) =>
+    isMatchingPayment(op, expected, invoiceAsset)
+  );
+
+  if (matchingOps.length > 1) {
+    return failure('MULTIPLE_PAYMENT_OPERATIONS');
   }
 
-  const paidAssetCode = paymentOp.assetType === 'native' ? 'XLM' : paymentOp.assetCode ?? '';
-  const settledAt = transactionSettlementTime(transaction);
+  if (matchingOps.length === 1) {
+    const paymentOp = matchingOps[0];
+    const paidAssetCode = paymentOp.assetType === 'native' ? 'XLM' : paymentOp.assetCode ?? '';
+    const settledAt = transactionSettlementTime(transaction);
 
-  return {
-    ok: true,
-    value: {
-      txHash: hashCheck.value,
-      from: paymentOp.from,
-      to: paymentOp.to,
-      amount: paymentOp.amount,
-      assetCode: paidAssetCode,
-      assetIssuer: paymentOp.assetType === 'native' ? undefined : paymentOp.assetIssuer,
-      memo: normalizeMemo(transaction?.memo),
-      ...(settledAt ? { settledAt } : {}),
-    },
-  };
+    return {
+      ok: true,
+      value: {
+        txHash: hashCheck.value,
+        from: paymentOp.from,
+        to: paymentOp.to,
+        amount: paymentOp.amount,
+        assetCode: paidAssetCode,
+        assetIssuer: paymentOp.assetType === 'native' ? undefined : paymentOp.assetIssuer,
+        memo: normalizeMemo(txMemo),
+        ...(settledAt ? { settledAt } : {}),
+      },
+    };
+  }
+
+  const destOps = paymentOps.filter((op) => op.to === expected.destination);
+  if (destOps.length === 0) {
+    return failure('DESTINATION_MISMATCH');
+  }
+
+  const amountOps = destOps.filter((op) => amountsMatch(op.amount, expected.amount));
+  if (amountOps.length === 0) {
+    const sameAssetOps = destOps.filter((op) => {
+      const paidAsset = resolvePaymentAsset({
+        assetType: op.assetType,
+        assetCode: op.assetCode,
+        assetIssuer: op.assetIssuer,
+      });
+      return assetsMatch(invoiceAsset, paidAsset);
+    });
+    const opToDiagnose = sameAssetOps.length > 0 ? sameAssetOps[0] : destOps[0];
+    return failure(amountRejectionCode(opToDiagnose.amount, expected.amount));
+  }
+
+  return failure('ASSET_MISMATCH');
 }
 
 export { formatAssetIdentity, resolveInvoiceAsset, resolvePaymentAsset };
@@ -388,4 +495,8 @@ export default {
   checkInvoiceIsPayable,
   transactionSettlementTime,
   verifyHorizonPayment,
+  findPaymentOperation,
+  selectMatchingPaymentOperation,
+  isMatchingPayment,
+  resolveTransactionMemo,
 };

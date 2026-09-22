@@ -288,6 +288,15 @@ describe('verifyHorizonPayment — rejections', () => {
     assert.equal(codeOf(verifyHorizonPayment(input({ operations: [] }))), 'NO_PAYMENT_OPERATION');
   });
 
+  it('rejects a transaction containing multiple matching payment operations', () => {
+    const result = verifyHorizonPayment(
+      input({
+        operations: [paymentOp(), paymentOp()],
+      })
+    );
+    assert.equal(codeOf(result), 'MULTIPLE_PAYMENT_OPERATIONS');
+  });
+
   it('rejects a transaction observed on a different network', () => {
     const result = verifyHorizonPayment(
       input({ expected: expected({ network: 'PUBLIC' }), network: 'TESTNET' })

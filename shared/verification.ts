@@ -47,6 +47,7 @@ export type VerificationCode =
   | 'TRANSACTION_NOT_FOUND'
   | 'TRANSACTION_CLOSE_TIME_UNAVAILABLE'
   | 'NO_PAYMENT_OPERATION'
+  | 'MULTIPLE_PAYMENT_OPERATIONS'
   | 'MEMO_MISMATCH'
   | 'DESTINATION_MISMATCH'
   | 'AMOUNT_MISMATCH'
@@ -94,6 +95,7 @@ export const VERIFICATION_MESSAGES: Record<VerificationCode, string> = {
   TRANSACTION_NOT_FOUND: 'Transaction not found on Stellar',
   TRANSACTION_CLOSE_TIME_UNAVAILABLE: 'Transaction close time is unavailable; try verification again later',
   NO_PAYMENT_OPERATION: 'No payment operation found in transaction',
+  MULTIPLE_PAYMENT_OPERATIONS: 'Multiple matching payment operations found in transaction',
   MEMO_MISMATCH: 'Memo mismatch',
   DESTINATION_MISMATCH: 'Payment destination mismatch',
   AMOUNT_MISMATCH: 'Amount mismatch',
