@@ -14,9 +14,8 @@ import {
   openProofMailto,
 } from './mailto-delivery.js';
 
-// The explorer rule is shared with the receipt and the proof email, so the
-// printed document cannot name a different network from the link it prints.
 import { buildHorizonTxUrl, resolveExplorerNetwork } from './explorer-tx-link.ts';
+import { getLatePaymentWarning } from '../../shared/settlement.ts';
 
 import {
   buildQuittanceProof,
@@ -84,22 +83,6 @@ interface Invoice {
   sellerPublicKey: string;
   payerPublicKey?: string;
   paymentTxHash?: string;
-}
-
-function latePaymentWarning(invoice: Invoice): { title: string; body: string } | null {
-  if (invoice.latePaymentWarningCode === 'PAYMENT_RECEIVED_AFTER_CANCEL') {
-    return {
-      title: 'Payment received after cancellation',
-      body: 'This transaction proves funds reached the seller. Contact the seller to reconcile the payment.',
-    };
-  }
-  if (invoice.latePaymentWarningCode === 'PAYMENT_RECEIVED_AFTER_EXPIRY') {
-    return {
-      title: 'Payment received after invoice expiry',
-      body: 'This transaction proves funds reached the seller after the original payment window.',
-    };
-  }
-  return null;
 }
 
 export function generateInvoiceCSV(invoices: Invoice[]): string {
@@ -188,7 +171,7 @@ export function generateInvoicePDF(invoiceOrProof: Invoice | QuittanceProof): st
    * a URL that resolves to nothing.
    */
   const explorerUrl = isPaid ? buildHorizonTxUrl(invoice.paymentTxHash, explorerNetwork) : null;
-  const warning = latePaymentWarning(invoice);
+  const warning = getLatePaymentWarning(invoice.latePaymentWarningCode);
 
   return `
 <!DOCTYPE html>

@@ -1,80 +1,8 @@
-import type { InvoiceStatus } from '../storage/invoice-storage';
+/**
+ * Domain re-exports for invoice settlement.
+ *
+ * All settlement contracts, types, and logic are canonical in shared/settlement.ts.
+ * This module re-exports them for backend domain consumers.
+ */
 
-export type SettlementContext = 'ON_TIME' | 'AFTER_EXPIRY' | 'AFTER_CANCEL';
-export type LatePaymentWarningCode =
-  | 'PAYMENT_RECEIVED_AFTER_EXPIRY'
-  | 'PAYMENT_RECEIVED_AFTER_CANCEL';
-
-export const LATE_PAYMENT_WARNINGS: Record<LatePaymentWarningCode, string> = {
-  PAYMENT_RECEIVED_AFTER_EXPIRY: 'Payment was received after this invoice expired.',
-  PAYMENT_RECEIVED_AFTER_CANCEL: 'Payment was received after this invoice was cancelled.',
-};
-
-export interface SettlementFields {
-  settledAt: Date;
-  settlementContext: SettlementContext;
-  priorStatus?: InvoiceStatus;
-  latePaymentWarningCode?: LatePaymentWarningCode;
-}
-
-export interface SettlementInvoiceState {
-  status: InvoiceStatus;
-  cancelledAt?: Date | string | null;
-}
-
-export class SettlementTimeUnavailableError extends Error {
-  readonly code = 'TRANSACTION_CLOSE_TIME_UNAVAILABLE';
-
-  constructor(message = 'Transaction close time is unavailable; try verification again later') {
-    super(message);
-    this.name = 'SettlementTimeUnavailableError';
-  }
-}
-
-export function parseSettlementTime(value: unknown): Date | null {
-  if (value instanceof Date) {
-    return Number.isFinite(value.getTime()) ? value : null;
-  }
-  if (typeof value !== 'string' && typeof value !== 'number') {
-    return null;
-  }
-
-  const parsed = new Date(value);
-  return Number.isFinite(parsed.getTime()) ? parsed : null;
-}
-
-export function warningForLatePayment(code: LatePaymentWarningCode): string {
-  return LATE_PAYMENT_WARNINGS[code];
-}
-
-export function settlementFieldsForInvoice(
-  invoice: SettlementInvoiceState,
-  settledAtInput: unknown
-): SettlementFields {
-  const settledAt = parseSettlementTime(settledAtInput);
-  if (!settledAt) {
-    throw new SettlementTimeUnavailableError();
-  }
-
-  if (invoice.status === 'CANCELLED') {
-    const cancelledAt = parseSettlementTime(invoice.cancelledAt);
-    if (!cancelledAt) {
-      throw new SettlementTimeUnavailableError(
-        'Invoice cancellation time is unavailable; try verification again later'
-      );
-    }
-
-    const afterCancel = settledAt.getTime() >= cancelledAt.getTime();
-    return {
-      settledAt,
-      settlementContext: afterCancel ? 'AFTER_CANCEL' : 'ON_TIME',
-      priorStatus: 'CANCELLED',
-      latePaymentWarningCode: afterCancel ? 'PAYMENT_RECEIVED_AFTER_CANCEL' : undefined,
-    };
-  }
-
-  return {
-    settledAt,
-    settlementContext: 'ON_TIME',
-  };
-}
+export * from '../../../shared/settlement';

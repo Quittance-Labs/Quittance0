@@ -62,12 +62,17 @@ class FakeInvoiceDb implements Queryable {
 
     if (sql.startsWith("UPDATE invoices SET status = 'PAID'") || sql.startsWith('WITH settled AS')) {
       const now = Date.now();
-      const settledAt = params[5] ? new Date(params[5]) : new Date();
+      const rawSettledAt = params[5];
+      const hasSettledAt = rawSettledAt !== undefined && rawSettledAt !== null;
+      const settledAt = hasSettledAt ? new Date(rawSettledAt) : new Date();
+      const validSettledAt = Number.isFinite(settledAt.getTime());
       const row = this.rows.find(
         candidate => candidate.id === params[0] &&
           (
             (candidate.status === 'PENDING' && new Date(candidate.expires_at).getTime() > now) ||
-            (candidate.status === 'CANCELLED' && candidate.cancelled_at && Number.isFinite(settledAt.getTime()))
+            (candidate.status === 'PENDING' && hasSettledAt && validSettledAt) ||
+            (candidate.status === 'EXPIRED' && hasSettledAt && validSettledAt) ||
+            (candidate.status === 'CANCELLED' && candidate.cancelled_at && hasSettledAt && validSettledAt)
           )
       );
       if (!row) {
@@ -77,6 +82,10 @@ class FakeInvoiceDb implements Queryable {
       const afterCancel =
         priorStatus === 'CANCELLED' &&
         settledAt.getTime() >= new Date(row.cancelled_at).getTime();
+      const afterExpiry =
+        priorStatus !== 'CANCELLED' &&
+        hasSettledAt &&
+        settledAt.getTime() >= new Date(row.expires_at).getTime();
       row.status = 'PAID';
       row.payment_tx_hash = params[1];
       row.payer_public_key = params[2];
@@ -84,9 +93,21 @@ class FakeInvoiceDb implements Queryable {
       row.payer_email = params[4];
       row.paid_at = new Date();
       row.settled_at = settledAt;
-      row.settlement_context = afterCancel ? 'AFTER_CANCEL' : 'ON_TIME';
-      row.prior_status = priorStatus === 'CANCELLED' ? 'CANCELLED' : null;
-      row.late_payment_warning_code = afterCancel ? 'PAYMENT_RECEIVED_AFTER_CANCEL' : null;
+      row.settlement_context = afterCancel
+        ? 'AFTER_CANCEL'
+        : afterExpiry
+          ? 'AFTER_EXPIRY'
+          : 'ON_TIME';
+      row.prior_status = priorStatus === 'CANCELLED'
+        ? 'CANCELLED'
+        : priorStatus === 'EXPIRED'
+          ? 'EXPIRED'
+          : null;
+      row.late_payment_warning_code = afterCancel
+        ? 'PAYMENT_RECEIVED_AFTER_CANCEL'
+        : afterExpiry
+          ? 'PAYMENT_RECEIVED_AFTER_EXPIRY'
+          : null;
       return { rows: [{ ...row }], rowCount: 1 };
     }
 

@@ -140,8 +140,9 @@ function createFakePostgres() {
       const row = rows.find(
         candidate => candidate.id === params[0] &&
           (
-            (candidate.status === 'PENDING' && new Date(candidate.expires_at).getTime() > Date.now()) ||
-            (candidate.status === 'CANCELLED' && candidate.cancelled_at && Number.isFinite(settledAt.getTime()))
+            (candidate.status === 'PENDING' && (params[5] || new Date(candidate.expires_at).getTime() > Date.now())) ||
+            (candidate.status === 'CANCELLED' && candidate.cancelled_at && Number.isFinite(settledAt.getTime())) ||
+            (candidate.status === 'EXPIRED' && Number.isFinite(settledAt.getTime()))
           )
       );
       if (!row) {
@@ -151,6 +152,19 @@ function createFakePostgres() {
       const afterCancel =
         priorStatus === 'CANCELLED' &&
         settledAt.getTime() >= new Date(row.cancelled_at).getTime();
+      const afterExpiry =
+        priorStatus !== 'CANCELLED' &&
+        settledAt.getTime() >= new Date(row.expires_at).getTime();
+      const settlementContext = afterCancel
+        ? 'AFTER_CANCEL'
+        : afterExpiry
+          ? 'AFTER_EXPIRY'
+          : 'ON_TIME';
+      const lateWarning = afterCancel
+        ? 'PAYMENT_RECEIVED_AFTER_CANCEL'
+        : afterExpiry
+          ? 'PAYMENT_RECEIVED_AFTER_EXPIRY'
+          : null;
       Object.assign(row, {
         status: 'PAID',
         payment_tx_hash: params[1],
@@ -159,9 +173,9 @@ function createFakePostgres() {
         payer_email: params[4],
         paid_at: new Date(),
         settled_at: settledAt,
-        settlement_context: afterCancel ? 'AFTER_CANCEL' : 'ON_TIME',
-        prior_status: priorStatus === 'CANCELLED' ? 'CANCELLED' : null,
-        late_payment_warning_code: afterCancel ? 'PAYMENT_RECEIVED_AFTER_CANCEL' : null,
+        settlement_context: settlementContext,
+        prior_status: priorStatus === 'CANCELLED' || priorStatus === 'EXPIRED' ? priorStatus : null,
+        late_payment_warning_code: lateWarning,
       });
       return { rows: [clone(row)], rowCount: 1 };
     }
@@ -217,9 +231,10 @@ function paymentTransaction(overrides: {
   to: string;
   assetType?: string;
   assetCode?: string;
+  createdAt?: string;
 }) {
   return {
-    transaction: { memo: overrides.memo },
+    transaction: { memo: overrides.memo, created_at: overrides.createdAt ?? new Date().toISOString() },
     operations: [
       {
         type: 'payment',
@@ -310,7 +325,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       assert.equal(got.body.data.customerEmail, customerEmail);
 
       transaction = {
-        transaction: { memo: created.memo },
+        transaction: { memo: created.memo, created_at: new Date().toISOString() },
         operations: [
           {
             type: 'payment',

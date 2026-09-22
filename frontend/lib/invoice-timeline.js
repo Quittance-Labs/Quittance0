@@ -42,11 +42,11 @@ function buildInvoiceTimelineEvents(invoice, now = Date.now()) {
     timestamp: invoice.createdAt ?? null,
   });
 
-  // `cancelledAt` is never cleared even if a later payment settles the
-  // invoice anyway (see backend/src/domain/invoice-settlement.ts's
-  // AFTER_CANCEL path), so this checks the timestamp directly rather than
-  // `invoice.status === 'CANCELLED'`, which a late payment can overwrite.
   const wasCancelled = Boolean(invoice.cancelledAt);
+  const wasExpired =
+    invoice.priorStatus === 'EXPIRED' ||
+    invoice.settlementContext === 'AFTER_EXPIRY' ||
+    invoice.latePaymentWarningCode === 'PAYMENT_RECEIVED_AFTER_EXPIRY';
   const paidAt = invoice.settledAt ?? invoice.paidAt ?? null;
   const isPaid = invoice.status === 'PAID' && Boolean(paidAt);
 
@@ -56,7 +56,7 @@ function buildInvoiceTimelineEvents(invoice, now = Date.now()) {
       label: 'Invoice cancelled',
       timestamp: invoice.cancelledAt,
     });
-  } else if (!isPaid && hasInvoiceExpired(invoice, now)) {
+  } else if (wasExpired || (!isPaid && hasInvoiceExpired(invoice, now))) {
     events.push({
       type: 'expired',
       label: 'Invoice expired',
