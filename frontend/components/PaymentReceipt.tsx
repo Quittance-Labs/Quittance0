@@ -9,32 +9,14 @@ import { canSendProofEmail, getProofMailtoRecipient } from '@/lib/mailto-deliver
 import { toast } from 'sonner';
 import type { PayPageInvoice } from './pay-page.types';
 import { buildHorizonTxUrl, resolveExplorerNetwork } from '@/lib/explorer-tx-link';
-// The receipt renders a settled (paid / expired / cancelled) record. It shares
-// the same status vocabulary as PaymentStatus and the verification rejection
-// table, so the proof view and the pay page never disagree on wording.
+import { getLatePaymentWarning } from '@shared/settlement';
 
 interface PaymentReceiptProps {
   invoice: PayPageInvoice;
 }
 
-function latePaymentWarning(invoice: PayPageInvoice): { title: string; body: string } | null {
-  if (invoice.latePaymentWarningCode === 'PAYMENT_RECEIVED_AFTER_CANCEL') {
-    return {
-      title: 'Payment received after cancellation',
-      body: 'This transaction proves funds reached the seller. Contact the seller to reconcile the payment.',
-    };
-  }
-  if (invoice.latePaymentWarningCode === 'PAYMENT_RECEIVED_AFTER_EXPIRY') {
-    return {
-      title: 'Payment received after invoice expiry',
-      body: 'This transaction proves funds reached the seller after the original payment window.',
-    };
-  }
-  return null;
-}
-
 export default function PaymentReceipt({ invoice }: PaymentReceiptProps) {
-  const warning = latePaymentWarning(invoice);
+  const warning = getLatePaymentWarning(invoice.latePaymentWarningCode);
   const handleDownloadPDF = () => {
     openInvoicePDF(invoice as any);
     toast.success('Opening payment proof');

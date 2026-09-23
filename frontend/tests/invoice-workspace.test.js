@@ -116,6 +116,26 @@ test('buildInvoiceTimelineEvents: a late payment after cancellation shows all th
   assert.equal(events[2].lateWarningCode, 'PAYMENT_RECEIVED_AFTER_CANCEL');
 });
 
+test('buildInvoiceTimelineEvents: a late payment after expiry shows created, expired, paid in chronological order, flagged', () => {
+  const invoice = {
+    status: 'PAID',
+    createdAt: '2026-08-29T09:00:00.000Z',
+    expiresAt: '2026-08-30T09:00:00.000Z',
+    settledAt: '2026-08-30T11:00:00.000Z',
+    priorStatus: 'EXPIRED',
+    settlementContext: 'AFTER_EXPIRY',
+    latePaymentWarningCode: 'PAYMENT_RECEIVED_AFTER_EXPIRY',
+    paymentTxHash: 'ghi789',
+  };
+  const events = buildInvoiceTimelineEvents(invoice, NOW);
+  assert.deepEqual(
+    events.map((e) => e.type),
+    ['created', 'expired', 'paid']
+  );
+  assert.equal(events[1].timestamp, invoice.expiresAt);
+  assert.equal(events[2].lateWarningCode, 'PAYMENT_RECEIVED_AFTER_EXPIRY');
+});
+
 test('buildInvoiceTimelineEvents: falls back to paidAt when settledAt is absent (legacy records)', () => {
   const invoice = {
     status: 'PAID',

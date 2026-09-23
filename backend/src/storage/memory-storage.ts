@@ -2,7 +2,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { calculateInvoiceStats } from './invoice-stats';
 import type { InvoiceStats } from './invoice-stats';
 import { isPendingInvoiceExpired } from '../domain/invoice-expiry';
-import { settlementFieldsForInvoice } from '../domain/invoice-settlement';
+import {
+  settlementFieldsForInvoice,
+  SettlementTimeUnavailableError,
+} from '../domain/invoice-settlement';
 import {
   MemoCollisionError,
   PaymentClaimError,
@@ -119,20 +122,27 @@ class MemoryStorage {
     const now = new Date();
     const invoice = this.invoices.get(id);
     if (!invoice || invoice.status === 'PAID') return undefined;
-    if (invoice.status === 'PENDING' && new Date(invoice.expiresAt).getTime() <= now.getTime()) {
+    if (invoice.status !== 'PENDING' && invoice.status !== 'CANCELLED' && invoice.status !== 'EXPIRED') {
       return undefined;
     }
-    if (invoice.status !== 'PENDING' && invoice.status !== 'CANCELLED') return undefined;
+
+    if (invoice.status === 'CANCELLED' && !options.settledAt) {
+      throw new SettlementTimeUnavailableError();
+    }
+    if (invoice.status === 'EXPIRED' && !options.settledAt) {
+      return undefined;
+    }
+
+    if (invoice.status === 'PENDING' && !options.settledAt && new Date(invoice.expiresAt).getTime() <= now.getTime()) {
+      invoice.status = 'EXPIRED';
+      return undefined;
+    }
 
     const settlement = settlementFieldsForInvoice(
       invoice,
       options.settledAt ?? (invoice.status === 'PENDING' ? now : undefined)
     );
 
-    // One transaction settles one invoice. The claim below reads and records in
-    // the same synchronous step, so a second caller holding the same hash gets a
-    // decision here rather than a second PAID transition. A replay against this
-    // same invoice falls back to the "already processed" contract above.
     const decision = this.paymentClaims.claim(txHash, id, now);
     if (decision.kind === 'conflict') {
       throw new PaymentClaimError(txHash, id, decision.claim.invoiceId);

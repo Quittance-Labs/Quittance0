@@ -417,7 +417,12 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         } catch (error: any) {
           logError('Verify payment lookup error:', error);
           const notFound = failure('TRANSACTION_NOT_FOUND');
-          // Cache the rejection to prevent repeated Horizon lookups for invalid hashes
+          await cacheVerificationResult(id, hashCheck.value, 'rejected', notFound.code);
+          return sendVerificationFailure(res, 404, notFound.code, notFound.error);
+        }
+
+        if (!txDetails || !txDetails.transaction) {
+          const notFound = failure('TRANSACTION_NOT_FOUND');
           await cacheVerificationResult(id, hashCheck.value, 'rejected', notFound.code);
           return sendVerificationFailure(res, 404, notFound.code, notFound.error);
         }
@@ -438,12 +443,11 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         });
 
         if (!verification.ok) {
-          // Cache verification failures to prevent repeated attempts
           await cacheVerificationResult(id, hashCheck.value, 'rejected', verification.code);
           return sendVerificationFailure(res, 400, verification.code, verification.error);
         }
 
-        if (invoice.status === 'CANCELLED' && !verification.value.settledAt) {
+        if (!verification.value.settledAt) {
           return sendVerificationFailure(
             res,
             503,
@@ -462,14 +466,9 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
             { settledAt: verification.value.settledAt }
           );
           options.paymentMonitor?.unregisterWatch(id);
-          
-          // Cache successful verification
           await cacheVerificationResult(id, hashCheck.value, 'verified');
         } catch (error) {
           if (error instanceof PaymentClaimError) {
-            // A transaction that already settled another invoice must not settle
-            // this one as well. 409, not 400: the request is well formed and it
-            // is the server's recorded state that refuses it.
             return sendVerificationFailure(res, 409, error.code, messageForCode(error.code));
           }
           if (error instanceof SettlementTimeUnavailableError) {
@@ -480,11 +479,9 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
               messageForCode('TRANSACTION_CLOSE_TIME_UNAVAILABLE')
             );
           }
-          // The payment lookup can cross expiresAt after the first status read.
-          // Re-read so that race still returns the public expiry contract.
           const latest = await storage.getInvoiceById(id);
           const latestStatus = latest && checkInvoiceIsPayable(latest.status);
-          if (latestStatus && !latestStatus.ok) {
+          if (latestStatus && !latestStatus.ok && latest?.status !== 'CANCELLED' && latest?.status !== 'EXPIRED') {
             return sendVerificationFailure(
               res,
               400,

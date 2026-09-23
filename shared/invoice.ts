@@ -12,6 +12,8 @@
 
 export type InvoiceStatus = 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
 
+import type { LatePaymentWarningCode, SettlementContext } from './settlement';
+
 /** ISO-8601 timestamp, as produced by JSON serialisation of a Date. */
 export type IsoTimestamp = string;
 
@@ -35,6 +37,12 @@ export interface InvoiceDto {
   payerEmail?: string;
   createdAt: IsoTimestamp;
   paidAt?: IsoTimestamp;
+  cancelledAt?: IsoTimestamp;
+  settledAt?: IsoTimestamp;
+  settlementContext?: SettlementContext;
+  priorStatus?: string;
+  latePaymentWarningCode?: LatePaymentWarningCode;
   expiresAt: IsoTimestamp;
   metadata?: unknown;
 }
+

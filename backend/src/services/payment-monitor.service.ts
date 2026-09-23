@@ -452,13 +452,23 @@ export class PaymentMonitorService {
     }
 
     const payable = checkInvoiceIsPayable(invoice.status);
-    if (!payable.ok && invoice.status !== 'CANCELLED') return;
+    if (!payable.ok && invoice.status !== 'CANCELLED' && invoice.status !== 'EXPIRED') return;
 
     const isNative = payment.assetCode === 'XLM' && !payment.assetIssuer;
+    const createdAtString = typeof payment.createdAt === 'string'
+      ? payment.createdAt
+      : (payment.createdAt as unknown) instanceof Date
+        ? ((payment.createdAt as unknown) as Date).toISOString()
+        : undefined;
+
     const verification = verifyHorizonPayment({
       txHash: payment.txHash,
       network: this.network,
-      transaction: { memo: payment.memo, memo_type: payment.memoType },
+      transaction: {
+        memo: payment.memo,
+        memo_type: payment.memoType,
+        created_at: createdAtString,
+      },
       operations: [{
         type: 'payment',
         from: payment.from,
@@ -496,7 +506,7 @@ export class PaymentMonitorService {
     }
 
     const settledAt = parseSettlementTime(payment.createdAt) ?? verification.value.settledAt;
-    if (invoice.status === 'CANCELLED' && !settledAt) {
+    if (!settledAt) {
       throw new SettlementTimeUnavailableError();
     }
 

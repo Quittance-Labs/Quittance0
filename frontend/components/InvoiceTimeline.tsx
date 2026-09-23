@@ -6,6 +6,7 @@ import { buildInvoiceTimelineEvents } from '@/lib/invoice-timeline';
 import { getTimeRemaining } from '@/lib/utils';
 import { buildHorizonTxUrl, resolveExplorerNetwork } from '@/lib/explorer-tx-link';
 import { getExplorerTransactionUrl } from '@/lib/stellar';
+import { getLatePaymentTimelineCopy } from '@shared/settlement';
 
 interface InvoiceTimelineInvoice {
   status?: string;
@@ -16,6 +17,8 @@ interface InvoiceTimelineInvoice {
   cancelledAt?: string;
   payerPublicKey?: string;
   paymentTxHash?: string;
+  settlementContext?: 'ON_TIME' | 'AFTER_EXPIRY' | 'AFTER_CANCEL' | null;
+  priorStatus?: string | null;
   latePaymentWarningCode?: 'PAYMENT_RECEIVED_AFTER_EXPIRY' | 'PAYMENT_RECEIVED_AFTER_CANCEL' | null;
   network?: string;
 }
@@ -25,10 +28,6 @@ interface InvoiceTimelineProps {
   now?: number;
 }
 
-const LATE_WARNING_COPY: Record<string, string> = {
-  PAYMENT_RECEIVED_AFTER_EXPIRY: 'This payment arrived after the invoice had expired.',
-  PAYMENT_RECEIVED_AFTER_CANCEL: 'This payment arrived after the invoice had been cancelled.',
-};
 
 function iconFor(type: string) {
   switch (type) {
@@ -117,7 +116,7 @@ export default function InvoiceTimeline({ invoice, now }: InvoiceTimelineProps) 
                         className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"
                         aria-hidden="true"
                       />
-                      <span>{LATE_WARNING_COPY[event.lateWarningCode]}</span>
+                      <span>{getLatePaymentTimelineCopy(event.lateWarningCode)}</span>
                     </p>
                   )}
                 </div>

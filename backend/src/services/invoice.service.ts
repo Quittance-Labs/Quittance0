@@ -157,19 +157,25 @@ export class InvoiceService {
             settled_at = COALESCE($6::timestamptz, NOW()),
             settlement_context = CASE
               WHEN status = 'CANCELLED' AND $6::timestamptz >= cancelled_at THEN 'AFTER_CANCEL'
+              WHEN status = 'CANCELLED' THEN 'ON_TIME'
+              WHEN $6::timestamptz IS NOT NULL AND $6::timestamptz >= expires_at THEN 'AFTER_EXPIRY'
               ELSE 'ON_TIME'
             END,
             prior_status = CASE
-              WHEN status = 'CANCELLED' THEN status
+              WHEN status = 'CANCELLED' THEN 'CANCELLED'
+              WHEN status = 'EXPIRED' THEN 'EXPIRED'
               ELSE NULL
             END,
             late_payment_warning_code = CASE
               WHEN status = 'CANCELLED' AND $6::timestamptz >= cancelled_at THEN 'PAYMENT_RECEIVED_AFTER_CANCEL'
+              WHEN $6::timestamptz IS NOT NULL AND $6::timestamptz >= expires_at THEN 'PAYMENT_RECEIVED_AFTER_EXPIRY'
               ELSE NULL
             END
         WHERE id = $1
           AND (
             (status = 'PENDING' AND expires_at > NOW())
+            OR (status = 'PENDING' AND $6::timestamptz IS NOT NULL)
+            OR (status = 'EXPIRED' AND $6::timestamptz IS NOT NULL)
             OR (status = 'CANCELLED' AND cancelled_at IS NOT NULL AND $6::timestamptz IS NOT NULL)
           )
         RETURNING *
@@ -211,7 +217,7 @@ export class InvoiceService {
         throw new Error('Invoice not found, expired, or already processed');
       }
 
-      console.log('✅ Invoice marked as paid:', invoiceId);
+      console.log('Invoice marked as paid:', invoiceId);
 
       return this.mapRowToInvoice(result.rows[0]);
     } catch (error: any) {
