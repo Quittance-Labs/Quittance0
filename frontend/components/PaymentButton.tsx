@@ -10,6 +10,7 @@ import {
   readFreighterSession,
   preflightAssetTrustline,
   NETWORK_DISPLAY_NAME,
+  EXPECTED_WALLET_NETWORK,
 } from '@/lib/stellar';
 import {
   buildInvoicePayment,

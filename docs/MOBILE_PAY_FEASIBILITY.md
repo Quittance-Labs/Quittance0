@@ -187,3 +187,7 @@ The following scenarios are technically impossible with the current Freighter ex
    Social platforms (Twitter, Telegram, Instagram) launch web links in sandboxed WebViews that strip external protocol handlers and isolate local storage.
 4. **Autonomous Soroban Invocation on Mobile via Freighter:**
    Soroban smart contract signing requires an active signer. On mobile, this must be executed through a mobile-native wallet supporting SEP-0007 or WalletConnect, not Freighter.
+5. **Mobile Assistive Technology & Focus Retention during App Handoff:**
+   When a user activates a SEP-0007 link (`web+stellar:pay`) or switches to a native mobile wallet app (e.g. LOBSTR or xBull) on iOS or Android, the browser yields operating system focus. Upon returning to the browser:
+   - Operating system screen readers (iOS VoiceOver / Android TalkBack) restore focus to the browser window or document body rather than the trigger button.
+   - Screen reader users on mobile rely on persistent live regions (`role="status"`, `aria-live="polite"`) and manual verification hash inputs with explicit visible labels rather than automated focus hijacking.

@@ -86,29 +86,33 @@ export default function FreighterInstallPrompt({
 
   return (
     <div
+      className={`rounded-lg border border-amber-200 bg-amber-50 text-amber-950 ${
+        compact ? 'p-4' : 'p-6 text-center'
+      } ${className}`}
       role="status"
+      aria-live="polite"
       data-gate-status={gate.status}
-      className={[compact ? 'text-xs' : 'text-sm', className].filter(Boolean).join(' ')}
     >
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
-        <div>
-          <p className="font-semibold">{gate.title}</p>
-          <p className="mt-0.5 text-gray-600">{gate.message}</p>
-          {gate.action === 'install' && (
+      <div className={`flex ${compact ? 'items-start text-left' : 'flex-col items-center'} gap-3`}>
+        <AlertTriangle className="w-6 h-6 text-amber-700 shrink-0" aria-hidden="true" />
+        <div className={compact ? 'space-y-2' : 'space-y-3'}>
+          <p className={compact ? 'font-semibold' : 'font-display text-2xl'}>{gate.title}</p>
+          <p className="text-sm text-amber-900">{gate.message}</p>
+          {gate.action === 'install' ? (
             <a
               href={FREIGHTER_INSTALL_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-2 inline-block font-semibold underline"
+              className="btn btn-primary inline-flex items-center justify-center gap-2"
             >
               Install Freighter
+              <ExternalLink className="w-4 h-4" aria-hidden="true" />
               <span className="sr-only"> (opens in a new tab)</span>
             </a>
-          )}
+          ) : null}
         </div>
       </div>
-      {action ? <div className="mt-3">{action}</div> : null}
+      {action ? <div className={compact ? '' : 'mt-3 flex justify-center'}>{action}</div> : null}
     </div>
   );
 }

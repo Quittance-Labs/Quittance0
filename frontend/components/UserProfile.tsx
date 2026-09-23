@@ -6,6 +6,8 @@ import { useWalletStore } from '@/lib/store';
 import { initialsFromAddress } from '@/lib/wallet-initials';
 import { networkLabel } from '@/lib/freighter-availability';
 import { NETWORK_DISPLAY_NAME } from '@/lib/stellar';
+import { initialsFromAddress } from '@/lib/wallet-initials';
+import { networkLabel } from '@/lib/freighter-availability';
 
 interface UserProfileProps {
   userWallet: string | null;

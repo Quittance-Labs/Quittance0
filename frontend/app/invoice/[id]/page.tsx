@@ -210,7 +210,6 @@ export default function InvoiceDetailPage() {
 
   const effectiveStatus = (effectiveInvoiceStatus(invoice, lifecycleNow) || invoice.status) as
     'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
-
   // Seller-only workspace (issue #454): unlike /pay/[id], this page must not
   // reveal invoice details -- amount, memo, customer contact info, timeline
   // -- to a wallet that isn't the invoice's own seller. `activeWallet` is
