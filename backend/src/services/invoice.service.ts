@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { InvoiceIdCollisionError, MemoCollisionError } from '../domain/payment-attribution';
 import { pool } from '../config/database';
 import { generateInvoiceMemo } from '../utils/memo';
 import { CreateInvoiceInput } from '../utils/validation';
@@ -65,7 +66,6 @@ export class InvoiceService {
       throw new Error('Seller public key is required');
     }
 
-    const id = uuidv4();
     const memo = generateInvoiceMemo();
     const expiresAt = calculateInvoiceExpiry(input.expiresInDays);
 
@@ -78,30 +78,45 @@ export class InvoiceService {
       RETURNING *
     `;
 
-    const values = [
-      id,
-      input.sellerPublicKey,
-      input.sellerName || null,
-      input.sellerEmail || null,
-      input.amount,
-      (input.assetCode || 'XLM').toUpperCase(),
-      input.assetIssuer || null,
-      memo,
-      input.description || null,
-      input.customerName || null,
-      input.customerEmail || null,
-      'PENDING',
-      expiresAt,
-    ];
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const id = uuidv4();
+      const values = [
+        id,
+        input.sellerPublicKey,
+        input.sellerName || null,
+        input.sellerEmail || null,
+        input.amount,
+        (input.assetCode || 'XLM').toUpperCase(),
+        input.assetIssuer || null,
+        memo,
+        input.description || null,
+        input.customerName || null,
+        input.customerEmail || null,
+        'PENDING',
+        expiresAt,
+      ];
 
-    try {
-      const result = await this.db.query(query, values);
-      console.log('✅ Invoice created:', result.rows[0].id);
-      return this.mapRowToInvoice(result.rows[0]);
-    } catch (error: any) {
-      console.error('Error creating invoice:', error);
-      throw new Error(`Failed to create invoice: ${error.message}`);
+      try {
+        const result = await this.db.query(query, values);
+        console.log('Invoice created:', result.rows[0].id);
+        return this.mapRowToInvoice(result.rows[0]);
+      } catch (error: any) {
+        if (error?.code === '23505') {
+          const onId = !error.constraint || /pkey|id/i.test(String(error.constraint));
+          if (!onId) {
+            throw new MemoCollisionError(memo);
+          }
+          if (attempt === 0) {
+            continue;
+          }
+          throw new InvoiceIdCollisionError(id);
+        }
+        console.error('Error creating invoice:', error);
+        throw new Error(`Failed to create invoice: ${error.message}`);
+      }
     }
+
+    throw new InvoiceIdCollisionError('unreachable');
   }
 
   /**

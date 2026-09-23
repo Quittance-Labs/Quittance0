@@ -49,6 +49,9 @@ Two schema facts drive the risk section below:
 1. **`memo` is `UNIQUE NOT NULL`.** The in-memory store has no such constraint.
 2. **`id` is a UUID** in both places (memory uses `uuidv4()`, Postgres
    `DEFAULT gen_random_uuid()`), which is what keeps existing links valid.
+   A drawn id that already exists is refused, never overwritten
+   (`InvoiceIdCollisionError`, issue #512): memory checks before insert,
+   Postgres retries once on the `invoices_pkey` unique violation.
 
 ## Why existing pay links survive - and the two ways they would not
 

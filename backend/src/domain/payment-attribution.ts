@@ -114,3 +114,17 @@ export class MemoCollisionError extends Error {
   }
 }
 
+/**
+ * Raised when a drawn public invoice id is already in use.
+ *
+ * Public ids are the pay links themselves. A silent overwrite would hand a
+ * payer an existing invoice's destination, so a collision is a refusal to
+ * create, never a replacement.
+ */
+export class InvoiceIdCollisionError extends Error {
+  constructor(readonly invoiceId: string) {
+    super('Invoice id ' + invoiceId + ' is already in use');
+    this.name = 'InvoiceIdCollisionError';
+  }
+}
+

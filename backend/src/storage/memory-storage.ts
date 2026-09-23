@@ -4,6 +4,7 @@ import type { InvoiceStats } from './invoice-stats';
 import { isPendingInvoiceExpired } from '../domain/invoice-expiry';
 import { settlementFieldsForInvoice } from '../domain/invoice-settlement';
 import {
+  InvoiceIdCollisionError,
   MemoCollisionError,
   PaymentClaimError,
   PaymentClaimIndex,
@@ -23,8 +24,7 @@ type Invoice = StoredInvoice;
 
 class MemoryStorage {
   private invoices: Map<string, Invoice> = new Map();
-  private invoicesByMemo: Map<string, string> = new Map(); // memo -> invoice id
-  // Which invoice each transaction hash settled; see domain/payment-attribution.ts.
+  private invoicesByMemo: Map<string, string> = new Map();
   private readonly paymentClaims = new PaymentClaimIndex();
   private paymentEvents: MemoryPaymentEvent[] = [];
 
@@ -47,17 +47,18 @@ class MemoryStorage {
       metadata: data.metadata,
     };
 
-    // The memo index is keyed by memo, so a second invoice carrying the same
-    // memo would overwrite the first one's entry and leave it unreachable by
-    // the payment monitor. Refuse instead, and let creation draw another memo.
     if (this.invoicesByMemo.has(invoice.memo)) {
       throw new MemoCollisionError(invoice.memo);
+    }
+
+    if (this.invoices.has(invoice.id)) {
+      throw new InvoiceIdCollisionError(invoice.id);
     }
 
     this.invoices.set(invoice.id, invoice);
     this.invoicesByMemo.set(invoice.memo, invoice.id);
 
-    console.log('✅ Invoice created in memory:', invoice.id);
+    console.log('Invoice created in memory:', invoice.id);
     return invoice;
   }
 
