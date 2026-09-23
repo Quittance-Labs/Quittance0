@@ -36,6 +36,29 @@ Primary references:
 The QR encoder correctly stores the complete URI as its payload. QR error
 correction does not change URI semantics.
 
+## Payload budget (issue #510)
+
+A dense QR fails on phone cameras even when the URI is spec-valid. The pay
+page renders the code at ~220px, so the encoder enforces a budget: the URI
+must fit **QR version 12 at error-correction level H** (~175 byte-mode bytes).
+The rule lives in `backend/src/utils/qr-budget.ts` and is measured with the
+same `qrcode` build that renders the image, so the check cannot drift from the
+encoder.
+
+Measured vectors (EC level H):
+
+| Payload | URI bytes | QR version | Result |
+| --- | --- | --- | --- |
+| XLM, no memo | ~96 | 8 | encoded |
+| XLM + invoice memo | ~143 | 12 | encoded |
+| USDC + issuer + memo | ~229 | 15+ | over budget |
+
+When a URI exceeds the budget the QR encodes the short HTTPS `/pay/[id]` link
+instead — never a truncated memo or a dropped asset issuer. The response still
+returns the complete SEP-0007 string as `stellarUri`, plus
+`stellarQrEncodesUri: false` so the pay page can relabel the copy row; the
+payer keeps copy / open-in-wallet access to the full URI.
+
 ## Memo limits
 
 MEMO_TEXT is at most 28 bytes of UTF-8. JavaScript string length is not a valid

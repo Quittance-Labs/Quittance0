@@ -28,6 +28,10 @@ export interface PayPageInvoice {
 
 export interface PayPagePaymentInfo {
   stellarQrCode?: string;
+  /** Full SEP-0007 URI generated for the payment. */
+  stellarUri?: string;
+  /** False when URI exceeded QR payload budget and fallback payment link was encoded. */
+  stellarQrEncodesUri?: boolean;
   paymentUrl?: string;
   statusPollingIntervalMs?: number;
 }

@@ -207,12 +207,15 @@ export default function PaymentPage() {
                     <h3 className="text-lg font-semibold mb-4">Scan QR Code</h3>
                     <QRCodeDisplay
                       value={page.paymentInfo?.stellarQrCode || page.paymentInfo?.paymentUrl || ''}
+                      copyValue={page.paymentInfo?.stellarUri || page.paymentInfo?.paymentUrl || undefined}
                       title=""
                       size={220}
                       description={`a request to pay ${amountLabel} with memo ${invoice.memo}`}
                     />
                     <p className="text-sm text-gray-700 text-center mt-4">
-                      Scan with your Stellar wallet app to pay instantly
+                      {page.paymentInfo?.stellarQrEncodesUri === false
+                        ? 'Scan to open the pay link, or copy the Stellar URI above into your wallet'
+                        : 'Scan with your Stellar wallet app to pay instantly'}
                     </p>
                   </section>
                   {isMobile && !showDesktopWalletAnyway ? (
