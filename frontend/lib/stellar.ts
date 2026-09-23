@@ -17,6 +17,12 @@ import {
   wrongNetworkMessage,
 } from './freighter-availability';
 import { networkDisplayName } from './network-display-name';
+import {
+  hasAssetTrustline,
+  checkPayerTrustline,
+  evaluatePayerTrustline,
+  isNativeAsset,
+} from './trustline-preflight';
 
 // Network configuration
 export const STELLAR_NETWORK = process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET';
@@ -49,17 +55,12 @@ export const getExplorerAccountUrl = (publicKey: string, walletNetwork = STELLAR
 const getTrustlineMessage = (assetCode: string): string =>
   `Your wallet does not have a ${assetCode} trustline on ${STELLAR_NETWORK.toLowerCase()}. Add the ${assetCode} trustline in Freighter, or ask the seller for an XLM invoice.`;
 
-const hasAssetTrustline = (
-  account: StellarSdk.Horizon.AccountResponse,
-  assetCode: string,
-  assetIssuer: string
-): boolean =>
-  account.balances.some(
-    (balance: any) =>
-      balance.asset_type !== 'native' &&
-      balance.asset_code === assetCode &&
-      balance.asset_issuer === assetIssuer
-  );
+export {
+  hasAssetTrustline,
+  checkPayerTrustline,
+  evaluatePayerTrustline,
+  isNativeAsset,
+};
 
 const isMissingTrustlineError = (error: any): boolean => {
   const operationCodes = error?.response?.data?.extras?.result_codes?.operations;
@@ -413,6 +414,58 @@ export const sendPayment = async (
     }
     throw new Error(error.message || 'Payment failed');
   }
+};
+
+/**
+ * Submits an explicit change_trust transaction to establish a trustline for a credit asset.
+ * This is an explicit, separate user step and is never folded into the payment builder.
+ *
+ * @param assetCode The credit asset code.
+ * @param assetIssuer The issuer account public key.
+ * @returns The submitted transaction hash.
+ */
+export const addTrustline = async (
+  assetCode: string,
+  assetIssuer: string
+): Promise<string> => {
+  const session = await assertFreighterReady();
+  const userPublicKey = session.publicKey;
+  if (!userPublicKey) {
+    throw new Error('Freighter wallet is not connected');
+  }
+
+  const account = await loadAccount(userPublicKey);
+  const normalizedCode = assetCode.trim().toUpperCase();
+  const asset = new StellarSdk.Asset(normalizedCode, assetIssuer);
+
+  const transaction = new StellarSdk.TransactionBuilder(account, {
+    fee: StellarSdk.BASE_FEE,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(
+      StellarSdk.Operation.changeTrust({
+        asset,
+      })
+    )
+    .setTimeout(180)
+    .build();
+
+  const signedResult = await signTransaction(transaction.toXDR(), {
+    networkPassphrase: NETWORK_PASSPHRASE,
+  });
+
+  const signedTxXdr = readResultString(signedResult, ['signedTxXdr']);
+  if (!signedTxXdr) {
+    throw new Error('Freighter did not return a signed transaction');
+  }
+
+  const signedTx = StellarSdk.TransactionBuilder.fromXDR(
+    signedTxXdr,
+    NETWORK_PASSPHRASE
+  );
+
+  const result = await server.submitTransaction(signedTx as any);
+  return result.hash;
 };
 
 /**
