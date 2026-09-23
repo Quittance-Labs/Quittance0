@@ -1,4 +1,7 @@
 import { format } from 'date-fns';
+import { canonicalAmount } from './stroop-amount.js';
+import { formatUtcDate, formatUtcDateTime } from './utc-format.js';
+import { formatProofTimestamp } from './proof-timestamp.ts';
 import {
   assertPaymentProofAvailable,
   canExportPaymentProof,
@@ -124,19 +127,19 @@ export function generateInvoiceCSV(invoices: Invoice[]): string {
 
   const rows = invoices.map((inv) => [
     inv.id,
-    format(new Date(inv.createdAt), 'yyyy-MM-dd HH:mm:ss'),
+    formatProofTimestamp(inv.createdAt) ?? '',
     inv.sellerName || '',
     inv.sellerEmail || '',
     inv.customerName || '',
     inv.customerEmail || '',
     inv.description || '',
-    inv.amount,
+    canonicalAmount(inv.amount) ?? inv.amount,
     inv.assetCode,
     inv.status,
-    inv.paidAt ? format(new Date(inv.paidAt), 'yyyy-MM-dd HH:mm:ss') : '',
+    inv.paidAt ? formatProofTimestamp(inv.paidAt) ?? '' : '',
     inv.payerName || '',
     inv.payerEmail || '',
-    format(new Date(inv.expiresAt), 'yyyy-MM-dd HH:mm:ss'),
+    formatProofTimestamp(inv.expiresAt) ?? '',
     inv.memo,
     inv.paymentTxHash || '',
   ]);
@@ -373,13 +376,13 @@ export function generateInvoicePDF(invoiceOrProof: Invoice | QuittanceProof): st
       <h3>Invoice Details</h3>
       <div class="info-row">
         <div class="info-label">Issue Date</div>
-        <div class="info-value">${format(new Date(invoice.createdAt), 'MMM dd, yyyy')}</div>
+        <div class="info-value">${formatUtcDate(invoice.createdAt) ?? escapeHtml(String(invoice.createdAt))}</div>
       </div>
       <div class="info-row">
         <div class="info-label">Expires</div>
-        <div class="info-value">${format(new Date(invoice.expiresAt), 'MMM dd, yyyy')}</div>
+        <div class="info-value">${formatUtcDate(invoice.expiresAt) ?? escapeHtml(String(invoice.expiresAt))}</div>
       </div>
-      ${isPaid ? `<div class="info-row"><div class="info-label">Payment Date</div><div class="info-value">${format(new Date(invoice.settledAt || invoice.paidAt!), 'MMM dd, yyyy HH:mm')}</div></div>` : ''}
+      ${isPaid ? `<div class="info-row"><div class="info-label">Payment Date</div><div class="info-value">${formatUtcDateTime(invoice.settledAt || invoice.paidAt!) ?? escapeHtml(String(invoice.settledAt || invoice.paidAt))}</div></div>` : ''}
     </div>
   </div>
 
@@ -399,7 +402,7 @@ export function generateInvoicePDF(invoiceOrProof: Invoice | QuittanceProof): st
 
   <div class="amount-section">
     <div class="amount-label">Amount ${isPaid ? 'Paid' : 'Due'}</div>
-    <div class="amount-value">${invoice.amount}</div>
+    <div class="amount-value">${escapeHtml(canonicalAmount(invoice.amount) ?? String(invoice.amount))}</div>
     <div class="amount-asset">${escapeHtml(invoice.assetCode)}</div>
   </div>
 
@@ -424,7 +427,7 @@ export function generateInvoicePDF(invoiceOrProof: Invoice | QuittanceProof): st
 
   <div class="footer">
     <p><strong>Quittance</strong> - Stellar Payment Platform</p>
-    <p>Generated on ${format(new Date(), 'PPpp')}</p>
+    <p>Payment settled: ${formatUtcDateTime(invoice.settledAt || invoice.paidAt) ?? 'not recorded'}</p>
     <p style="margin-top: 10px;">This is an automatically generated invoice.</p>
   </div>
 

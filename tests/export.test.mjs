@@ -291,3 +291,60 @@ test('generateInvoicePDF and generateQuittanceProofPDF handle canonical Quittanc
   assert.ok(!htmlFromInvoicePdf.includes('undefined'));
 });
 
+test('the paid invoice print/PDF export produces identical output across timezones', () => {
+  const previousTz = process.env.TZ;
+  try {
+    process.env.TZ = 'UTC';
+    const utcHtml = withNetwork('TESTNET', () => generateInvoicePDF(PAID_INVOICE));
+    process.env.TZ = 'America/New_York';
+    const nyHtml = withNetwork('TESTNET', () => generateInvoicePDF(PAID_INVOICE));
+    assert.equal(utcHtml, nyHtml);
+  } finally {
+    if (previousTz === undefined) {
+      delete process.env.TZ;
+    } else {
+      process.env.TZ = previousTz;
+    }
+  }
+});
+
+test('amounts on the export match string-safe 7-decimal format', () => {
+  const html = withNetwork('TESTNET', () => generateInvoicePDF(PAID_INVOICE));
+  assert.ok(html.includes('250.5000000'));
+});
+
+test('dropping transaction hash or explorer link fails the required fields check', () => {
+  const html = withNetwork('TESTNET', () => generateInvoicePDF(PAID_INVOICE));
+  const missingTxHashFields = {
+    ...REQUIRED_PAID_FIELDS(PAID_INVOICE, 'https://stellar.expert/explorer/testnet/tx/' + PAID_INVOICE.paymentTxHash),
+    'transaction hash': '0'.repeat(64),
+  };
+  assert.throws(
+    () => assertFieldsPresent(html, missingTxHashFields, 'the invoice export'),
+    /dropped the transaction hash/
+  );
+
+  const missingExplorerFields = {
+    ...REQUIRED_PAID_FIELDS(PAID_INVOICE, 'https://stellar.expert/explorer/testnet/tx/' + PAID_INVOICE.paymentTxHash),
+    'explorer link': 'https://stellar.expert/explorer/testnet/tx/' + '0'.repeat(64),
+  };
+  assert.throws(
+    () => assertFieldsPresent(html, missingExplorerFields, 'the invoice export'),
+    /dropped the explorer link/
+  );
+});
+
+test('optional email does not gate PDF export', () => {
+  const invoiceWithoutEmails = {
+    ...PAID_INVOICE,
+    customerEmail: '',
+    sellerEmail: '',
+    payerEmail: '',
+  };
+  const html = withNetwork('TESTNET', () => generateInvoicePDF(invoiceWithoutEmails));
+  assert.ok(html.includes(invoiceWithoutEmails.id));
+  assert.ok(html.includes(invoiceWithoutEmails.paymentTxHash));
+  assert.ok(html.includes('250.5000000'));
+});
+
+
