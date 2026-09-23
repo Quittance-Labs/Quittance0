@@ -21,6 +21,7 @@ import {
   sendVerificationFailure,
 } from '../types/api';
 import type { InvoiceStorage, StoredInvoice } from '../storage/invoice-storage';
+import { idempotencyKeyForCreate } from '../utils/idempotency';
 import { STELLAR_NETWORK } from '../config/stellar';
 import {
   failure,
@@ -63,6 +64,7 @@ export interface InvoiceHandlerOptions {
   stellar?: TransactionLookup;
   requireCancelSignature?: boolean;
   paymentMonitor?: PaymentMonitorWatchRegistry;
+  now?: () => number;
 }
 
 export interface InvoiceHandlers {
@@ -160,6 +162,18 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         if (validatedData.network && validatedData.network !== STELLAR_NETWORK) {
           return sendFailure(res, 400, 'Client wallet network does not match the server Stellar network');
         }
+        const rawKey = req.headers?.['idempotency-key'];
+        const headerKey = Array.isArray(rawKey) ? rawKey[0] : rawKey;
+        if (typeof headerKey === 'string' && headerKey) {
+          if (headerKey.length > 200 || !/^[A-Za-z0-9_:\-]+$/.test(headerKey)) {
+            return sendFailure(res, 400, 'Idempotency-Key header is invalid');
+          }
+          validatedData.idempotencyKey = headerKey;
+        }
+        validatedData.idempotencyKey = idempotencyKeyForCreate(
+          validatedData,
+          options.now ? options.now() : Date.now()
+        );
         const invoice = await storage.createInvoice(validatedData);
         options.paymentMonitor?.registerWatch(invoice);
         const payment = await buildPaymentPayload(invoice);

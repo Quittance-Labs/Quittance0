@@ -141,3 +141,8 @@ SELECT
   asset_code
 FROM invoices
 GROUP BY seller_public_key, asset_code;
+
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(255);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_seller_idempotency
+  ON invoices (seller_public_key, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;

@@ -24,6 +24,7 @@ type Invoice = StoredInvoice;
 class MemoryStorage {
   private invoices: Map<string, Invoice> = new Map();
   private invoicesByMemo: Map<string, string> = new Map(); // memo -> invoice id
+  private invoicesByIdempotencyKey: Map<string, string> = new Map();
   // Which invoice each transaction hash settled; see domain/payment-attribution.ts.
   private readonly paymentClaims = new PaymentClaimIndex();
   private paymentEvents: MemoryPaymentEvent[] = [];
@@ -45,6 +46,7 @@ class MemoryStorage {
       createdAt: new Date(),
       expiresAt: data.expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       metadata: data.metadata,
+      idempotencyKey: data.idempotencyKey,
     };
 
     // The memo index is keyed by memo, so a second invoice carrying the same
@@ -56,9 +58,27 @@ class MemoryStorage {
 
     this.invoices.set(invoice.id, invoice);
     this.invoicesByMemo.set(invoice.memo, invoice.id);
+    if (invoice.idempotencyKey) {
+      this.invoicesByIdempotencyKey.set(
+        `${invoice.sellerPublicKey}|${invoice.idempotencyKey}`,
+        invoice.id
+      );
+    }
 
     console.log('✅ Invoice created in memory:', invoice.id);
     return invoice;
+  }
+
+  /**
+   * Retrieves an invoice by seller public key and idempotency key.
+   *
+   * @param sellerPublicKey - The public key of the seller.
+   * @param idempotencyKey - The deduplication key.
+   * @returns The matching invoice or undefined.
+   */
+  findByIdempotencyKey(sellerPublicKey: string, idempotencyKey: string): Invoice | undefined {
+    const id = this.invoicesByIdempotencyKey.get(`${sellerPublicKey}|${idempotencyKey}`);
+    return id ? this.invoices.get(id) : undefined;
   }
 
   // Get invoice by ID
@@ -230,6 +250,7 @@ class MemoryStorage {
   clear() {
     this.invoices.clear();
     this.invoicesByMemo.clear();
+    this.invoicesByIdempotencyKey.clear();
     this.paymentClaims.clear();
     this.paymentEvents = [];
     console.log('🗑️ Memory storage cleared');

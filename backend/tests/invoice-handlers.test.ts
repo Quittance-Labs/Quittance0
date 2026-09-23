@@ -35,11 +35,12 @@ function createRes(): FakeResponse & Response {
   return res;
 }
 
-function createReq(init: { body?: any; params?: any; query?: any } = {}): Request {
+function createReq(init: { body?: any; params?: any; query?: any; headers?: any } = {}): Request {
   return {
     body: init.body || {},
     params: init.params || {},
     query: init.query || {},
+    headers: init.headers || {},
   } as unknown as Request;
 }
 
@@ -65,6 +66,16 @@ function createFakePostgres() {
     const sql = text.replace(/\s+/g, ' ').trim();
 
     if (sql.startsWith('INSERT INTO invoices')) {
+      const idempotencyKey = params[13] ?? null;
+      if (idempotencyKey !== null) {
+        const clash = rows.find(
+          (row) =>
+            row.seller_public_key === params[1] && row.idempotency_key === idempotencyKey
+        );
+        if (clash) {
+          return { rows: [], rowCount: 0 };
+        }
+      }
       const row = {
         id: params[0],
         seller_public_key: params[1],
@@ -92,9 +103,17 @@ function createFakePostgres() {
         prior_status: null,
         late_payment_warning_code: null,
         metadata: null,
+        idempotency_key: idempotencyKey,
       };
       rows.push(row);
       return { rows: [clone(row)], rowCount: 1 };
+    }
+
+    if (sql.startsWith('SELECT * FROM invoices WHERE seller_public_key = $1 AND idempotency_key')) {
+      const found = rows.filter(
+        (row) => row.seller_public_key === params[0] && row.idempotency_key === params[1]
+      );
+      return { rows: found.map(clone), rowCount: found.length };
     }
 
     if (sql.startsWith('INSERT INTO payment_events')) {
@@ -252,13 +271,15 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
   describe(`invoice handlers on ${name} storage`, () => {
     let storage: InvoiceStorage;
     let transaction: any;
+    let currentTime = Date.now();
 
-    const handlers = () =>
+    const handlers = (customNow?: () => number) =>
       createInvoiceHandlers({
         storage,
         frontendUrl: 'http://localhost:3000',
         allowSimulate: false,
         stellar: { getTransaction: async () => transaction },
+        now: customNow ?? (() => currentTime),
       });
 
     const createInvoice = async (overrides: Record<string, unknown> = {}) => {
@@ -271,6 +292,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       memoryStorage.clear();
       storage = createStorage();
       transaction = undefined;
+      currentTime = Date.now();
     });
 
     it('round-trips all seller, payer, asset, customer and expiry parity fields through create+get+verify+list', async () => {
@@ -677,6 +699,112 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
 
       assert.equal(res.statusCode, 404);
       assert.equal(res.body.error, 'Endpoint not found');
+    });
+
+    describe('idempotent invoice creation', () => {
+      it('collapses parallel creates carrying the same key onto one invoice', async () => {
+        const body = invoiceBody();
+        const [a, b] = await Promise.all([
+          call(
+            handlers().createInvoice,
+            createReq({ body, headers: { 'idempotency-key': 'parallel-key-1' } })
+          ),
+          call(
+            handlers().createInvoice,
+            createReq({ body, headers: { 'idempotency-key': 'parallel-key-1' } })
+          ),
+        ]);
+
+        assert.equal(a.statusCode, 201);
+        assert.equal(b.statusCode, 201);
+        assert.equal(a.body.data.invoice.id, b.body.data.invoice.id);
+        assert.equal(a.body.data.invoice.memo, b.body.data.invoice.memo);
+        assert.equal(a.body.data.paymentUrl, b.body.data.paymentUrl);
+      });
+
+      it('replays an explicit Idempotency-Key to the original invoice', async () => {
+        const body = invoiceBody();
+        const first = await call(
+          handlers().createInvoice,
+          createReq({ body, headers: { 'idempotency-key': 'form-key-123' } })
+        );
+        const second = await call(
+          handlers().createInvoice,
+          createReq({ body, headers: { 'idempotency-key': 'form-key-123' } })
+        );
+
+        assert.equal(first.statusCode, 201);
+        assert.equal(second.statusCode, 201);
+        assert.equal(second.body.data.invoice.id, first.body.data.invoice.id);
+        assert.equal(second.body.data.invoice.memo, first.body.data.invoice.memo);
+        assert.equal(second.body.data.paymentUrl, first.body.data.paymentUrl);
+      });
+
+      it('dedupes a keyless retry of the same intent inside the window', async () => {
+        const body = invoiceBody({ customerEmail: 'same@client.example' });
+        const first = await call(handlers().createInvoice, createReq({ body }));
+        const second = await call(handlers().createInvoice, createReq({ body }));
+
+        assert.equal(first.statusCode, 201);
+        assert.equal(second.statusCode, 201);
+        assert.equal(second.body.data.invoice.id, first.body.data.invoice.id);
+        assert.equal(second.body.data.invoice.memo, first.body.data.invoice.memo);
+      });
+
+      it('mints a new invoice when the amount differs', async () => {
+        const first = await call(
+          handlers().createInvoice,
+          createReq({ body: invoiceBody({ amount: 10 }) })
+        );
+        const second = await call(
+          handlers().createInvoice,
+          createReq({ body: invoiceBody({ amount: 99 }) })
+        );
+
+        assert.equal(first.statusCode, 201);
+        assert.equal(second.statusCode, 201);
+        assert.notEqual(second.body.data.invoice.id, first.body.data.invoice.id);
+        assert.notEqual(second.body.data.invoice.memo, first.body.data.invoice.memo);
+      });
+
+      it('allows a new invoice after the deduplication window expires', async () => {
+        const body = invoiceBody({ customerEmail: 'window@client.example' });
+        const first = await call(handlers().createInvoice, createReq({ body }));
+        currentTime += 130_000;
+        const second = await call(handlers().createInvoice, createReq({ body }));
+
+        assert.equal(first.statusCode, 201);
+        assert.equal(second.statusCode, 201);
+        assert.notEqual(second.body.data.invoice.id, first.body.data.invoice.id);
+        assert.notEqual(second.body.data.invoice.memo, first.body.data.invoice.memo);
+      });
+
+      it('scopes an explicit key to the seller wallet', async () => {
+        const first = await call(
+          handlers().createInvoice,
+          createReq({ body: invoiceBody(), headers: { 'idempotency-key': 'shared-key' } })
+        );
+        const other = await call(
+          handlers().createInvoice,
+          createReq({
+            body: invoiceBody({ sellerPublicKey: SELLER_B }),
+            headers: { 'idempotency-key': 'shared-key' },
+          })
+        );
+
+        assert.equal(first.statusCode, 201);
+        assert.equal(other.statusCode, 201);
+        assert.notEqual(other.body.data.invoice.id, first.body.data.invoice.id);
+        assert.equal(other.body.data.invoice.sellerPublicKey, SELLER_B);
+      });
+
+      it('rejects a malformed Idempotency-Key header', async () => {
+        const res = await call(
+          handlers().createInvoice,
+          createReq({ body: invoiceBody(), headers: { 'idempotency-key': 'bad key!' } })
+        );
+        assert.equal(res.statusCode, 400);
+      });
     });
   });
 }

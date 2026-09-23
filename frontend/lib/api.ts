@@ -56,6 +56,7 @@ export const invoiceApi = {
     sellerName?: string;
     sellerEmail?: string;
     network?: string;
+    idempotencyKey?: string;
   }) => {
     const normalizedAssetCode = data.assetCode ? data.assetCode.toUpperCase() : 'XLM';
     const response = await api.post('/invoices', {

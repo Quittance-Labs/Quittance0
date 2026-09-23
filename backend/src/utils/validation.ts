@@ -84,6 +84,11 @@ export const createInvoiceSchema = z
         invalid_type_error: CREATE_INVOICE_MESSAGES.sellerPublicKeyRequired,
       })
       .refine(isStellarPublicKey, CREATE_INVOICE_MESSAGES.publicKeyFormat),
+    idempotencyKey: z
+      .string()
+      .max(200)
+      .regex(/^[A-Za-z0-9_:\-]+$/, 'idempotencyKey must be URL-safe')
+      .optional(),
   })
   .refine(
     (invoice) => !requiresIssuer(invoice.assetCode) || Boolean(invoice.assetIssuer),

@@ -152,6 +152,7 @@ async function createInvoice(port: number, amount = 25) {
     },
     {
       'x-forwarded-for': `203.0.113.${++createRequestSequence}`,
+      'idempotency-key': `loop-${createRequestSequence}`,
     }
   );
 

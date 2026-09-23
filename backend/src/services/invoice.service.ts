@@ -52,6 +52,7 @@ export interface Invoice {
   latePaymentWarningCode?: LatePaymentWarningCode;
   expiresAt: Date;
   metadata?: any;
+  idempotencyKey?: string;
 }
 
 export class InvoiceService {
@@ -73,8 +74,10 @@ export class InvoiceService {
       INSERT INTO invoices (
         id, seller_public_key, seller_name, seller_email, amount,
         asset_code, asset_issuer, memo, description, customer_name,
-        customer_email, status, expires_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        customer_email, status, expires_at, idempotency_key
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ON CONFLICT (seller_public_key, idempotency_key) WHERE idempotency_key IS NOT NULL
+      DO NOTHING
       RETURNING *
     `;
 
@@ -92,10 +95,21 @@ export class InvoiceService {
       input.customerEmail || null,
       'PENDING',
       expiresAt,
+      input.idempotencyKey || null,
     ];
 
     try {
       const result = await this.db.query(query, values);
+      if (result.rows.length === 0) {
+        const existing = await this.db.query(
+          'SELECT * FROM invoices WHERE seller_public_key = $1 AND idempotency_key = $2',
+          [input.sellerPublicKey, input.idempotencyKey]
+        );
+        if (existing.rows.length === 0) {
+          throw new Error('Idempotent replay lookup found no original invoice');
+        }
+        return this.mapRowToInvoice(existing.rows[0]);
+      }
       console.log('✅ Invoice created:', result.rows[0].id);
       return this.mapRowToInvoice(result.rows[0]);
     } catch (error: any) {
@@ -410,6 +424,7 @@ export class InvoiceService {
       latePaymentWarningCode: row.late_payment_warning_code,
       expiresAt: row.expires_at,
       metadata: row.metadata,
+      idempotencyKey: row.idempotency_key || undefined,
     };
   }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiErrorMessage, invoiceApi, isApiUnavailableError } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2, AlertTriangle } from 'lucide-react';
@@ -47,6 +47,11 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   // them, so both routes render in the same place.
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [expiresInDays, setExpiresInDays] = useState(initialDraft.expiresInDays ?? 7);
+  const idempotencyKeyRef = useRef<string>(
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : 'idemp-' + Date.now()
+  );
   const { isWrongNetwork } = useWalletStore();
 
   // Focus follows the refusal: a keyboard user who pressed Create should land
@@ -149,9 +154,14 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
         description: description || undefined,
         customerName: customerName.trim() || undefined,
         customerEmail: customerEmail.trim() || undefined,
+        idempotencyKey: idempotencyKeyRef.current,
       });
 
       toast.success('Invoice created');
+      idempotencyKeyRef.current =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : 'idemp-' + Date.now();
       onSuccess?.(result.data);
       setAmount('');
       setAssetCode('XLM');

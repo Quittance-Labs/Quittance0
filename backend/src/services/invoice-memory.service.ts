@@ -30,6 +30,16 @@ export class InvoiceMemoryService {
       throw new Error('Seller public key is required');
     }
 
+    if (input.idempotencyKey) {
+      const existing = this.storage.findByIdempotencyKey(
+        input.sellerPublicKey,
+        input.idempotencyKey
+      );
+      if (existing) {
+        return existing;
+      }
+    }
+
     const id = generatePublicInvoiceId();
     const memo = this.drawUnusedMemo();
     const expiresAt = calculateInvoiceExpiry(input.expiresInDays);
@@ -47,6 +57,7 @@ export class InvoiceMemoryService {
       customerName: input.customerName,
       customerEmail: input.customerEmail,
       expiresAt,
+      idempotencyKey: input.idempotencyKey,
     });
 
     console.log('✅ Invoice created:', invoice.id);
