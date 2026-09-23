@@ -4,24 +4,24 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Network configuration
-import { SUPPORTED_STELLAR_NETWORKS } from '../../../shared/invoice-validation';
+import {
+  resolveStellarNetwork,
+  passphraseFor,
+  defaultHorizonUrl,
+  SUPPORTED_STELLAR_NETWORKS,
+  type StellarNetwork,
+} from '../../../shared/network';
 
-export { SUPPORTED_STELLAR_NETWORKS };
-const configuredNetwork = (process.env.STELLAR_NETWORK || 'TESTNET').toUpperCase();
-if (!SUPPORTED_STELLAR_NETWORKS.includes(configuredNetwork as any)) {
-  throw new Error('STELLAR_NETWORK must be TESTNET or PUBLIC');
-}
-export const STELLAR_NETWORK = configuredNetwork as typeof SUPPORTED_STELLAR_NETWORKS[number];
-export const STELLAR_HORIZON_URL = 
-  process.env.STELLAR_HORIZON_URL || 
-  (STELLAR_NETWORK === 'TESTNET' 
-    ? 'https://horizon-testnet.stellar.org' 
-    : 'https://horizon.stellar.org');
+export { SUPPORTED_STELLAR_NETWORKS, StellarNetwork };
 
-export const NETWORK_PASSPHRASE = 
-  STELLAR_NETWORK === 'TESTNET' 
-    ? StellarSdk.Networks.TESTNET 
-    : StellarSdk.Networks.PUBLIC;
+export const STELLAR_NETWORK: StellarNetwork = resolveStellarNetwork(
+  process.env.STELLAR_NETWORK
+);
+
+export const STELLAR_HORIZON_URL =
+  process.env.STELLAR_HORIZON_URL || defaultHorizonUrl(STELLAR_NETWORK);
+
+export const NETWORK_PASSPHRASE = passphraseFor(STELLAR_NETWORK);
 
 export const STELLAR_EXPLORER_BASE =
   STELLAR_NETWORK === 'TESTNET'

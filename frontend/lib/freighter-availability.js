@@ -77,6 +77,44 @@ const isNetworkMatching = (networkOrPassphrase, expected = 'TESTNET') => {
   return false;
 };
 
+const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
+const PUBLIC_PASSPHRASE = 'Public Global Stellar Network ; September 2015';
+
+const NETWORK_PASSPHRASES = Object.freeze({
+  TESTNET: TESTNET_PASSPHRASE,
+  PUBLIC: PUBLIC_PASSPHRASE,
+  PUBNET: PUBLIC_PASSPHRASE,
+  MAINNET: PUBLIC_PASSPHRASE,
+});
+
+/**
+ * Checks if a session matches the expected network using networkPassphrase or network name.
+ * Prioritizes networkPassphrase when present on the session.
+ *
+ * @param {object} [session]
+ * @param {string} [expectedNetwork='TESTNET']
+ * @returns {boolean}
+ */
+const sessionNetworkMatches = (session, expectedNetwork = 'TESTNET') => {
+  if (!session) return false;
+  const normalizedExpected = normalizeNetworkName(expectedNetwork) || 'TESTNET';
+  const expectedPassphrase = NETWORK_PASSPHRASES[normalizedExpected];
+
+  if (!session.networkPassphrase && !session.network) {
+    return false;
+  }
+
+  if (session.networkPassphrase && session.networkPassphrase.trim() !== expectedPassphrase) {
+    return false;
+  }
+
+  if (session.network && !networkMatches(session.network, normalizedExpected)) {
+    return false;
+  }
+
+  return true;
+};
+
 // The single answer to the question every create and pay surface asks: can
 // this wallet act, and if not, which prompt gets it there?
 //
@@ -109,7 +147,7 @@ const walletGate = (session, expectedNetwork = 'TESTNET') => {
     };
   }
 
-  if (!networkMatches(session.network, expectedNetwork)) {
+  if (!sessionNetworkMatches(session, expectedNetwork)) {
     return {
       status: 'wrong_network',
       ready: false,
@@ -133,10 +171,15 @@ module.exports = {
   FREIGHTER_REQUIRED_MESSAGE,
   FREIGHTER_CONNECT_REQUIRED_MESSAGE,
   FREIGHTER_WRONG_NETWORK_MESSAGE,
+  FREIGHTER_READY_MESSAGE,
+  NETWORK_PASSPHRASES,
+  TESTNET_PASSPHRASE,
+  PUBLIC_PASSPHRASE,
   detectFreighter,
   isNetworkMatching,
   networkLabel,
   networkMatches,
+  sessionNetworkMatches,
   walletGate,
   wrongNetworkMessage,
 };

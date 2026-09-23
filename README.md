@@ -53,6 +53,15 @@ key is available, switch networks when Freighter is not on
 `NEXT_PUBLIC_STELLAR_NETWORK`, and continue only when the wallet is connected on
 the expected network.
 
+### Stellar Network Resolution Matrix
+
+Both backend and frontend resolve networks via canonical definitions in `shared/network.ts`. Network mismatch between the wallet and the application is blocked at the wallet gate, preventing cross-network payment failures:
+
+| Canonical Network | Accepted Aliases | Passphrase | Default Horizon URL | Explorer Segment | Freighter Network |
+|---|---|---|---|---|---|
+| `TESTNET` | `testnet` | `Test SDF Network ; September 2015` | `https://horizon-testnet.stellar.org` | `testnet` | `TESTNET` |
+| `PUBLIC` | `public`, `MAINNET`, `PUBNET` | `Public Global Stellar Network ; September 2015` | `https://horizon.stellar.org` | `public` | `PUBLIC` |
+
 ### Create-form draft across a wallet disconnect
 
 The create form is only rendered while that gate is satisfied, so locking or

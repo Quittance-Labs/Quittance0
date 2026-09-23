@@ -18,7 +18,17 @@ export interface WalletGateSession {
   connected?: boolean;
   publicKey?: string | null;
   network?: string | null;
+  networkPassphrase?: string | null;
 }
+
+export const TESTNET_PASSPHRASE: string;
+export const PUBLIC_PASSPHRASE: string;
+export const NETWORK_PASSPHRASES: Record<string, string>;
+
+export function sessionNetworkMatches(
+  session?: WalletGateSession | null,
+  expectedNetwork?: string
+): boolean;
 
 export function walletGate(
   session?: WalletGateSession | null,

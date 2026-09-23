@@ -43,7 +43,7 @@ function resolveExplorerNetwork(invoiceOrNetwork) {
  * Build a Horizon transaction explorer URL for a transaction hash.
  *
  * @param {unknown} txHash - Stellar transaction hash (64-character hex string).
- * @param {string} [network] - Network name; defaults to 'public'.
+ * @param {string} [network='public'] - Network name; defaults to 'public'.
  * @returns {string|null} Full explorer URL, or null when the hash is missing or malformed.
  */
 function buildHorizonTxUrl(txHash, network = 'public') {

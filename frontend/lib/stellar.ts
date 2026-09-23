@@ -18,26 +18,32 @@ import {
 } from './freighter-availability';
 import { networkDisplayName } from './network-display-name';
 
-// Network configuration
-export const STELLAR_NETWORK = process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'TESTNET';
-export const HORIZON_URL =
-  process.env.NEXT_PUBLIC_HORIZON_URL ||
-  (STELLAR_NETWORK === 'TESTNET'
-    ? 'https://horizon-testnet.stellar.org'
-    : 'https://horizon.stellar.org');
+import {
+  resolveStellarNetwork,
+  passphraseFor,
+  defaultHorizonUrl,
+  explorerSegmentFor,
+  walletNetworkMatches,
+  type StellarNetwork,
+} from '../../shared/network.ts';
 
-export const NETWORK_PASSPHRASE =
-  STELLAR_NETWORK === 'TESTNET'
-    ? StellarSdk.Networks.TESTNET
-    : StellarSdk.Networks.PUBLIC;
+// Network configuration
+export const RESOLVED_NETWORK: StellarNetwork = resolveStellarNetwork(
+  process.env.NEXT_PUBLIC_STELLAR_NETWORK
+);
+export const STELLAR_NETWORK = RESOLVED_NETWORK;
+export const HORIZON_URL =
+  process.env.NEXT_PUBLIC_HORIZON_URL || defaultHorizonUrl(RESOLVED_NETWORK);
+
+export const NETWORK_PASSPHRASE = passphraseFor(RESOLVED_NETWORK);
 
 export const NETWORK_DISPLAY_NAME = networkDisplayName(NETWORK_PASSPHRASE);
-export const EXPECTED_WALLET_NETWORK = STELLAR_NETWORK.toUpperCase();
+export const EXPECTED_WALLET_NETWORK = RESOLVED_NETWORK;
 
 export const server = new StellarSdk.Horizon.Server(HORIZON_URL);
 
 export const getExplorerTransactionUrl = (txHash: string): string => {
-  const network = STELLAR_NETWORK === 'TESTNET' ? 'testnet' : 'public';
+  const network = explorerSegmentFor(RESOLVED_NETWORK);
   return `https://stellar.expert/explorer/${network}/tx/${encodeURIComponent(txHash)}`;
 };
 
@@ -221,7 +227,7 @@ export const assertFreighterReady = async (): Promise<FreighterSession> => {
   const session = await readFreighterSession();
   if (!session.freighterAvailable) throw new Error(FREIGHTER_REQUIRED_MESSAGE);
   if (!session.connected || !session.publicKey) throw new Error(FREIGHTER_CONNECT_REQUIRED_MESSAGE);
-  if (!networkMatches(session.network, EXPECTED_WALLET_NETWORK)) {
+  if (!walletNetworkMatches(RESOLVED_NETWORK, session)) {
     throw new Error(wrongNetworkMessage(EXPECTED_WALLET_NETWORK, session.network));
   }
   return session;
@@ -235,23 +241,27 @@ export const isWrongNetwork = (
   expectedNetwork: string = STELLAR_NETWORK
 ): boolean => {
   if (!currentNetworkOrPassphrase) return false;
+  let target: StellarNetwork;
+  try {
+    target = resolveStellarNetwork(expectedNetwork);
+  } catch {
+    target = 'TESTNET';
+  }
   const current = currentNetworkOrPassphrase.trim();
-  const expected = expectedNetwork.toUpperCase();
-  const expectedPassphrase =
-    expected === 'TESTNET' ? StellarSdk.Networks.TESTNET : StellarSdk.Networks.PUBLIC;
+  const targetPassphrase = passphraseFor(target);
 
   if (
-    current.toUpperCase() === expected ||
-    current === expectedPassphrase
+    current.toUpperCase() === target ||
+    current === targetPassphrase
   ) {
     return false;
   }
 
-  // Check if current is matching known counterpart
-  if (expected === 'TESTNET' && current.toLowerCase().includes('test sdf network')) {
+  // Check if current matches known passphrase counterpart
+  if (target === 'TESTNET' && current.toLowerCase().includes('test sdf network')) {
     return false;
   }
-  if (expected === 'PUBLIC' && current.toLowerCase().includes('public global stellar network')) {
+  if (target === 'PUBLIC' && current.toLowerCase().includes('public global stellar network')) {
     return false;
   }
 

@@ -7,6 +7,9 @@ const {
   FREIGHTER_WRONG_NETWORK_MESSAGE,
   detectFreighter,
   isNetworkMatching,
+  sessionNetworkMatches,
+  TESTNET_PASSPHRASE,
+  PUBLIC_PASSPHRASE,
   walletGate,
 } = require('../lib/freighter-availability');
 
@@ -113,4 +116,67 @@ test('walletGate is ready on the expected network', () => {
 
 test('walletGate tolerates a missing session', () => {
   assert.equal(walletGate(undefined, 'TESTNET').status, 'disconnected');
+});
+
+test('sessionNetworkMatches verifies passphrase and falls back to network name', () => {
+  assert.equal(
+    sessionNetworkMatches({ networkPassphrase: TESTNET_PASSPHRASE, network: 'TESTNET' }, 'TESTNET'),
+    true
+  );
+  assert.equal(
+    sessionNetworkMatches({ networkPassphrase: PUBLIC_PASSPHRASE, network: 'PUBLIC' }, 'PUBLIC'),
+    true
+  );
+  // Cryptographic passphrase mismatch overrides misleading network name
+  assert.equal(
+    sessionNetworkMatches({ networkPassphrase: PUBLIC_PASSPHRASE, network: 'TESTNET' }, 'TESTNET'),
+    false
+  );
+  assert.equal(
+    sessionNetworkMatches({ networkPassphrase: TESTNET_PASSPHRASE, network: 'PUBLIC' }, 'PUBLIC'),
+    false
+  );
+  // When passphrase is absent, falls back to network name
+  assert.equal(
+    sessionNetworkMatches({ networkPassphrase: null, network: 'TESTNET' }, 'TESTNET'),
+    true
+  );
+  assert.equal(
+    sessionNetworkMatches({ networkPassphrase: null, network: 'PUBLIC' }, 'TESTNET'),
+    false
+  );
+});
+
+test('walletGate blocks when networkPassphrase does not match expected network', () => {
+  const gate = walletGate(
+    {
+      freighterAvailable: true,
+      connected: true,
+      publicKey: SELLER_KEY,
+      network: 'TESTNET',
+      networkPassphrase: PUBLIC_PASSPHRASE,
+    },
+    'TESTNET'
+  );
+
+  assert.equal(gate.status, 'wrong_network');
+  assert.equal(gate.ready, false);
+  assert.equal(gate.action, 'switch_network');
+});
+
+test('walletGate allows when networkPassphrase matches expected network', () => {
+  const gate = walletGate(
+    {
+      freighterAvailable: true,
+      connected: true,
+      publicKey: SELLER_KEY,
+      network: 'TESTNET',
+      networkPassphrase: TESTNET_PASSPHRASE,
+    },
+    'TESTNET'
+  );
+
+  assert.equal(gate.status, 'ready');
+  assert.equal(gate.ready, true);
+  assert.equal(gate.action, 'none');
 });

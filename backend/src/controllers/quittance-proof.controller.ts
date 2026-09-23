@@ -12,12 +12,53 @@ import { Request, Response } from 'express';
 import { buildQuittanceProof, serializeQuittanceProof, checkQuittanceProofInvariants } from '../services/quittance-proof.service';
 import { sendSuccess, sendFailure } from '../types/api';
 import { createRequestId } from '../utils/request-correlation-id';
+import {
+  resolveStellarNetwork,
+  explorerSegmentFor,
+  type StellarNetwork,
+} from '../../../shared/network';
+import { STELLAR_NETWORK } from '../config/stellar';
+
+function resolveProofNetwork(requestedNetwork?: string): {
+  ok: true;
+  network: 'testnet' | 'public';
+} | {
+  ok: false;
+  message: string;
+} {
+  const serverSegment = explorerSegmentFor(STELLAR_NETWORK);
+  if (!requestedNetwork) {
+    return { ok: true, network: serverSegment };
+  }
+  let parsed: StellarNetwork;
+  try {
+    parsed = resolveStellarNetwork(requestedNetwork);
+  } catch {
+    return {
+      ok: false,
+      message: `Invalid network "${requestedNetwork}". Must be one of TESTNET, PUBLIC.`,
+    };
+  }
+  const requestedSegment = explorerSegmentFor(parsed);
+  if (requestedSegment !== serverSegment) {
+    return {
+      ok: false,
+      message: `Proofs are issued on ${STELLAR_NETWORK}. Mismatched network parameter "${requestedNetwork}" rejected.`,
+    };
+  }
+  return { ok: true, network: serverSegment };
+}
 
 export async function getQuittanceProof(req: Request, res: Response): Promise<void> {
   const requestId = createRequestId();
   try {
     const { id } = req.params;
     const network = req.query.network as string | undefined;
+
+    const resolved = resolveProofNetwork(network);
+    if (!resolved.ok) {
+      return sendFailure(res, 400, resolved.message);
+    }
 
     // Fetch invoice from storage
     const invoice = await req.app.get('invoiceStorage').getInvoiceById(id);
@@ -41,8 +82,9 @@ export async function getQuittanceProof(req: Request, res: Response): Promise<vo
         createdAt: invoice.createdAt,
         expiresAt: invoice.expiresAt,
         paidAt: invoice.paidAt,
+        network: invoice.network,
       },
-      { network }
+      { network: resolved.network }
     );
 
     if (!result.ok) {
@@ -76,6 +118,11 @@ export async function getQuittanceProofPDF(req: Request, res: Response): Promise
     const { id } = req.params;
     const network = req.query.network as string | undefined;
 
+    const resolved = resolveProofNetwork(network);
+    if (!resolved.ok) {
+      return sendFailure(res, 400, resolved.message);
+    }
+
     // Fetch invoice from storage
     const invoice = await req.app.get('invoiceStorage').getInvoiceById(id);
 
@@ -98,8 +145,9 @@ export async function getQuittanceProofPDF(req: Request, res: Response): Promise
         createdAt: invoice.createdAt,
         expiresAt: invoice.expiresAt,
         paidAt: invoice.paidAt,
+        network: invoice.network,
       },
-      { network }
+      { network: resolved.network }
     );
 
     if (!result.ok) {

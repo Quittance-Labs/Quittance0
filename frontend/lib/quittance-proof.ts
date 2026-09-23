@@ -1,4 +1,8 @@
 import { buildHorizonTxUrl } from './explorer-tx-link.ts';
+import {
+  resolveStellarNetwork,
+  explorerSegmentFor,
+} from '../../shared/network.ts';
 
 export const QUITTANCE_PROOF_VERSION = 'quittance.v1';
 
@@ -70,6 +74,7 @@ export interface QuittanceProofInput {
   createdAt?: string | Date | null;
   paidAt?: string | Date | null;
   settledAt?: string | Date | null;
+  network?: string | null;
 }
 
 export interface QuittanceProofOptions {
@@ -109,7 +114,13 @@ function normalizeAmount(value: string | number | null | undefined): string | nu
 }
 
 function normalizeNetwork(network: string | null | undefined): 'testnet' | 'public' {
-  return String(network ?? '').toLowerCase() === 'testnet' ? 'testnet' : 'public';
+  if (!network) {
+    return explorerSegmentFor(
+      resolveStellarNetwork(process.env.NEXT_PUBLIC_STELLAR_NETWORK)
+    );
+  }
+  const lower = network.trim().toLowerCase();
+  return lower === 'public' || lower === 'mainnet' ? 'public' : 'testnet';
 }
 
 function isSettled(status: string): boolean {
@@ -170,7 +181,7 @@ export function buildQuittanceProof(
   }
 
   const status = typeof input.status === 'string' ? input.status : 'PENDING';
-  const network = normalizeNetwork(options.network ?? process.env.NEXT_PUBLIC_STELLAR_NETWORK);
+  const network = normalizeNetwork(options.network ?? input.network ?? process.env.NEXT_PUBLIC_STELLAR_NETWORK);
   const settled = isSettled(status);
 
   let txHash: string | null = null;

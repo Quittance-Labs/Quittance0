@@ -1,4 +1,9 @@
 import type { CorsOptions } from 'cors';
+import {
+  resolveStellarNetwork,
+  defaultHorizonUrl,
+  type StellarNetwork,
+} from '../../../shared/network';
 
 type RuntimeEnvironment = Record<string, string | undefined>;
 
@@ -52,17 +57,21 @@ export function deploymentReadiness(
   env: RuntimeEnvironment = process.env,
   options: { storage?: string } = {}
 ): ReadinessCheck {
-  const network = (env.STELLAR_NETWORK || 'TESTNET').toUpperCase();
-  const horizonUrl = env.STELLAR_HORIZON_URL ||
-    (network === 'TESTNET'
-      ? 'https://horizon-testnet.stellar.org'
-      : 'https://horizon.stellar.org');
+  let validNetwork = false;
+  let resolvedNetwork: StellarNetwork = 'TESTNET';
+  try {
+    resolvedNetwork = resolveStellarNetwork(env.STELLAR_NETWORK);
+    validNetwork = true;
+  } catch {
+    validNetwork = false;
+  }
+  const horizonUrl = env.STELLAR_HORIZON_URL || defaultHorizonUrl(resolvedNetwork);
   const isHttps = /^https:\/\//i.test(horizonUrl);
   const isDevOrTestLocal = env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(horizonUrl);
   const checks: ReadinessCheck['checks'] = {
     frontendOrigins: configuredFrontendOrigins(env).length > 0,
     simulationDisabled: env.ALLOW_SIMULATE !== 'true',
-    stellarNetwork: network === 'TESTNET' || network === 'PUBLIC',
+    stellarNetwork: validNetwork,
     horizonUrl: isHttps || isDevOrTestLocal,
     storageReady: true, // In-memory MVP is immediately ready without Postgres
   };

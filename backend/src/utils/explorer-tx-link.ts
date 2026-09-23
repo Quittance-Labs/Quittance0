@@ -8,6 +8,11 @@
  * Note: This mirrors frontend/lib/explorer-tx-link.ts for server-side use.
  */
 
+import {
+  resolveStellarNetwork,
+  explorerSegmentFor,
+} from '../../../shared/network';
+
 const EXPLORER_TX_URLS: Record<string, string> = {
   public: 'https://stellar.expert/explorer/public/tx',
   testnet: 'https://stellar.expert/explorer/testnet/tx',
@@ -17,12 +22,12 @@ const EXPLORER_TX_URLS: Record<string, string> = {
  * Build a Horizon transaction explorer URL for a transaction hash.
  *
  * @param txHash - Stellar transaction hash (64-character hex string).
- * @param network - Network name; defaults to 'public'.
+ * @param network - Network name; defaults to resolved STELLAR_NETWORK.
  * @returns Full explorer URL, or null when the hash is missing or malformed.
  */
 export function buildHorizonTxUrl(
   txHash: unknown,
-  network: string = 'public'
+  network?: string
 ): string | null {
   if (typeof txHash !== 'string') {
     return null;
@@ -33,7 +38,11 @@ export function buildHorizonTxUrl(
     return null;
   }
 
-  const baseUrl = EXPLORER_TX_URLS[network] ?? EXPLORER_TX_URLS.public;
+  const segment =
+    network && EXPLORER_TX_URLS[network.toLowerCase()]
+      ? network.toLowerCase()
+      : explorerSegmentFor(resolveStellarNetwork(process.env.STELLAR_NETWORK));
+  const baseUrl = EXPLORER_TX_URLS[segment] ?? EXPLORER_TX_URLS.testnet;
   return `${baseUrl}/${normalizedHash}`;
 }
 
