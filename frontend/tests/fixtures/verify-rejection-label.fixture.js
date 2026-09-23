@@ -17,6 +17,7 @@ const KNOWN_CODE_FIXTURES = [
   { code: 'INVOICE_NOT_PENDING', label: 'Invoice not pending' },
   { code: 'TRANSACTION_NOT_FOUND', label: 'Transaction not found' },
   { code: 'TRANSACTION_CLOSE_TIME_UNAVAILABLE', label: 'Close time unavailable' },
+  { code: 'VERIFY_UNAVAILABLE', label: 'Verification unavailable' },
   { code: 'NO_PAYMENT_OPERATION', label: 'No payment operation' },
   { code: 'MEMO_MISMATCH', label: 'Memo mismatch' },
   { code: 'DESTINATION_MISMATCH', label: 'Destination mismatch' },

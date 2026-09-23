@@ -46,6 +46,7 @@ export type VerificationCode =
   | 'INVOICE_NOT_PENDING'
   | 'TRANSACTION_NOT_FOUND'
   | 'TRANSACTION_CLOSE_TIME_UNAVAILABLE'
+  | 'VERIFY_UNAVAILABLE'
   | 'NO_PAYMENT_OPERATION'
   | 'MEMO_MISMATCH'
   | 'DESTINATION_MISMATCH'
@@ -93,6 +94,7 @@ export const VERIFICATION_MESSAGES: Record<VerificationCode, string> = {
   INVOICE_NOT_PENDING: 'Invoice is not pending',
   TRANSACTION_NOT_FOUND: 'Transaction not found on Stellar',
   TRANSACTION_CLOSE_TIME_UNAVAILABLE: 'Transaction close time is unavailable; try verification again later',
+  VERIFY_UNAVAILABLE: 'Verification is temporarily unavailable; try again shortly',
   NO_PAYMENT_OPERATION: 'No payment operation found in transaction',
   MEMO_MISMATCH: 'Memo mismatch',
   DESTINATION_MISMATCH: 'Payment destination mismatch',

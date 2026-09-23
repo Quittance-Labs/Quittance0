@@ -6,7 +6,13 @@ invoice controller, and `stellar.service` — routes through
 rejection codes stay identical everywhere.
 
 The module is pure: callers fetch the transaction and its operations from
-Horizon and hand them in.
+Horizon and hand them in. All Horizon traffic goes through
+`backend/src/utils/horizon-client.ts`, which bounds each call with a
+timeout, retries 429/5xx honoring `Retry-After`, and shares one concurrency
+budget between verify and the monitor. When Horizon stays unreachable the
+caller reports `VERIFY_UNAVAILABLE` (503) rather than
+`TRANSACTION_NOT_FOUND` — an outage must never read as a rejection, and it
+is never written to the verify cache.
 
 ## Order of checks
 

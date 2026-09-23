@@ -47,7 +47,7 @@ free-tier host and its only real downstream is Horizon.
 | `POST /invoices/:id/cancel` | 10 / min / IP; and 401 when no proof of ownership is supplied | 401 (auth) before 429 (volume) |
 | any body over 16 kB | hard cap | 413 with a JSON error envelope |
 | global invoice ceiling (in-memory MVP) | e.g. 5,000 invoices | 503 `INVOICE_STORE_FULL` with a `Retry-After` |
-| Horizon-dependent paths under load | 1 in-flight verify per invoice | 429 `VERIFY_IN_PROGRESS` |
+| Horizon-dependent paths under load | 1 in-flight verify per invoice; all Horizon calls share a 4-concurrent budget with timeout + bounded retry (`utils/horizon-client.ts`) | 429 `VERIFY_IN_PROGRESS`; upstream Horizon 429s surface as 503 `VERIFY_UNAVAILABLE`, never a memo/amount rejection |
 
 Every rejection uses the existing failure envelope so the frontend keeps one
 error path, and each 429 carries `Retry-After` in seconds. The status codes

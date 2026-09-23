@@ -50,6 +50,7 @@ const REJECTION_LABELS: Record<string, string> = {
   INVOICE_NOT_PENDING: 'Invoice not pending',
   TRANSACTION_NOT_FOUND: 'Transaction not found',
   TRANSACTION_CLOSE_TIME_UNAVAILABLE: 'Close time unavailable',
+  VERIFY_UNAVAILABLE: 'Verification unavailable',
   NO_PAYMENT_OPERATION: 'No payment operation',
   MEMO_MISMATCH: 'Memo mismatch',
   DESTINATION_MISMATCH: 'Destination mismatch',

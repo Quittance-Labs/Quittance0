@@ -95,6 +95,7 @@ test('covers every rejection code with a message', () => {
     'INVOICE_NOT_PENDING',
     'TRANSACTION_NOT_FOUND',
     'TRANSACTION_CLOSE_TIME_UNAVAILABLE',
+    'VERIFY_UNAVAILABLE',
     'NO_PAYMENT_OPERATION',
     'MEMO_MISMATCH',
     'DESTINATION_MISMATCH',

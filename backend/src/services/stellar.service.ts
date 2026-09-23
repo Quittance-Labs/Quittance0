@@ -10,6 +10,10 @@ import type {
   VerificationResult,
   VerifiedPayment,
 } from './payment-verification';
+import {
+  horizonCall,
+  isHorizonUnavailable,
+} from '../utils/horizon-client';
 
 export interface PaymentRecord {
   id: string;
@@ -37,9 +41,12 @@ class StellarService {
    */
   async loadAccount(publicKey: string): Promise<StellarSdk.Horizon.AccountResponse> {
     try {
-      return await server.loadAccount(publicKey);
+      return await horizonCall(() => server.loadAccount(publicKey), { label: 'loadAccount' });
     } catch (error: any) {
       console.error(`Error loading account ${publicKey}:`, error);
+      if (isHorizonUnavailable(error)) {
+        throw error;
+      }
       throw new Error(`Account not found or network error: ${error.message}`);
     }
   }
@@ -80,6 +87,9 @@ class StellarService {
       txDetails = await this.getTransaction(hashCheck.value);
     } catch (error: any) {
       console.error('Payment verification lookup error:', error);
+      if (isHorizonUnavailable(error)) {
+        return failure('VERIFY_UNAVAILABLE');
+      }
       return failure('TRANSACTION_NOT_FOUND');
     }
 
@@ -97,15 +107,24 @@ class StellarService {
    */
   async getTransaction(txHash: string): Promise<any> {
     try {
-      const transaction = await server.transactions().transaction(txHash).call();
-      const operations = await server.operations().forTransaction(txHash).call();
-      
+      const transaction = await horizonCall(
+        () => server.transactions().transaction(txHash).call(),
+        { label: 'transactions().transaction' }
+      );
+      const operations = await horizonCall(
+        () => server.operations().forTransaction(txHash).call(),
+        { label: 'operations().forTransaction' }
+      );
+
       return {
         transaction,
         operations: operations.records,
       };
     } catch (error: any) {
       console.error('Error fetching transaction:', error);
+      if (isHorizonUnavailable(error)) {
+        throw error;
+      }
       throw new Error(`Transaction not found: ${error.message}`);
     }
   }
@@ -128,8 +147,10 @@ class StellarService {
         onmessage: async (record: any) => {
           try {
             if (record.type === 'payment' && record.to === publicKey) {
-              // Get transaction to retrieve memo
-              const transaction = await server.transactions().transaction(record.transaction_hash).call();
+              const transaction = await horizonCall(
+                () => server.transactions().transaction(record.transaction_hash).call(),
+                { label: 'streamPayments tx lookup' }
+              );
 
               const payment: PaymentRecord = {
                 id: record.id,
@@ -172,13 +193,17 @@ class StellarService {
     cursor: string,
     limit: number = 100
   ): Promise<PaymentPageRecord[]> {
-    const page = await server
-      .payments()
-      .forAccount(publicKey)
-      .cursor(cursor)
-      .order('asc')
-      .limit(limit)
-      .call();
+    const page = await horizonCall(
+      () =>
+        server
+          .payments()
+          .forAccount(publicKey)
+          .cursor(cursor)
+          .order('asc')
+          .limit(limit)
+          .call(),
+      { label: 'getPaymentsPage' }
+    );
 
     const records: PaymentPageRecord[] = [];
     for (const record of page.records as any[]) {
@@ -190,7 +215,10 @@ class StellarService {
         continue;
       }
 
-      const transaction = await server.transactions().transaction(record.transaction_hash).call();
+      const transaction = await horizonCall(
+        () => server.transactions().transaction(record.transaction_hash).call(),
+        { label: 'getPaymentsPage tx lookup' }
+      );
       const ledger = Number((transaction as any).ledger_attr ?? (transaction as any).ledger);
       records.push({
         pagingToken,
@@ -215,7 +243,10 @@ class StellarService {
 
   /** Anchor a brand-new monitor at the latest known operation. */
   async getLatestPaymentCursor(publicKey: string): Promise<string> {
-    const page = await server.payments().forAccount(publicKey).order('desc').limit(1).call();
+    const page = await horizonCall(
+      () => server.payments().forAccount(publicKey).order('desc').limit(1).call(),
+      { label: 'getLatestPaymentCursor' }
+    );
     const latest = (page.records as any[])[0];
     return latest ? String(latest.paging_token ?? latest.id) : '0';
   }
@@ -225,18 +256,25 @@ class StellarService {
    */
   async getRecentPayments(publicKey: string, limit: number = 10): Promise<PaymentRecord[]> {
     try {
-      const payments = await server
-        .payments()
-        .forAccount(publicKey)
-        .order('desc')
-        .limit(limit)
-        .call();
+      const payments = await horizonCall(
+        () =>
+          server
+            .payments()
+            .forAccount(publicKey)
+            .order('desc')
+            .limit(limit)
+            .call(),
+        { label: 'getRecentPayments page' }
+      );
 
       const paymentRecords: PaymentRecord[] = [];
 
       for (const record of payments.records) {
         if (record.type === 'payment') {
-          const transaction = await server.transactions().transaction(record.transaction_hash).call();
+          const transaction = await horizonCall(
+            () => server.transactions().transaction(record.transaction_hash).call(),
+            { label: 'getRecentPayments tx lookup' }
+          );
 
           paymentRecords.push({
             id: record.id,
@@ -296,7 +334,9 @@ class StellarService {
 
       transaction.sign(sourceKeypair);
 
-      const result = await server.submitTransaction(transaction);
+      const result = await horizonCall(() => server.submitTransaction(transaction), {
+        label: 'submitTransaction',
+      });
       console.log('✅ Payment sent:', result.hash);
       return result.hash;
     } catch (error: any) {
