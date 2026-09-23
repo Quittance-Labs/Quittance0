@@ -12,7 +12,6 @@ import {
   describeStellarNetworkError,
   isWrongNetwork as checkIsWrongNetwork,
   NETWORK_DISPLAY_NAME,
-  EXPECTED_WALLET_NETWORK,
 } from '@/lib/stellar';
 import { useWalletStore } from '@/lib/store';
 import { networkLabel, walletGate } from '@/lib/freighter-availability';
@@ -22,7 +21,6 @@ import { Wallet, LogOut, Loader2, ExternalLink, Bell, BellOff, AlertTriangle } f
 import { toast } from 'sonner';
 import { formatAddress } from '@/lib/utils';
 import { showFreighterInstallPrompt, showFreighterWrongNetworkPrompt } from '@/components/FreighterInstallPrompt';
-import { networkLabel, walletGate } from '@/lib/freighter-availability';
 
 interface WalletConnectProps {
   onConnect?: (publicKey: string) => void;

@@ -457,6 +457,16 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         const { id } = req.params;
         const { network } = req.body || {};
 
+        const verifyLimit = checkInvoiceVerifyLimit(id);
+        if (!verifyLimit.allowed) {
+          return sendVerificationFailure(
+            res,
+            429,
+            'VERIFY_RATE_LIMIT_EXCEEDED',
+            messageForCode('VERIFY_RATE_LIMIT_EXCEEDED')
+          );
+        }
+
         const hashCheck = checkTxHash(req.body?.txHash);
         if (!hashCheck.ok) {
           return sendVerificationFailure(res, 400, hashCheck.code, hashCheck.error);

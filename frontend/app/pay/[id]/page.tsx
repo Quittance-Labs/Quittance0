@@ -30,7 +30,6 @@ import { MAIN_CONTENT_ID, describeAmount, statusText } from '@/lib/a11y';
 import { useWalletStore } from '@/lib/store';
 import { EXPECTED_WALLET_NETWORK, NETWORK_DISPLAY_NAME } from '@/lib/stellar';
 import { detectDevice } from '@/lib/mobile-detection';
-import { memoPaymentHint } from '@/lib/pay-memo-hint';
 
 export default function PaymentPage() {
   const id = useParams().id as string;

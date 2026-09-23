@@ -302,14 +302,6 @@ export function verifyConcurrencyLock(): RequestHandler {
 }
 
 /**
- * Per-invoice verification rate limit check.
- */
-export async function checkInvoiceVerifyLimit(invoiceId: string): Promise<{ allowed: boolean; retryAfter?: number }> {
-  const result = defaultLimiterStore.consume(`verify_invoice:target:${invoiceId}`, 10, 60_000);
-  return { allowed: result.allowed, retryAfter: result.resetAfterSeconds };
-}
-
-/**
  * Resets all rate limiter stores and in-flight locks. Useful for isolating test cases.
  */
 export function resetRateLimiters(): void {

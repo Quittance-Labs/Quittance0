@@ -55,6 +55,7 @@ export interface Invoice {
   latePaymentWarningCode?: LatePaymentWarningCode;
   expiresAt: Date;
   metadata?: any;
+  idempotencyKey?: string;
 }
 
 export class InvoiceService {

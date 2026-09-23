@@ -10,7 +10,6 @@ import {
   readFreighterSession,
   preflightAssetTrustline,
   NETWORK_DISPLAY_NAME,
-  EXPECTED_WALLET_NETWORK,
 } from '@/lib/stellar';
 import {
   buildInvoicePayment,
@@ -218,6 +217,23 @@ export default function PaymentButton({
 
   // ── Build phase ───────────────────────────────────────────────────────────
 
+  // The whole attempt is bound to the key that started it (issue #508). If
+  // the wallet underneath changes while Freighter is open or the verify
+  // request is in flight, the result belongs to the previous session and
+  // must not be attributed to the new one. Both the build and the confirm
+  // handlers read this, so it lives on the component rather than inside one
+  // callback.
+  const sessionPublicKey = publicKey;
+  const sessionLost = () => useWalletStore.getState().publicKey !== sessionPublicKey;
+  const reportSessionLost = () => {
+    // No onError dispatch: the page already reset the session for the new
+    // key, and an error written into it would belong to the previous one.
+    toast.warning('Wallet changed during payment', {
+      id: PAY_TOAST_ID,
+      description: 'The previous wallet submitted the transaction. Reconnect it to verify here.',
+    });
+  };
+
   const handlePayment = async () => {
     if (!gate.ready) {
       showFreighterInstallPrompt(gate);
@@ -247,21 +263,6 @@ export default function PaymentButton({
 
     setLoading(true);
     onStart?.();
-
-    // The whole attempt is bound to the key that started it (issue #508). If
-    // the wallet underneath changes while Freighter is open or the verify
-    // request is in flight, the result belongs to the previous session and
-    // must not be attributed to the new one.
-    const sessionPublicKey = publicKey;
-    const sessionLost = () => useWalletStore.getState().publicKey !== sessionPublicKey;
-    const reportSessionLost = () => {
-      // No onError dispatch: the page already reset the session for the new
-      // key, and an error written into it would belong to the previous one.
-      toast.warning('Wallet changed during payment', {
-        id: PAY_TOAST_ID,
-        description: 'The previous wallet submitted the transaction. Reconnect it to verify here.',
-      });
-    };
 
     try {
       // Credit assets need a payer trustline; check it before Freighter opens
