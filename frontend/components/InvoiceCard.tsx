@@ -13,6 +13,7 @@ import { canSendProofEmail } from '@/lib/mailto-delivery';
 import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
 import { describeAmount, statusBadgeLabel, statusText } from '@/lib/a11y';
 import { invoiceApi } from '@/lib/api';
+import { signInvoiceCancelMessage } from '@/lib/stellar';
 
 interface Invoice {
   id: string;
@@ -75,7 +76,8 @@ export default function InvoiceCard({ invoice, userWallet, onCancel }: InvoiceCa
     if (!window.confirm('Cancel this invoice?')) return;
     setCancelling(true);
     try {
-      await invoiceApi.cancel(invoice.id, userWallet || invoice.sellerPublicKey);
+      const proof = await signInvoiceCancelMessage(invoice.id);
+      await invoiceApi.cancel(invoice.id, proof.publicKey, proof.signature);
       toast.success('Invoice cancelled');
       onCancel?.(invoice.id);
     } catch (error) {

@@ -70,16 +70,17 @@ fetch('/api/invoices/123/cancel', {
 
 **After (Production):**
 ```javascript
-// ✅ Now requires signature
-const message = `cancel:${invoiceId}:${timestamp}`;
-const signature = keypair.sign(sha256(message));
+// Now requires a signature — one transport (the body), one message
+// (`cancel:<invoiceId>`). Query params and x-seller-public-key headers are
+// not accepted as transports; a value that disagrees with the body returns 400 (issue #517).
+const message = `cancel:${invoiceId}`;
+const signature = keypair.sign(Buffer.from(message));
 
 fetch('/api/invoices/123/cancel', {
   method: 'POST',
   body: JSON.stringify({
     invoiceId,
     sellerPublicKey: keypair.publicKey(),
-    timestamp: Date.now(),
     signature: signature.toString('base64')
   })
 })
@@ -107,18 +108,14 @@ import { Keypair } from '@stellar/stellar-sdk';
 import { createHash } from 'crypto';
 
 async function cancelInvoice(invoiceId: string, keypair: Keypair) {
-  const timestamp = Date.now();
-  const message = `cancel:${invoiceId}:${timestamp}`;
-  const messageHash = createHash('sha256').update(message).digest();
-  const signature = keypair.sign(messageHash).toString('base64');
+  const message = `cancel:${invoiceId}`;
+  const signature = keypair.sign(Buffer.from(message)).toString('base64');
 
   const response = await fetch(`/api/invoices/${invoiceId}/cancel`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      invoiceId,
       sellerPublicKey: keypair.publicKey(),
-      timestamp,
       signature
     })
   });

@@ -4,6 +4,7 @@ import {
   isConnected,
   getPublicKey,
   signTransaction,
+  signBlob,
   isAllowed,
   setAllowed,
   getNetwork,
@@ -468,6 +469,32 @@ export const streamPayments = (
 };
 
 /**
+ * Message prefix used when signing invoice cancellation requests.
+ */
+export const CANCEL_INVOICE_MESSAGE_PREFIX = 'cancel:';
+
+/**
+ * Signs an invoice cancellation message using Freighter wallet.
+ *
+ * @param invoiceId - Unique identifier of the invoice to cancel
+ * @returns Object containing public key and base64 signature
+ */
+export const signInvoiceCancelMessage = async (
+  invoiceId: string
+): Promise<{ publicKey: string; signature: string }> => {
+  const session = await assertFreighterReady();
+  const message = `${CANCEL_INVOICE_MESSAGE_PREFIX}${invoiceId}`;
+  const signed = await signBlob(btoa(message), { accountToSign: session.publicKey! });
+  const signature =
+    readResultString(signed as any, ['signedBlob', 'signature']) ||
+    (typeof signed === 'string' ? signed : null);
+  if (!signature) {
+    throw new Error('Freighter did not return a cancel signature');
+  }
+  return { publicKey: session.publicKey!, signature };
+};
+
+/**
  * Format Stellar amount (remove trailing zeros)
  */
 export const formatStellarAmount = (amount: string | number): string => {
@@ -507,6 +534,8 @@ const stellarService = {
   formatStellarAmount,
   isValidPublicKey,
   describeStellarNetworkError,
+  CANCEL_INVOICE_MESSAGE_PREFIX,
+  signInvoiceCancelMessage,
 };
 
 export default stellarService;

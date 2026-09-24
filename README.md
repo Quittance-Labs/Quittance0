@@ -158,7 +158,7 @@ Quittance supports multi-asset invoicing across native XLM and credit assets suc
 ### Seller invoice management & cancellation
 
 Sellers manage their invoices from the dashboard and detail views:
-- **Cancel Pending Invoices**: Sellers can cancel any pending invoice before payment or expiration. Cancellation is strictly gated on wallet ownership: `POST /api/invoices/:id/cancel` verifies the request against the invoice's `sellerPublicKey` (returning `403 Forbidden` on a mismatch).
+- **Cancel Pending Invoices**: Sellers can cancel any pending invoice before payment or expiration. Cancellation uses one proof path (issue #517): the request body carries `sellerPublicKey` plus a Freighter signature over the canonical message `cancel:<invoiceId>` — the UI signs via `signBlob` before calling `POST /api/invoices/:id/cancel`. Query params and `x-seller-public-key` headers are not accepted as transports, and a value that disagrees with the body returns `400`. A foreign signer returns `403`; a missing or invalid signature returns `401`; only `PENDING` invoices can cancel. Signatures are mandatory in production (`NODE_ENV=production` or `REQUIRE_CANCEL_SIGNATURE=true`); local dev/tests keep the signature optional bypass.
 - **Copy Pay & Share Links**: Direct quick-copy actions with toast feedback for pay URLs and invoice IDs across dashboard cards and detail pages.
 - **Proof & Receipt Navigation**: One-click jump to verified PDF payment proof and transaction details for all `PAID` invoices.
 

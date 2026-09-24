@@ -21,9 +21,8 @@ All 8 ranked scenarios from `ABUSE-CONTROLS.md` have been addressed through a co
 
 **Fix**:
 - `POST /invoices/:id/cancel` now **requires** `sellerPublicKey` (401 if absent)
-- In production, **cryptographic signature** is required over `cancel:${invoiceId}:${timestamp}`
-- Signature verification uses ed25519 (Stellar's native curve)
-- Timestamp validation prevents replay attacks (5-minute window)
+- In production, a **cryptographic signature** is required over `cancel:${invoiceId}` — one canonical message in one transport (the request body); query params and headers are not accepted as transports, and a value that disagrees with the body returns 400 (issue #517)
+- Signature verification uses ed25519 (Stellar's native curve); Freighter signs via `signBlob` on the frontend
 
 **Files**:
 - `backend/src/utils/signature-verification.ts` - Signature verification logic

@@ -32,6 +32,11 @@ export const isWrongNetwork = () => false;
 export const watchFreighterNetwork = () => () => {};
 export const STELLAR_NETWORK = 'TESTNET';
 export const STELLAR_PASSPHRASE = 'Test SDF Network ; September 2015';
+export const CANCEL_INVOICE_MESSAGE_PREFIX = 'cancel:';
+export const signInvoiceCancelMessage = async (invoiceId) => ({
+  publicKey: null,
+  signature: null,
+});
 
 const stellarExports = {
   server,
@@ -48,6 +53,8 @@ const stellarExports = {
   STELLAR_NETWORK,
   STELLAR_PASSPHRASE,
   NETWORK_DISPLAY_NAME,
+  CANCEL_INVOICE_MESSAGE_PREFIX,
+  signInvoiceCancelMessage,
 };
 
 export default stellarExports;

@@ -77,12 +77,12 @@ export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
   const cancelMiddlewares: RequestHandler[] = [];
   const cancelAuthPreCheck: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
     const requireSig =
-      options.requireCancelSignature ?? (process.env.REQUIRE_CANCEL_SIGNATURE === 'true');
+      options.requireCancelSignature ??
+      (process.env.REQUIRE_CANCEL_SIGNATURE === 'true' ||
+        process.env.NODE_ENV === 'production');
     if (requireSig) {
-      const sellerKey =
-        req.body?.sellerPublicKey || req.headers['x-seller-public-key'] || req.query?.sellerPublicKey;
-      const signature =
-        req.body?.signature || req.headers['x-signature'] || req.headers['x-seller-signature'];
+      const sellerKey = req.body?.sellerPublicKey;
+      const signature = req.body?.signature;
       if (!sellerKey || !signature) {
         return res.status(401).json({
           success: false,

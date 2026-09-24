@@ -35,11 +35,12 @@ function createRes(): FakeResponse & Response {
   return res;
 }
 
-function createReq(init: { body?: any; params?: any; query?: any } = {}): Request {
+function createReq(init: { body?: any; params?: any; query?: any; headers?: any } = {}): Request {
   return {
     body: init.body || {},
     params: init.params || {},
     query: init.query || {},
+    headers: init.headers || {},
   } as unknown as Request;
 }
 
@@ -636,6 +637,148 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       );
       assert.equal(res.statusCode, 400);
       assert.equal(res.body.success, false);
+    });
+
+    it('rejects cancel when body and query seller keys disagree (400)', async () => {
+      const invoice = await createInvoice();
+
+      const res = await call(
+        handlers().cancelInvoice,
+        createReq({
+          params: { id: invoice.id },
+          body: { sellerPublicKey: SELLER_A },
+          query: { sellerPublicKey: SELLER_B },
+        })
+      );
+      assert.equal(res.statusCode, 400);
+      assert.match(res.body.error, /conflicting/i);
+    });
+
+    it('rejects cancel when body and header seller keys disagree (400)', async () => {
+      const invoice = await createInvoice();
+
+      const res = await call(
+        handlers().cancelInvoice,
+        createReq({
+          params: { id: invoice.id },
+          body: { sellerPublicKey: SELLER_A },
+          headers: { 'x-seller-public-key': SELLER_B },
+        })
+      );
+      assert.equal(res.statusCode, 400);
+      assert.match(res.body.error, /conflicting/i);
+    });
+
+    it('rejects a query-only seller key — the body is the one transport (400)', async () => {
+      const invoice = await createInvoice();
+
+      const res = await call(
+        handlers().cancelInvoice,
+        createReq({ params: { id: invoice.id }, query: { sellerPublicKey: SELLER_A } })
+      );
+      assert.equal(res.statusCode, 400);
+    });
+
+    it('tolerates a duplicate query key that agrees with the body', async () => {
+      const invoice = await createInvoice();
+
+      const res = await call(
+        handlers().cancelInvoice,
+        createReq({
+          params: { id: invoice.id },
+          body: { sellerPublicKey: SELLER_A },
+          query: { sellerPublicKey: SELLER_A },
+        })
+      );
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.data.status, 'CANCELLED');
+    });
+
+    it('requires a signature when requireCancelSignature is set (401)', async () => {
+      const invoice = await createInvoice();
+
+      const res = await call(
+        createInvoiceHandlers({
+          storage,
+          frontendUrl: 'http://localhost:3000',
+          allowSimulate: false,
+          stellar: { getTransaction: async () => transaction },
+          requireCancelSignature: true,
+        }).cancelInvoice,
+        createReq({ params: { id: invoice.id }, body: { sellerPublicKey: SELLER_A } })
+      );
+      assert.equal(res.statusCode, 401);
+      assert.equal(res.body.code, 'UNAUTHORIZED');
+    });
+
+    it('cancels PENDING with a valid cancel:<id> signature', async () => {
+      const { Keypair } = await import('@stellar/stellar-sdk');
+      const keypair = Keypair.random();
+      const seller = keypair.publicKey();
+      const invoice = await createInvoice({ sellerPublicKey: seller });
+      const signature = keypair.sign(Buffer.from(`cancel:${invoice.id}`)).toString('base64');
+
+      const res = await call(
+        createInvoiceHandlers({
+          storage,
+          frontendUrl: 'http://localhost:3000',
+          allowSimulate: false,
+          stellar: { getTransaction: async () => transaction },
+          requireCancelSignature: true,
+        }).cancelInvoice,
+        createReq({
+          params: { id: invoice.id },
+          body: { sellerPublicKey: seller, signature },
+        })
+      );
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.data.status, 'CANCELLED');
+    });
+
+    it('rejects a signature over a different message (401)', async () => {
+      const { Keypair } = await import('@stellar/stellar-sdk');
+      const keypair = Keypair.random();
+      const seller = keypair.publicKey();
+      const invoice = await createInvoice({ sellerPublicKey: seller });
+      const signature = keypair.sign(Buffer.from(invoice.id)).toString('base64');
+
+      const res = await call(
+        createInvoiceHandlers({
+          storage,
+          frontendUrl: 'http://localhost:3000',
+          allowSimulate: false,
+          stellar: { getTransaction: async () => transaction },
+          requireCancelSignature: true,
+        }).cancelInvoice,
+        createReq({
+          params: { id: invoice.id },
+          body: { sellerPublicKey: seller, signature },
+        })
+      );
+      assert.equal(res.statusCode, 401);
+      assert.equal(res.body.code, 'INVALID_SIGNATURE');
+    });
+
+    it('rejects a foreign signer even with a valid signature (403)', async () => {
+      const { Keypair } = await import('@stellar/stellar-sdk');
+      const foreign = Keypair.random();
+      const invoice = await createInvoice();
+      const signature = foreign.sign(Buffer.from(`cancel:${invoice.id}`)).toString('base64');
+
+      const res = await call(
+        createInvoiceHandlers({
+          storage,
+          frontendUrl: 'http://localhost:3000',
+          allowSimulate: false,
+          stellar: { getTransaction: async () => transaction },
+          requireCancelSignature: true,
+        }).cancelInvoice,
+        createReq({
+          params: { id: invoice.id },
+          body: { sellerPublicKey: foreign.publicKey(), signature },
+        })
+      );
+      assert.equal(res.statusCode, 403);
     });
 
     it('reports wallet-scoped stats', async () => {

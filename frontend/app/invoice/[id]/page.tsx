@@ -24,7 +24,7 @@ import { invoiceWorkspaceAccess } from '@/lib/invoice-workspace-access';
 import InvoiceTimeline from '@/components/InvoiceTimeline';
 import { invoiceSharePath } from '@/lib/invoice-share-path';
 import { shareInvoiceByEmail } from '@/lib/export';
-import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
+import { EXPECTED_WALLET_NETWORK, signInvoiceCancelMessage } from '@/lib/stellar';
 import { walletGate } from '@/lib/freighter-availability';
 import { copyWithFeedback } from '@/lib/clipboard-feedback';
 
@@ -133,7 +133,8 @@ export default function InvoiceDetailPage() {
   const handleCancel = async () => {
     if (!window.confirm('Cancel this invoice?')) return;
     try {
-      await invoiceApi.cancel(id, activeWallet || invoice?.sellerPublicKey);
+      const proof = await signInvoiceCancelMessage(id);
+      await invoiceApi.cancel(id, proof.publicKey, proof.signature);
       toast.success('Invoice cancelled');
       await loadInvoice();
       /*

@@ -87,8 +87,19 @@ export const invoiceApi = {
     return response.data;
   },
 
-  cancel: async (id: string, sellerPublicKey?: string) => {
-    const response = await api.post(`/invoices/${id}/cancel`, { sellerPublicKey });
+  /**
+   * Cancel an existing invoice with seller authentication.
+   *
+   * @param id Identifier of the invoice
+   * @param sellerPublicKey Stellar public key of the seller
+   * @param signature Cryptographic signature over cancel:<id>
+   * @returns Cancelled invoice data
+   */
+  cancel: async (id: string, sellerPublicKey?: string, signature?: string) => {
+    const response = await api.post(`/invoices/${id}/cancel`, {
+      sellerPublicKey,
+      signature,
+    });
     return response.data;
   },
 

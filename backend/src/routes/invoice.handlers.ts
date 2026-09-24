@@ -243,47 +243,42 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
     async cancelInvoice(req: Request, res: Response): Promise<void> {
       try {
+        const bodyKeyRaw = req.body?.sellerPublicKey;
+        const queryKeyRaw = req.query?.sellerPublicKey;
+        const headerKeyRaw = req.headers?.['x-seller-public-key'];
+        const alternates = [queryKeyRaw, headerKeyRaw]
+          .flat()
+          .filter((v): v is string => typeof v === 'string' && v.trim() !== '');
+
         let sellerPublicKey: string | undefined;
-        let signature: string | undefined;
-
-        if (req.body && typeof req.body === 'object') {
-          if ('sellerPublicKey' in req.body) {
-            const parsed = cancelInvoiceSchema.safeParse(req.body);
-            if (!parsed.success) {
-              sendFailure(res, 400, 'Invalid Stellar public key format');
-              return;
-            }
-            sellerPublicKey = parsed.data.sellerPublicKey;
-          }
-          if ('signature' in req.body && typeof req.body.signature === 'string') {
-            signature = req.body.signature;
-          }
-        }
-
-        if (!sellerPublicKey && req.query.sellerPublicKey) {
-          const parsed = stellarPublicKeySchema.safeParse(req.query.sellerPublicKey);
+        if (typeof bodyKeyRaw === 'string' && bodyKeyRaw.trim() !== '') {
+          const parsed = stellarPublicKeySchema.safeParse(bodyKeyRaw);
           if (!parsed.success) {
-            sendFailure(res, 400, 'Invalid Stellar public key format');
-            return;
+            return sendFailure(res, 400, 'Invalid Stellar public key format');
           }
+          sellerPublicKey = parsed.data;
+        }
 
-          // Fallback to claimed key (legacy, insecure)
-          if (req.body && typeof req.body === 'object' && 'sellerPublicKey' in req.body) {
-            const parsed = cancelInvoiceSchema.safeParse(req.body);
-            if (!parsed.success) {
-              return sendFailure(res, 400, 'Invalid Stellar public key format');
+        if (alternates.length > 0) {
+          if (!sellerPublicKey) {
+            return sendFailure(
+              res,
+              400,
+              'Send sellerPublicKey in the request body; query and header keys are not accepted'
+            );
+          }
+          for (const alt of alternates) {
+            const parsed = stellarPublicKeySchema.safeParse(alt);
+            if (!parsed.success || parsed.data !== sellerPublicKey) {
+              return sendFailure(
+                res,
+                400,
+                'Conflicting sellerPublicKey values between body, query, and header'
+              );
             }
-            sellerPublicKey = parsed.data.sellerPublicKey;
-          } else if (req.query.sellerPublicKey) {
-            const parsed = stellarPublicKeySchema.safeParse(req.query.sellerPublicKey);
-            if (!parsed.success) {
-              return sendFailure(res, 400, 'Invalid Stellar public key format');
-            }
-            sellerPublicKey = parsed.data;
           }
         }
 
-        // Require explicit ownership proof (no more unauthenticated cancellation)
         if (!sellerPublicKey) {
           return sendFailure(
             res,
@@ -292,64 +287,38 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           );
         }
 
-        if (!sellerPublicKey && req.headers?.['x-seller-public-key']) {
-          const headerKey = req.headers['x-seller-public-key'];
-          const parsed = stellarPublicKeySchema.safeParse(Array.isArray(headerKey) ? headerKey[0] : headerKey);
-          if (parsed.success) {
-            sellerPublicKey = parsed.data;
-          }
-        }
-
-        if (!signature && req.headers?.['x-signature']) {
-          const headerSig = req.headers['x-signature'];
-          signature = Array.isArray(headerSig) ? headerSig[0] : headerSig;
-        }
+        const signature =
+          typeof req.body?.signature === 'string' && req.body.signature.trim() !== ''
+            ? req.body.signature
+            : undefined;
 
         const requireSignature =
-          options.requireCancelSignature ?? (process.env.REQUIRE_CANCEL_SIGNATURE === 'true');
+          options.requireCancelSignature ??
+          (process.env.REQUIRE_CANCEL_SIGNATURE === 'true' ||
+            process.env.NODE_ENV === 'production');
 
-        if (requireSignature) {
-          if (!sellerPublicKey || !signature) {
-            res.status(401).json({
-              success: false,
-              code: 'UNAUTHORIZED',
-              error: 'Cancellation requires seller proof of ownership (signature)',
-            });
-            return;
-          }
+        if (requireSignature && !signature) {
+          res.status(401).json({
+            success: false,
+            code: 'UNAUTHORIZED',
+            error: 'Cancellation requires a Freighter signature over cancel:<invoiceId>',
+          });
+          return;
         }
 
         if (signature) {
-          if (!sellerPublicKey) {
-            res.status(401).json({
-              success: false,
-              code: 'UNAUTHORIZED',
-              error: 'Seller public key is required when providing a signature',
-            });
-            return;
-          }
-
           const existingInvoice = await storage.getInvoiceById(req.params.id);
           if (!existingInvoice) {
-            sendFailure(res, 404, 'Invoice not found');
-            return;
+            return sendFailure(res, 404, 'Invoice not found');
           }
 
           if (existingInvoice.sellerPublicKey !== sellerPublicKey) {
-            res.status(401).json({
-              success: false,
-              code: 'UNAUTHORIZED',
-              error: 'Signer is not the seller of this invoice',
-            });
-            return;
+            return sendFailure(res, 403, 'Signer is not the seller of this invoice');
           }
 
-          const candidateMessages = [req.params.id, `cancel:${req.params.id}`];
-          if (req.body?.message && typeof req.body.message === 'string') {
-            candidateMessages.push(req.body.message);
-          }
-
-          const isValid = verifySellerSignature(sellerPublicKey, signature, candidateMessages);
+          const isValid = verifySellerSignature(sellerPublicKey, signature, [
+            `cancel:${req.params.id}`,
+          ]);
           if (!isValid) {
             res.status(401).json({
               success: false,
