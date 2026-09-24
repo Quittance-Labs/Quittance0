@@ -7,6 +7,11 @@ import { calculateInvoiceExpiry } from '../domain/invoice-expiry';
 import type { StoredInvoice } from '../storage/invoice-storage';
 import type { InvoiceStats } from '../storage/invoice-stats';
 import type { MarkAsPaidOptions, PayerInfo } from '../storage/invoice-storage';
+import {
+  IllegalStateTransitionError,
+  assertLegalInvoiceTransition,
+} from '../domain/invoice-lifecycle';
+import { SettlementTimeUnavailableError } from '../domain/invoice-settlement';
 
 /**
  * How many times invoice creation re-draws a memo before giving up.
@@ -132,14 +137,43 @@ export class InvoiceMemoryService {
     payerInfo?: PayerInfo,
     options?: MarkAsPaidOptions
   ): Promise<StoredInvoice> {
-    const invoice = this.storage.markAsPaid(invoiceId, txHash, payerPublicKey, payerInfo, options);
+    try {
+      const invoice = this.storage.markAsPaid(
+        invoiceId,
+        txHash,
+        payerPublicKey,
+        payerInfo,
+        options
+      );
 
-    if (!invoice) {
-      throw new Error('Invoice not found, expired, or already processed');
+      if (!invoice) {
+        const current = this.storage.getInvoiceById(invoiceId);
+        if (!current) {
+          throw new Error('Invoice not found, expired, or already processed');
+        }
+        if (current.status === 'PAID') {
+          throw new IllegalStateTransitionError('PAID', 'PAID');
+        }
+        if (!options?.settledAt) {
+          throw new SettlementTimeUnavailableError();
+        }
+        assertLegalInvoiceTransition(current.status, 'PAID', {
+          settledAt: options.settledAt,
+        });
+        throw new Error('Invoice not found, expired, or already processed');
+      }
+
+      console.log('✅ Invoice marked as paid:', invoiceId);
+      return invoice;
+    } catch (error) {
+      if (
+        error instanceof SettlementTimeUnavailableError ||
+        error instanceof IllegalStateTransitionError
+      ) {
+        throw error;
+      }
+      throw error;
     }
-
-    console.log('✅ Invoice marked as paid:', invoiceId);
-    return invoice;
   }
 
   async getInvoicesBySeller(
@@ -174,6 +208,16 @@ export class InvoiceMemoryService {
   }
 
   async cancelInvoice(invoiceId: string, sellerPublicKey?: string): Promise<StoredInvoice> {
+    const existing = this.storage.getInvoiceById(invoiceId);
+    if (!existing) {
+      throw new Error('Invoice not found');
+    }
+    if (sellerPublicKey && existing.sellerPublicKey !== sellerPublicKey) {
+      throw new Error('Unauthorized: only the seller can cancel this invoice');
+    }
+    if (existing.status !== 'PENDING') {
+      throw new IllegalStateTransitionError(existing.status, 'CANCELLED');
+    }
     const updated = this.storage.cancelInvoice(invoiceId, sellerPublicKey);
     if (!updated) {
       throw new Error('Invoice not found or already processed');

@@ -37,3 +37,28 @@ test('missing or malformed expiry never invents an expiration', () => {
   assert.equal(hasInvoiceExpired({ status: 'PENDING', expiresAt: 'bad' }, NOW), false);
   assert.equal(hasInvoiceExpired(null, NOW), false);
 });
+
+const {
+  LEGAL_INVOICE_TRANSITIONS,
+  isLegalInvoiceTransition,
+  isTerminalInvoiceStatus,
+  isUiTerminalInvoiceStatus,
+} = require('../lib/invoice-lifecycle');
+
+test('frontend lifecycle mirrors backend transition table', () => {
+  assert.deepEqual([...LEGAL_INVOICE_TRANSITIONS.PENDING], ['PAID', 'CANCELLED', 'EXPIRED']);
+  assert.deepEqual([...LEGAL_INVOICE_TRANSITIONS.CANCELLED], ['PAID']);
+  assert.deepEqual([...LEGAL_INVOICE_TRANSITIONS.EXPIRED], ['PAID']);
+  assert.deepEqual([...LEGAL_INVOICE_TRANSITIONS.PAID], []);
+
+  assert.equal(isLegalInvoiceTransition('PENDING', 'PAID'), true);
+  assert.equal(isLegalInvoiceTransition('PAID', 'CANCELLED'), false);
+  assert.equal(isLegalInvoiceTransition('CANCELLED', 'PAID'), false);
+  assert.equal(isLegalInvoiceTransition('CANCELLED', 'PAID', { settledAt: NOW }), true);
+  assert.equal(isLegalInvoiceTransition('EXPIRED', 'PAID', { settledAt: NOW }), true);
+
+  assert.equal(isTerminalInvoiceStatus('PAID'), true);
+  assert.equal(isTerminalInvoiceStatus('EXPIRED'), false);
+  assert.equal(isUiTerminalInvoiceStatus('cancelled'), true);
+  assert.equal(isUiTerminalInvoiceStatus('PENDING'), false);
+});
