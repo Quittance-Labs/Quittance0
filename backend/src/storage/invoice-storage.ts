@@ -89,7 +89,8 @@ export interface InvoiceStorage {
     sellerPublicKey: string,
     status?: string,
     limit?: number,
-    offset?: number
+    offset?: number,
+    q?: string
   ): Promise<StoredInvoice[]>;
   cancelInvoice(id: string, sellerPublicKey?: string): Promise<StoredInvoice>;
   markAsPaid(

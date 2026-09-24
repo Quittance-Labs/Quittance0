@@ -146,12 +146,33 @@ export class InvoiceMemoryService {
     sellerPublicKey: string,
     status?: string,
     limit: number = 50,
-    offset: number = 0
+    offset: number = 0,
+    q?: string
   ): Promise<StoredInvoice[]> {
     let invoices = this.storage.getAllInvoices(status ? { status } : undefined);
 
     if (sellerPublicKey) {
       invoices = invoices.filter((inv) => inv.sellerPublicKey === sellerPublicKey);
+    }
+
+    // Server-side search stays inside the seller scope (issue #444): memo,
+    // public id, and client name are the primary fields; description is
+    // included because sellers type it themselves.
+    if (q && q.trim()) {
+      const term = q.trim().toLowerCase();
+      invoices = invoices.filter((inv) => {
+        const text = [
+          inv.id,
+          inv.memo,
+          inv.description,
+          inv.customerName,
+          inv.customerEmail,
+        ]
+          .filter((value) => value !== undefined && value !== null && value !== '')
+          .join(' ')
+          .toLowerCase();
+        return text.includes(term);
+      });
     }
 
     return invoices.slice(offset, offset + limit);

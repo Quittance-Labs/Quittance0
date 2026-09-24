@@ -84,6 +84,7 @@ export const invoiceApi = {
     status?: string;
     limit?: number;
     offset?: number;
+    q?: string;
   }) => {
     const response = await api.get('/invoices', { params });
     return response.data;

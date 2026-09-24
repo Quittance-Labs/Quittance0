@@ -63,6 +63,9 @@ export default function DashboardPage() {
   const [filter, setFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<DashboardSortBy>('newest');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  // Debounced copy drives the server q param so typing stays snappy and the
+  // full-page loader does not flash on every keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [lifecycleNow, setLifecycleNow] = useState(() => Date.now());
@@ -81,6 +84,11 @@ export default function DashboardPage() {
     const timer = window.setInterval(() => setLifecycleNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
 
   // A different account must not keep the previous seller's invoices on
   // screen while the next request is in flight: the rows and counts are
@@ -115,6 +123,7 @@ export default function DashboardPage() {
             status: filter === 'all' ? undefined : filter.toUpperCase(),
             limit: 50,
             sellerPublicKey: publicKey,
+            q: debouncedSearch || undefined,
           }),
           invoiceApi.getStats(publicKey),
         ]);
@@ -139,7 +148,7 @@ export default function DashboardPage() {
     return () => {
       active = false;
     };
-  }, [filter, gate.ready, publicKey, reloadKey]);
+  }, [filter, gate.ready, publicKey, reloadKey, debouncedSearch]);
 
   const handleInvoiceCancelled = (cancelledId: string) => {
     // The wallet the user acted in, not whichever one is connected when the
@@ -434,20 +443,29 @@ export default function DashboardPage() {
               <div className="card text-center py-12">
                 <FileText className="w-16 h-16 text-gray-500 mx-auto mb-4" aria-hidden="true" />
                 <h3 className="text-xl font-semibold text-gray-700 mb-2">
-                  {searchQuery
-                    ? 'No Matching Invoices'
-                    : hasAnyInvoices
-                      ? `No ${filter === 'all' ? '' : `${filter} `}Invoices`
-                      : 'No Invoices Yet'}
+                  {!hasAnyInvoices
+                    ? 'No Invoices Yet'
+                    : searchQuery
+                      ? 'No Matching Invoices'
+                      : filter !== 'all'
+                        ? `No ${filter} Invoices`
+                        : 'No Invoices Yet'}
                 </h3>
                 <p className="text-gray-600 mb-6">
-                  {searchQuery
-                    ? 'Try a different search term or clear your search.'
-                    : hasAnyInvoices
-                      ? 'Choose another status to see your other invoices.'
-                      : dashboardEmptyMessage(true)}
+                  {!hasAnyInvoices
+                    ? dashboardEmptyMessage(true)
+                    : searchQuery
+                      ? 'Try a different search term or clear your search.'
+                      : filter !== 'all'
+                        ? 'Choose another status to see your other invoices.'
+                        : dashboardEmptyMessage(true)}
                 </p>
-                {searchQuery ? (
+                {!hasAnyInvoices || (filter === 'all' && !searchQuery) ? (
+                  <Link href="/" className="btn btn-primary inline-flex items-center gap-2">
+                    <Plus className="w-5 h-5" aria-hidden="true" />
+                    Create Invoice
+                  </Link>
+                ) : searchQuery ? (
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
@@ -455,7 +473,7 @@ export default function DashboardPage() {
                   >
                     Clear Search
                   </button>
-                ) : hasAnyInvoices ? (
+                ) : (
                   <button
                     type="button"
                     onClick={() => setFilter('all')}
@@ -463,11 +481,6 @@ export default function DashboardPage() {
                   >
                     Show All Invoices
                   </button>
-                ) : (
-                  <Link href="/" className="btn btn-primary inline-flex items-center gap-2">
-                    <Plus className="w-5 h-5" aria-hidden="true" />
-                    Create Invoice
-                  </Link>
                 )}
               </div>
             ) : (
