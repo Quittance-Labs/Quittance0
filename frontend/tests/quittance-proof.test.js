@@ -16,16 +16,24 @@ const {
   serializeQuittanceProof,
   parseQuittanceProof,
   checkQuittanceProofInvariants,
+  validateQuittanceProofSchema,
   isQuittanceProof,
   renderQuittanceProofHtml,
   createQuittanceProofPdf,
   QUITTANCE_PROOF_VERSION,
+  QUITTANCE_PROOF_FIELDS,
 } = require('../lib/quittance-proof.ts');
 
 const {
   generateInvoicePDF,
   generateQuittanceProofPDF,
 } = require('../lib/export.ts');
+
+const {
+  buildProofMailto,
+} = require('../lib/mailto-delivery.js');
+
+const proofSchema = require('../lib/quittance-proof.schema.json');
 
 const {
   NETWORK,
@@ -281,4 +289,93 @@ const GOLDEN_INVOICE_XLM = fs.readFileSync(
 test('paid invoice exports match the golden fixtures byte for byte', () => {
   assert.equal(generateInvoicePDF(paidInvoice), GOLDEN_INVOICE_USDC);
   assert.equal(generateInvoicePDF(paidXlmInvoice), GOLDEN_INVOICE_XLM);
+});
+
+
+test('paid and unpaid fixtures remain schema-valid', () => {
+  const paid = build(paidInvoice);
+  const paidValidation = validateQuittanceProofSchema(paid);
+  assert.equal(paidValidation.valid, true, JSON.stringify(paidValidation.errors));
+
+  const pending = build(pendingInvoice);
+  const pendingValidation = validateQuittanceProofSchema(pending);
+  assert.equal(pendingValidation.valid, true, JSON.stringify(pendingValidation.errors));
+});
+
+test('golden schema deletion: removing any required schema field fails validation and invariant check', () => {
+  const fixtures = [build(paidInvoice), build(pendingInvoice)];
+  assert.ok(Array.isArray(proofSchema.required) && proofSchema.required.length > 0);
+  assert.deepEqual(proofSchema.required, [...QUITTANCE_PROOF_FIELDS]);
+
+  for (const doc of fixtures) {
+    for (const requiredKey of proofSchema.required) {
+      const clone = JSON.parse(JSON.stringify(doc));
+      delete clone[requiredKey];
+
+      const validation = validateQuittanceProofSchema(clone);
+      assert.equal(validation.valid, false, `Expected validation failure when omitting ${requiredKey}`);
+      assert.ok(
+        validation.errors.some((err) => err.includes(requiredKey)),
+        `Expected error message to mention ${requiredKey}`
+      );
+
+      assert.equal(parseQuittanceProof(JSON.stringify(clone)), null);
+
+      const invariants = checkQuittanceProofInvariants(JSON.stringify(clone));
+      assert.ok(
+        invariants.includes(`REQUIRED_FIELD_${requiredKey}`),
+        `Expected invariant check to report REQUIRED_FIELD_${requiredKey}, got ${JSON.stringify(invariants)}`
+      );
+    }
+  }
+});
+
+test('explorer links match the configured network (testnet vs public)', () => {
+  const testnetProof = build(paidInvoice, { network: 'testnet' });
+  assert.equal(testnetProof.network, 'testnet');
+  assert.ok(testnetProof.payment.explorerUrl.includes('testnet'));
+  assert.equal(testnetProof.payment.explorerUrl.includes('/public/'), false);
+
+  const publicProof = build(paidInvoice, { network: 'public' });
+  assert.equal(publicProof.network, 'public');
+  assert.ok(publicProof.payment.explorerUrl.includes('public'));
+  assert.equal(publicProof.payment.explorerUrl.includes('testnet'), false);
+});
+
+test('optional email still does not gate create, pay, or proof generation', () => {
+  const noEmailInvoice = {
+    ...paidInvoice,
+    customerEmail: undefined,
+    payerEmail: undefined,
+  };
+  const proof = build(noEmailInvoice);
+  assert.ok(proof);
+  assert.equal(isQuittanceProof(proof), true);
+  assert.equal(validateQuittanceProofSchema(proof).valid, true);
+
+  const html = renderQuittanceProofHtml(proof);
+  assert.ok(html.length > 0);
+
+  const doc = createQuittanceProofPdf(proof, jsPDF);
+  assert.ok(doc);
+});
+
+test('receipt, PDF, and mailto share the same document builder', () => {
+  const proof = build(paidInvoice);
+  const mailto = buildProofMailto(proof, 'https://quittance.example.com', 'client@example.com');
+
+  assert.ok(mailto.startsWith('mailto:client%40example.com?'));
+  assert.ok(mailto.includes(encodeURIComponent(proof.invoiceId)));
+  assert.ok(mailto.includes(encodeURIComponent(proof.payment.amount)));
+  assert.ok(mailto.includes(encodeURIComponent(proof.payment.asset.code)));
+  assert.ok(mailto.includes(encodeURIComponent(proof.payment.txHash)));
+  assert.ok(mailto.includes(encodeURIComponent(proof.payment.explorerUrl)));
+  assert.ok(mailto.includes(encodeURIComponent(proof.seller)));
+
+  const html = renderQuittanceProofHtml(proof);
+  assert.ok(html.includes(proof.invoiceId));
+  assert.ok(html.includes(proof.payment.amount));
+  assert.ok(html.includes(proof.payment.txHash));
+  assert.ok(html.includes(proof.payment.explorerUrl));
+  assert.ok(html.includes(proof.seller));
 });
