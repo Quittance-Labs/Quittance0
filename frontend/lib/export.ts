@@ -480,6 +480,10 @@ export function shareInvoiceByEmail(invoice: Invoice, baseUrl?: string): string 
   return openInvoiceMailto(invoice, baseUrl);
 }
 
-export function emailPaymentProof(invoice: Invoice, baseUrl?: string): string {
-  return openProofMailto(invoice, baseUrl);
+export function emailPaymentProof(
+  invoiceOrProof: Invoice | QuittanceProof,
+  baseUrl?: string,
+  recipientOverride?: string
+): string {
+  return openProofMailto(invoiceOrProof, baseUrl, recipientOverride);
 }

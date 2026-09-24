@@ -75,6 +75,8 @@ export interface QuittanceProofInput {
   settledAt?: string | Date | null;
   settlementContext?: string | null;
   latePaymentWarningCode?: string | null;
+  /** Optional per-invoice network; options.network still wins when set. */
+  network?: string | null;
 }
 
 export interface QuittanceProofOptions {
@@ -187,7 +189,7 @@ export function buildQuittanceProof(
   }
 
   const status = typeof input.status === 'string' ? input.status : 'PENDING';
-  const network = normalizeNetwork(options.network ?? process.env.NEXT_PUBLIC_STELLAR_NETWORK);
+  const network = normalizeNetwork(options.network ?? input.network ?? process.env.NEXT_PUBLIC_STELLAR_NETWORK);
   const settled = isSettled(status);
 
   let txHash: string | null = null;
@@ -281,11 +283,162 @@ export function serializeQuittanceProof(proof: QuittanceProof): string {
  * @param json - Serialized JSON string.
  * @returns Parsed QuittanceProof or null.
  */
+
+export interface SchemaValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+/**
+ * Validate a candidate proof document against the canonical schema rules.
+ *
+ * @param doc - Document to validate against the schema.
+ * @returns SchemaValidationResult with a valid flag and error messages.
+ */
+export function validateQuittanceProofSchema(doc: unknown): SchemaValidationResult {
+  const errors: string[] = [];
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+    return { valid: false, errors: ['Document must be an object'] };
+  }
+
+  const obj = doc as Record<string, unknown>;
+
+  for (const field of QUITTANCE_PROOF_FIELDS) {
+    if (!(field in obj) || obj[field] === undefined) {
+      errors.push(`Missing required schema field: ${field}`);
+    }
+  }
+
+  for (const key of Object.keys(obj)) {
+    if (!(QUITTANCE_PROOF_FIELDS as readonly string[]).includes(key)) {
+      errors.push(`Unexpected extra field: ${key}`);
+    }
+  }
+
+  if (obj.schemaVersion !== QUITTANCE_PROOF_VERSION) {
+    errors.push(`Invalid schemaVersion: expected ${QUITTANCE_PROOF_VERSION}`);
+  }
+
+  if (typeof obj.invoiceId !== 'string' || obj.invoiceId.length === 0) {
+    errors.push('invoiceId must be a non-empty string');
+  }
+
+  if (obj.network !== 'testnet' && obj.network !== 'public') {
+    errors.push('network must be "testnet" or "public"');
+  }
+
+  if (!['PAID', 'PENDING', 'EXPIRED', 'CANCELLED'].includes(obj.status as string)) {
+    errors.push('status must be one of PAID, PENDING, EXPIRED, CANCELLED');
+  }
+
+  const dateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
+  if (typeof obj.issuedAt !== 'string' || !dateRegex.test(obj.issuedAt)) {
+    errors.push('issuedAt must be an ISO 8601 UTC date string ending in Z');
+  }
+
+  if (typeof obj.dueAt !== 'string' || !dateRegex.test(obj.dueAt)) {
+    errors.push('dueAt must be an ISO 8601 UTC date string ending in Z');
+  }
+
+  if (obj.settledAt !== null && (typeof obj.settledAt !== 'string' || !dateRegex.test(obj.settledAt))) {
+    errors.push('settledAt must be null or an ISO 8601 UTC date string ending in Z');
+  }
+
+  const stellarPublicKeyRegex = /^G[A-Z2-7]{55}$/;
+  if (typeof obj.seller !== 'string' || !stellarPublicKeyRegex.test(obj.seller)) {
+    errors.push('seller must be a valid Stellar public key (56 characters starting with G)');
+  }
+
+  if (obj.payer !== null && (typeof obj.payer !== 'string' || !stellarPublicKeyRegex.test(obj.payer))) {
+    errors.push('payer must be null or a valid Stellar public key');
+  }
+
+  const payment = obj.payment as Record<string, unknown> | undefined;
+  if (!payment || typeof payment !== 'object' || Array.isArray(payment)) {
+    errors.push('payment must be an object');
+  } else {
+    for (const pField of ['txHash', 'memo', 'amount', 'asset', 'explorerUrl']) {
+      if (!(pField in payment) || payment[pField] === undefined) {
+        errors.push(`Missing required payment field: ${pField}`);
+      }
+    }
+    if (typeof payment.txHash !== 'string') {
+      errors.push('payment.txHash must be a string');
+    }
+    if (payment.memo !== null && typeof payment.memo !== 'string') {
+      errors.push('payment.memo must be null or a string');
+    }
+    if (typeof payment.amount !== 'string' || !/^\d+(?:\.\d{1,7})?$/.test(payment.amount)) {
+      errors.push('payment.amount must be a decimal string with up to 7 places');
+    }
+    const asset = payment.asset as Record<string, unknown> | undefined;
+    if (!asset || typeof asset !== 'object' || Array.isArray(asset)) {
+      errors.push('payment.asset must be an object');
+    } else {
+      if (typeof asset.code !== 'string' || asset.code.length === 0) {
+        errors.push('payment.asset.code must be a non-empty string');
+      }
+      if (asset.issuer !== null && typeof asset.issuer !== 'string') {
+        errors.push('payment.asset.issuer must be null or a string');
+      }
+    }
+    if (payment.explorerUrl !== null && typeof payment.explorerUrl !== 'string') {
+      errors.push('payment.explorerUrl must be null or a string');
+    }
+  }
+
+  const verification = obj.verification as Record<string, unknown> | undefined;
+  if (!verification || typeof verification !== 'object' || Array.isArray(verification)) {
+    errors.push('verification must be an object');
+  } else {
+    for (const vField of ['status', 'method', 'checkedAt']) {
+      if (!(vField in verification) || verification[vField] === undefined) {
+        errors.push(`Missing required verification field: ${vField}`);
+      }
+    }
+    if (verification.status !== 'verified' && verification.status !== 'unverified') {
+      errors.push('verification.status must be "verified" or "unverified"');
+    }
+    if (verification.method !== 'memo-and-amount' && verification.method !== 'none') {
+      errors.push('verification.method must be "memo-and-amount" or "none"');
+    }
+    if (
+      verification.checkedAt !== null &&
+      (typeof verification.checkedAt !== 'string' || !dateRegex.test(verification.checkedAt))
+    ) {
+      errors.push('verification.checkedAt must be null or an ISO 8601 UTC date string ending in Z');
+    }
+  }
+
+  const document = obj.document as Record<string, unknown> | undefined;
+  if (!document || typeof document !== 'object' || Array.isArray(document)) {
+    errors.push('document must be an object');
+  } else {
+    for (const dField of ['generatedAtUtc', 'generatedBy']) {
+      if (!(dField in document) || document[dField] === undefined) {
+        errors.push(`Missing required document field: ${dField}`);
+      }
+    }
+    if (typeof document.generatedAtUtc !== 'string' || !dateRegex.test(document.generatedAtUtc)) {
+      errors.push('document.generatedAtUtc must be an ISO 8601 UTC date string ending in Z');
+    }
+    if (document.generatedBy !== 'quittance-web') {
+      errors.push('document.generatedBy must be "quittance-web"');
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+}
+
 export function parseQuittanceProof(json: string): QuittanceProof | null {
   try {
     const parsed = JSON.parse(json) as QuittanceProof;
     if (!parsed || typeof parsed !== 'object') return null;
-    if (parsed.schemaVersion !== QUITTANCE_PROOF_VERSION) return null;
+    const result = validateQuittanceProofSchema(parsed);
+    if (!result.valid) return null;
     return parsed;
   } catch {
     return null;
@@ -307,6 +460,12 @@ export function checkQuittanceProofInvariants(serialized: string): string[] {
     return ['NOT_JSON'];
   }
   if (!parsed) return ['NOT_JSON'];
+
+  for (const field of QUITTANCE_PROOF_FIELDS) {
+    if (!(field in parsed) || parsed[field] === undefined) {
+      violated.push(`REQUIRED_FIELD_${field}`);
+    }
+  }
 
   if (parsed.schemaVersion !== QUITTANCE_PROOF_VERSION) violated.push('VERSIONED');
 
@@ -743,6 +902,7 @@ const quittanceProof = {
   serializeQuittanceProof,
   parseQuittanceProof,
   checkQuittanceProofInvariants,
+  validateQuittanceProofSchema,
   isQuittanceProof,
   renderQuittanceProofHtml,
   createQuittanceProofPdf,

@@ -8,6 +8,7 @@ const { assertPaymentProofAvailable, canExportPaymentProof } = require('./paymen
 // transaction lives on. It used to be written twice: once here and once as a
 // hardcoded 'public' in the receipt, and only one of those was ever right.
 const { buildHorizonTxUrl, resolveExplorerNetwork } = require('./stellar-explorer.js');
+const { buildQuittanceProof, isQuittanceProof } = require('./quittance-proof.ts');
 
 function isValidEmailFormat(email) {
   if (typeof email !== 'string') return false;
@@ -53,6 +54,15 @@ function canSendProofEmail(invoice) {
 function getProofMailtoRecipient(invoice) {
   if (!invoice) return '';
   return (invoice.customerEmail || invoice.payerEmail || '').trim();
+}
+
+
+/**
+ * Explorer network for an invoice: the invoice's own network wins, then the
+ * app configuration, then the app default (TESTNET).
+ */
+function resolveInvoiceNetwork(invoice) {
+  return resolveExplorerNetwork(invoice);
 }
 
 function buildInvoiceMailto(invoice, baseUrl) {
@@ -101,56 +111,93 @@ function buildInvoiceMailto(invoice, baseUrl) {
   return `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
-function buildProofMailto(invoice, baseUrl) {
-  if (!invoice) {
-    throw new Error('Invoice is required to build proof mailto link');
+function buildProofMailto(invoiceOrProof, baseUrl, recipientOverride) {
+  if (!invoiceOrProof) {
+    throw new Error('Invoice or proof is required to build proof mailto link');
   }
 
-  assertPaymentProofAvailable(invoice);
+  const isProof = isQuittanceProof(invoiceOrProof);
+  const invoice = isProof ? null : invoiceOrProof;
+  let proof = isProof ? invoiceOrProof : null;
 
-  const recipient = getProofMailtoRecipient(invoice);
+  if (invoice) {
+    assertPaymentProofAvailable(invoice);
+  }
+
+  const recipient =
+    typeof recipientOverride === 'string' && recipientOverride.trim()
+      ? recipientOverride.trim()
+      : getProofMailtoRecipient(invoice || {});
   if (!recipient) {
     throw new Error('Client or payer email is required to email payment proof');
   }
 
-  const shortId = (invoice.id || '').substring(0, 8).toUpperCase();
-  const subject = `Payment Proof - Invoice #${shortId} - ${invoice.amount} ${invoice.assetCode || 'XLM'}`;
-  const payUrl = resolvePayUrl(invoice.id, baseUrl);
-  const explorerUrl = buildHorizonTxUrl(
-    invoice.paymentTxHash,
-    resolveExplorerNetwork(invoice)
-  );
+  const network = proof ? proof.network : resolveInvoiceNetwork(invoice);
 
+  if (!proof && invoice) {
+    const proofResult = buildQuittanceProof(invoice, { network });
+    if (proofResult.ok) {
+      proof = proofResult.proof;
+    }
+  }
+
+  const invoiceId = proof ? proof.invoiceId : invoice.id;
+  const shortId = (invoiceId || '').substring(0, 8).toUpperCase();
+  // Keep the invoice's display amount in the subject when the caller passed an
+  // invoice so existing mailto fixtures stay stable; proof-only callers get the
+  // canonical decimal string.
+  const amount = invoice && invoice.amount != null
+    ? invoice.amount
+    : (proof ? proof.payment.amount : '');
+  const assetCode = proof
+    ? proof.payment.asset.code
+    : (invoice ? (invoice.assetCode || 'XLM') : 'XLM');
+  const subject = `Payment Proof - Invoice #${shortId} - ${amount} ${assetCode}`;
+  const payUrl = resolvePayUrl(invoiceId, baseUrl);
+  const explorerUrl = (proof && proof.payment.explorerUrl)
+    ? proof.payment.explorerUrl
+    : (invoice && invoice.paymentTxHash
+      ? buildHorizonTxUrl(invoice.paymentTxHash, network)
+      : null);
+
+  const status = proof ? proof.status : (invoice ? invoice.status : 'PAID');
   const lines = [
     'Payment Proof Details:',
-    `Invoice ID: ${invoice.id}`,
-    `Amount Paid: ${invoice.amount} ${invoice.assetCode || 'XLM'}`,
-    'Status: PAID',
+    `Invoice ID: ${invoiceId}`,
+    `Amount Paid: ${amount} ${assetCode}`,
+    `Status: ${status}`,
   ];
 
-  if (invoice.paidAt) {
-    lines.push(`Payment Date: ${formatDateDisplay(invoice.paidAt)}`);
+  const settledDate = proof ? proof.settledAt : (invoice ? (invoice.paidAt || invoice.settledAt) : null);
+  if (settledDate) {
+    lines.push(`Payment Date: ${formatDateDisplay(settledDate)}`);
   }
-  if (invoice.paymentTxHash) {
-    lines.push(`Transaction Hash: ${invoice.paymentTxHash}`);
+  const txHash = proof ? proof.payment.txHash : (invoice ? invoice.paymentTxHash : null);
+  if (txHash) {
+    lines.push(`Transaction Hash: ${txHash}`);
   }
   if (explorerUrl) {
     lines.push(`Explorer: ${explorerUrl}`);
   }
-  if (invoice.sellerPublicKey) {
-    lines.push(`Seller Address: ${invoice.sellerPublicKey}`);
+  const seller = proof ? proof.seller : (invoice ? invoice.sellerPublicKey : null);
+  if (seller) {
+    lines.push(`Seller Address: ${seller}`);
   }
-  if (invoice.payerPublicKey) {
-    lines.push(`Payer Address: ${invoice.payerPublicKey}`);
+  const payer = proof ? proof.payer : (invoice ? invoice.payerPublicKey : null);
+  if (payer) {
+    lines.push(`Payer Address: ${payer}`);
   }
-  if (invoice.customerName) {
+  // Display names are delivery metadata, not proof-schema fields. Only include
+  // them when the caller still has the invoice record.
+  if (invoice && invoice.customerName) {
     lines.push(`Client Name: ${invoice.customerName}`);
   }
-  if (invoice.payerName) {
+  if (invoice && invoice.payerName) {
     lines.push(`Payer Name: ${invoice.payerName}`);
   }
-  if (invoice.memo) {
-    lines.push(`Memo: ${invoice.memo}`);
+  const memo = proof ? proof.payment.memo : (invoice ? invoice.memo : null);
+  if (memo) {
+    lines.push(`Memo: ${memo}`);
   }
 
   lines.push('');
@@ -171,8 +218,8 @@ function openInvoiceMailto(invoice, baseUrl) {
   return link;
 }
 
-function openProofMailto(invoice, baseUrl) {
-  const link = buildProofMailto(invoice, baseUrl);
+function openProofMailto(invoiceOrProof, baseUrl, recipientOverride) {
+  const link = buildProofMailto(invoiceOrProof, baseUrl, recipientOverride);
   if (typeof window !== 'undefined') {
     window.location.href = link;
   }
@@ -182,6 +229,7 @@ function openProofMailto(invoice, baseUrl) {
 module.exports = {
   isValidEmailFormat,
   resolvePayUrl,
+  resolveInvoiceNetwork,
   canSendInvoiceEmail,
   getInvoiceMailtoRecipient,
   canSendProofEmail,
