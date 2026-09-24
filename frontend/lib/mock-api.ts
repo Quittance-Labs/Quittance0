@@ -114,6 +114,9 @@ export const mockInvoiceApi = {
         paymentUrl,
         qrCode,
         stellarQrCode: qrCode,
+        stellarUri: undefined,
+        copyValue: paymentUrl,
+        stellarQrEncodesUri: false,
       },
     };
   },
@@ -184,6 +187,9 @@ export const mockInvoiceApi = {
         paymentAvailable: invoice.status === 'PENDING',
         qrCode: invoice.status === 'PENDING' ? qrCode : null,
         stellarQrCode: invoice.status === 'PENDING' ? qrCode : null,
+        stellarUri: undefined,
+        copyValue: paymentUrl,
+        stellarQrEncodesUri: false,
         invoice,
       },
     };
