@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { apiErrorMessage, invoiceApi, isApiUnavailableError, PAYMENT_STATUS_POLL_INTERVAL_MS, resolveVerificationError } from './api';
+import {
+  apiErrorMessage,
+  invoiceApi,
+  isApiUnavailableError,
+  PAYMENT_STATUS_POLL_INTERVAL_MS,
+} from './api';
 import { checkTxHash } from './verification';
 import { parsePayReturnSearch } from './pay-return';
 import { loadPaySession, savePaySession } from './pay-session';
@@ -13,16 +18,23 @@ import {
 import {
   PAY_STATES,
   initialPaymentState,
-  normalizePayerDetails,
   paymentReducer,
   shouldDropPendingPayment,
   shouldPoll,
+  getPayPageView,
 } from './payment-page-state';
-import type { PayPageInvoice, PayPagePaymentInfo } from '@/components/pay-page.types';
+import { deriveSessionStatus } from './payment-session';
+import { executePaymentVerification } from './pay-verify-controller';
+import { copyToClipboard } from './utils';
+import type { PayPageInvoice, PayPagePaymentInfo, PayPageSession } from '@/components/pay-page.types';
 import { toast } from 'sonner';
 import { useWalletStore } from './store';
 
-export function usePaymentPage(id: string) {
+/**
+ * Orchestrator hook: invoice load, polling, resume, wallet-switch isolation,
+ * and verify/outage via the shared controller (issue #445).
+ */
+export function usePaymentPage(id: string): PayPageSession {
   const [payment, dispatch] = useReducer(paymentReducer, undefined, () => initialPaymentState(null));
   const [loading, setLoading] = useState(true);
   const [paymentInfo, setPaymentInfo] = useState<PayPagePaymentInfo | null>(null);
@@ -76,8 +88,7 @@ export function usePaymentPage(id: string) {
     dispatch({ type: 'INVOICE_LOADED', invoice: null });
 
     // Wallet handoff return (issue #516): a same-origin /pay/[id]?tx=<hash>
-    // link resumes verification without a paste. Anything else — a foreign
-    // return_url, a malformed tx — is ignored by parsePayReturnSearch.
+    // link resumes verification without a paste.
     const returned = parsePayReturnSearch(
       initialSearch,
       typeof window !== 'undefined' ? window.location.origin : ''
@@ -90,8 +101,6 @@ export function usePaymentPage(id: string) {
       };
     }
 
-    // No hash in the URL: offer the resumable session instead — the stored
-    // hash only applies to this invoice and is still pasted by the payer.
     const session = loadPaySession();
     if (session.invoiceId === id && session.txHash && checkTxHash(session.txHash).ok) {
       setTxHash(session.txHash);
@@ -103,12 +112,11 @@ export function usePaymentPage(id: string) {
     };
     // verify reads only the override argument plus stable refs at mount, so
     // the mount-time instance is the right one and is intentionally excluded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, load]);
 
   // A wallet switch or disconnect cancels the previous key's in-flight work
-  // (issue #508): bump the generation so a load/verify/poll response in flight
-  // is dropped, clear the pending hash, and reset the session UI. Terminal
-  // states survive — a settled invoice stays settled for whoever is watching.
+  // (issue #508).
   useEffect(() => {
     const previous = walletSessionRef.current;
     const next = { publicKey, network, connected };
@@ -138,57 +146,82 @@ export function usePaymentPage(id: string) {
   }, [id, payment, paymentInfo?.statusPollingIntervalMs]);
 
   const verify = async (hashOverride?: string) => {
-    const checked = checkTxHash(hashOverride ?? txHash);
-    if (!checked.ok) return toast.error(checked.error);
-    const payer = normalizePayerDetails({ payerName, payerEmail });
-    if (!payer.ok) return toast.error(payer.error);
-    // Persist the non-secret resume pair before the request: if the wallet
-    // handoff kills the tab mid-verify, the hash survives for the resume path.
+    const hash = hashOverride ?? txHash;
+    const checked = checkTxHash(hash);
+    if (!checked.ok) {
+      toast.error(checked.error);
+      return;
+    }
+
+    // Persist the non-secret resume pair before the request (issue #516).
     savePaySession({ invoiceId: id, txHash: checked.value });
-    dispatch({ type: 'VERIFY_STARTED' });
+
     const request = generation.current;
     const sessionKey = connected ? publicKey : null;
-    try {
-      const result = await invoiceApi.verify(id, checked.value, payer.value);
-      if (request !== generation.current) return;
-      // A mid-flight wallet switch must not let the previous key's verify
-      // complete under the new session, even if the response arrives before
-      // the session-change effect runs. A verify started while disconnected
-      // carries no key, so a later connect does not invalidate it.
-      const latest = useWalletStore.getState();
-      const latestKey = latest.connected ? latest.publicKey : null;
-      if (sessionKey !== null && latestKey !== sessionKey) return;
-      dispatch({ type: 'VERIFY_SUCCEEDED', invoice: result?.data ?? null });
+
+    const result = await executePaymentVerification({
+      invoiceId: id,
+      txHash: checked.value,
+      payerName,
+      payerEmail,
+      verifyFn: invoiceApi.verify,
+      dispatch: (event) => {
+        if (request !== generation.current) return;
+        // Mid-flight wallet switch must not complete under the new session.
+        const latest = useWalletStore.getState();
+        const latestKey = latest.connected ? latest.publicKey : null;
+        if (sessionKey !== null && latestKey !== sessionKey) return;
+        dispatch(event as Parameters<typeof dispatch>[0]);
+      },
+    });
+
+    if (request !== generation.current) return;
+
+    const latest = useWalletStore.getState();
+    const latestKey = latest.connected ? latest.publicKey : null;
+    if (sessionKey !== null && latestKey !== sessionKey) return;
+
+    if (result.ok) {
       toast.success('Transaction verified!');
       void load();
-    } catch (error) {
-      if (request !== generation.current) return;
-
-      // Same guard as the success path: the error belongs to the session
-      // that started the verify, not whichever wallet is connected now.
-      const latest = useWalletStore.getState();
-      const latestKey = latest.connected ? latest.publicKey : null;
-      if (sessionKey !== null && latestKey !== sessionKey) return;
-
-      // A Horizon or transport failure is not a rejection: keep the session,
-      // say it is retryable, and leave the verify control in place.
-      if (isHorizonOutageError(error)) {
-        setLoadError(HORIZON_OUTAGE_MESSAGE);
-        dispatch({ type: 'VERIFY_UNAVAILABLE' });
-        toast.error(HORIZON_OUTAGE_MESSAGE);
-        return;
-      }
-
-      const message = resolveVerificationError(error);
-      if (isApiUnavailableError(error)) setLoadError(apiErrorMessage(error));
-      dispatch({ type: 'VERIFY_FAILED', error: message });
-      toast.error(message);
+      return;
     }
+
+    if (result.kind === 'validation') {
+      toast.error(result.error);
+      return;
+    }
+
+    if (result.kind === 'outage') {
+      setLoadError(result.message);
+      toast.error(result.message);
+      return;
+    }
+
+    if (result.isApiUnavailable) setLoadError(result.message);
+    toast.error(result.message);
   };
 
+  const copy = useCallback(async (value: string, label: string) => {
+    if (await copyToClipboard(value)) {
+      toast.success(`${label} copied`);
+      dispatch({ type: 'COPIED', key: label });
+    }
+  }, []);
+
+  const invoice = payment.invoice as PayPageInvoice | null;
+  const view = getPayPageView(invoice);
+  const status = deriveSessionStatus({
+    loading,
+    invoice,
+    paymentStatus: payment.status,
+    loadError,
+  });
+
   return {
-    invoice: payment.invoice as PayPageInvoice | null,
+    invoice,
     payment,
+    status,
     loading,
     loadError,
     paymentInfo,
@@ -199,11 +232,13 @@ export function usePaymentPage(id: string) {
     setPayerName,
     payerEmail,
     setPayerEmail,
-    verifying: payment.status === PAY_STATES.VERIFYING,
+    verifying: payment.status === PAY_STATES.VERIFYING || status === 'verifying',
     monitoring: shouldPoll(payment),
     resumeAvailable,
-    dispatch,
+    view,
+    dispatch: dispatch as PayPageSession['dispatch'],
     verify,
     reload: load,
+    copy,
   };
 }

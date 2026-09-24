@@ -7,9 +7,9 @@
  * manual-verify at all, so a regression here silently re-enables payment on an
  * invoice that must not accept one.
  *
- * Deeper polling and verify-error transitions are not covered yet: that logic
- * still lives inside `app/pay/[id]/page.tsx` and only becomes unit-testable
- * once it is extracted into a state module (issue #231).
+ * Session modes (issue #445) are partitioned below so every pay-page state
+ * maps to exactly one of: loading, ready, paying, verifying, paid, rejected,
+ * unavailable.
  */
 
 const test = require('node:test');
@@ -183,5 +183,80 @@ test('a rejected verify keeps the canonical message across every status', () => 
       'Memo mismatch',
       `${status} changed the verification message`
     );
+  }
+});
+
+
+/*
+ * Payment session mode matrix (issue #445).
+ *
+ * The pay route now drives UI from one session model. These assertions prove
+ * every mode is reachable, mutually exclusive in the derive helper, and that
+ * the legacy payment reducer statuses (idle/error/expired) map correctly.
+ */
+
+const {
+  SESSION_STATES,
+  deriveSessionStatus,
+  isSessionBusy,
+  isSessionResult,
+} = require('../lib/payment-session');
+
+const SESSION_MODES = [
+  SESSION_STATES.LOADING,
+  SESSION_STATES.READY,
+  SESSION_STATES.PAYING,
+  SESSION_STATES.VERIFYING,
+  SESSION_STATES.PAID,
+  SESSION_STATES.REJECTED,
+  SESSION_STATES.UNAVAILABLE,
+];
+
+test('status matrix covers all seven payment session modes', () => {
+  assert.equal(SESSION_MODES.length, 7);
+  assert.equal(new Set(SESSION_MODES).size, 7);
+
+  const cases = [
+    [{ loading: true, invoice: null }, SESSION_STATES.LOADING],
+    [{ loading: false, invoice: { status: 'PENDING', expiresAt: '2099-01-01T00:00:00.000Z' }, paymentStatus: 'idle' }, SESSION_STATES.READY],
+    [{ loading: false, invoice: { status: 'PENDING', expiresAt: '2099-01-01T00:00:00.000Z' }, paymentStatus: 'paying' }, SESSION_STATES.PAYING],
+    [{ loading: false, invoice: { status: 'PENDING', expiresAt: '2099-01-01T00:00:00.000Z' }, paymentStatus: 'verifying' }, SESSION_STATES.VERIFYING],
+    [{ loading: false, invoice: { status: 'PAID', paymentTxHash: 'a'.repeat(64), expiresAt: '2099-01-01T00:00:00.000Z' } }, SESSION_STATES.PAID],
+    [{ loading: false, invoice: { status: 'PENDING', expiresAt: '2099-01-01T00:00:00.000Z' }, paymentStatus: 'error' }, SESSION_STATES.REJECTED],
+    [{ loading: false, invoice: { status: 'EXPIRED', expiresAt: '2000-01-01T00:00:00.000Z' } }, SESSION_STATES.UNAVAILABLE],
+    [{ loading: false, invoice: null, loadError: 'unreachable' }, SESSION_STATES.UNAVAILABLE],
+    [{ loading: false, invoice: { status: 'CANCELLED', expiresAt: '2099-01-01T00:00:00.000Z' } }, SESSION_STATES.UNAVAILABLE],
+  ];
+
+  const seen = new Set();
+  for (const [input, expected] of cases) {
+    const actual = deriveSessionStatus(input);
+    assert.equal(actual, expected, JSON.stringify(input));
+    seen.add(actual);
+  }
+
+  for (const mode of SESSION_MODES) {
+    assert.ok(seen.has(mode), `mode ${mode} never appeared in the matrix`);
+  }
+});
+
+test('busy and result partitions do not overlap across session modes', () => {
+  for (const mode of SESSION_MODES) {
+    const busy = isSessionBusy(mode);
+    const result = isSessionResult(mode);
+    if (mode === SESSION_STATES.PAYING || mode === SESSION_STATES.VERIFYING) {
+      assert.equal(busy, true);
+      assert.equal(result, false);
+    } else if (
+      mode === SESSION_STATES.PAID ||
+      mode === SESSION_STATES.REJECTED ||
+      mode === SESSION_STATES.UNAVAILABLE
+    ) {
+      assert.equal(busy, false);
+      assert.equal(result, true);
+    } else {
+      assert.equal(busy, false);
+      assert.equal(result, false);
+    }
   }
 });

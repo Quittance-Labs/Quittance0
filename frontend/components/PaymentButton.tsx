@@ -27,6 +27,10 @@ import { invoiceApi } from '@/lib/api';
 import { showFreighterInstallPrompt, showFreighterWrongNetworkPrompt } from '@/components/FreighterInstallPrompt';
 import { describeVerifyError, normalizePayerDetails } from '@/lib/payment-page-state';
 import { resolveVerificationError } from '@/lib/verification';
+import {
+  isMissingTrustlineError,
+  validateFreighterPreflight,
+} from '@/lib/pay-freighter-action';
 import { useWalletStore } from '@/lib/store';
 import { walletSessionGate } from '@/lib/wallet-session';
 
@@ -235,31 +239,23 @@ export default function PaymentButton({
   };
 
   const handlePayment = async () => {
-    if (!gate.ready) {
-      showFreighterInstallPrompt(gate);
-      onError?.(gate.message);
+    // Shared Freighter preflight (issue #445): gate, invoice status, optional email.
+    const preflightCheck = validateFreighterPreflight({
+      walletGate: gate,
+      invoiceStatus,
+      payerName,
+      payerEmail,
+    });
+    if (!preflightCheck.ok) {
+      if (preflightCheck.kind === 'gate_blocked') {
+        showFreighterInstallPrompt(gate);
+      } else {
+        toast.error(preflightCheck.message);
+      }
+      onError?.(preflightCheck.message);
       return;
     }
-
-    if (invoiceStatus !== 'PENDING') {
-      const message = invoiceStatus === 'EXPIRED'
-        ? 'This invoice has expired and cannot be paid'
-        : invoiceStatus === 'CANCELLED'
-        ? 'This invoice was cancelled by the seller and cannot be paid'
-        : 'This invoice is not available for payment';
-      toast.error(message);
-      onError?.(message);
-      return;
-    }
-
-    // Payer details are validated by the shared state module, so the button,
-    // the page and the tests all agree on what a valid email is.
-    const payer = normalizePayerDetails({ payerName, payerEmail });
-    if (!payer.ok) {
-      toast.error(payer.error);
-      onError?.(payer.error);
-      return;
-    }
+    const payer = { ok: true as const, value: preflightCheck.payer };
 
     setLoading(true);
     onStart?.();
@@ -430,11 +426,7 @@ export default function PaymentButton({
         return;
       }
       const err = error as { message?: string };
-      const missingTrustline =
-        assetCode !== 'XLM' && (
-          err.message?.toLowerCase().includes('trustline') ||
-          err.message?.toLowerCase().includes('op_no_trust')
-        );
+      const missingTrustline = isMissingTrustlineError(err, assetCode);
       const title = missingTrustline ? `${assetCode} trustline required` : 'Payment failed';
       toast.error(title, {
         id: PAY_TOAST_ID,
