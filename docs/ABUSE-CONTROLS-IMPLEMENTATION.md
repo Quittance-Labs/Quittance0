@@ -1,6 +1,6 @@
 # Abuse Controls Implementation Summary
 
-**Status**: ✅ Implemented (addresses issue #383)
+**Status**: ✅ Implemented (addresses issues #383 / #450)
 
 This document describes the abuse controls implemented to protect public pay and verify endpoints from enumeration, spam, and Horizon quota exhaustion.
 
@@ -13,6 +13,23 @@ All 8 ranked scenarios from `ABUSE-CONTROLS.md` have been addressed through a co
 - **Verification result caching** to prevent Horizon amplification
 - **Global invoice ceiling** for MVP in-memory mode
 - **Environment-based guardrails** for dev-only routes
+
+
+## Edge configuration and frontend mapping (issue #450)
+
+Limits, body size, ceiling, and concurrency retry-after are env-driven via
+`backend/src/middleware/edge-config.ts` (`resolveEdgeControlConfig`). Demo-safe
+defaults match the tables above; both env examples list every variable.
+
+Middleware order is documented in `edge-config.ts` and `invoice.routes.ts`.
+Tests in `backend/tests/abuse-controls.test.ts` and
+`backend/tests/edge-config.test.ts` assert stable trip codes and that a single
+legitimate verify still succeeds.
+
+The pay page classifies `429` / `413` (and the edge codes
+`RATE_LIMIT_EXCEEDED`, `VERIFY_RATE_LIMIT_EXCEEDED`, `VERIFY_IN_PROGRESS`,
+`PAYLOAD_TOO_LARGE`, `INVOICE_STORE_FULL`) through `frontend/lib/edge-limit.js`
+as retryable `VERIFY_UNAVAILABLE` messaging — never as memo/amount rejection.
 
 ## Critical Security Fixes
 

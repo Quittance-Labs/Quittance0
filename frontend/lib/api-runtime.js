@@ -7,6 +7,7 @@ const OFFLINE_MESSAGE = 'Quittance API is unreachable. Check your connection and
 // dashboard and invoice banners could surface whatever string the server sent,
 // which drifts from the canonical wording.
 const { messageForCode } = require('./verification');
+const { isEdgeLimitError, edgeLimitMessage } = require('./edge-limit.js');
 
 class ApiUnavailableError extends Error {
   constructor(message = OFFLINE_MESSAGE, cause) {
@@ -67,6 +68,28 @@ function toApiError(error) {
 
   const status = error?.response?.status;
   const responseData = error?.response?.data;
+  const edgeProbe = {
+    response: { status, data: responseData },
+    status,
+    code: responseData?.code,
+  };
+
+  // Edge limits before the 5xx/offline path so INVOICE_STORE_FULL (503) and
+  // rate/body limits stay retryable edge messages, not generic offline copy.
+  // When the code is also a VerificationCode (VERIFY_RATE_LIMIT_EXCEEDED),
+  // keep the canonical verification string so every surface stays in sync.
+  if (isEdgeLimitError(edgeProbe)) {
+    const code =
+      responseData?.code || (status === 413 ? 'PAYLOAD_TOO_LARGE' : 'RATE_LIMIT_EXCEEDED');
+    const canonical = messageForCode(code);
+    return new ApiRequestError(canonical || edgeLimitMessage(edgeProbe), {
+      cause: error,
+      code,
+      status,
+      retryable: true,
+    });
+  }
+
   const networkFailure =
     !error?.response ||
     ['ERR_NETWORK', 'ECONNABORTED', 'ETIMEDOUT'].includes(error?.code) ||
@@ -83,7 +106,7 @@ function toApiError(error) {
       cause: error,
       code: responseData?.code,
       status,
-      retryable: status === 408 || status === 429,
+      retryable: status === 408 || status === 429 || status === 413,
     }
   );
 }
