@@ -82,6 +82,47 @@ describe('wallet-scoped invoice reads', () => {
     assert.equal(carolStats.total_invoices, 0);
     assert.equal(carolStats.pending_invoices, 0);
   });
+
+  it('filters invoices by search query within seller scope', async () => {
+    const storage = new MemoryInvoiceStorage(new InvoiceMemoryService(new MemoryStorage()));
+    // createInvoice mints its own memo; search coverage uses description and
+    // customer name, which sellers supply and the server indexes for q.
+    const matching = await storage.createInvoice(
+      input(ALICE, { description: 'Alpha payment', customerName: 'Ada Lovelace' })
+    );
+    await storage.createInvoice(
+      input(ALICE, { description: 'Beta payment', customerName: 'Bob Client' })
+    );
+    await storage.createInvoice(
+      input(BOB, { description: 'Alpha payment', customerName: 'Ada Lovelace' })
+    );
+
+    const byDescription = await storage.getInvoicesBySeller(ALICE, undefined, 50, 0, 'Alpha');
+    assert.equal(byDescription.length, 1);
+    assert.equal(byDescription[0].id, matching.id);
+    assert.equal(byDescription[0].sellerPublicKey, ALICE);
+
+    const byClient = await storage.getInvoicesBySeller(ALICE, undefined, 50, 0, 'Lovelace');
+    assert.equal(byClient.length, 1);
+    assert.equal(byClient[0].id, matching.id);
+
+    const byPublicId = await storage.getInvoicesBySeller(ALICE, undefined, 50, 0, matching.id);
+    assert.equal(byPublicId.length, 1);
+    assert.equal(byPublicId[0].id, matching.id);
+  });
+
+  it('never leaks another seller invoices when searching', async () => {
+    const storage = new MemoryInvoiceStorage(new InvoiceMemoryService(new MemoryStorage()));
+    await storage.createInvoice(
+      input(BOB, { description: 'Bob secret retainer', customerName: 'Secret Client' })
+    );
+
+    const results = await storage.getInvoicesBySeller(ALICE, undefined, 50, 0, 'secret');
+    assert.equal(results.length, 0);
+
+    const byClient = await storage.getInvoicesBySeller(ALICE, undefined, 50, 0, 'Secret Client');
+    assert.equal(byClient.length, 0);
+  });
 });
 
 /**
@@ -215,5 +256,52 @@ describe('wallet-scoped invoice endpoints', () => {
 
     assert.equal(list.statusCode, 400);
     assert.equal(stats.statusCode, 400);
+  });
+
+  it('filters invoices by search query through the endpoint', async () => {
+    const { handlers } = makeApi();
+    await seedThroughApi(handlers);
+
+    const aliceRes = await call(
+      handlers.getInvoices as any,
+      createReq({ query: { sellerPublicKey: ALICE, q: 'INV' } })
+    );
+
+    assert.equal(aliceRes.statusCode, 200);
+    assert.equal(aliceRes.body.data.length, 2);
+    assert.ok(aliceRes.body.data.every((row: any) => row.sellerPublicKey === ALICE));
+
+    const noMatchRes = await call(
+      handlers.getInvoices as any,
+      createReq({ query: { sellerPublicKey: ALICE, q: 'NONEXISTENT-SEARCH-TERM' } })
+    );
+
+    assert.equal(noMatchRes.statusCode, 200);
+    assert.equal(noMatchRes.body.data.length, 0);
+  });
+
+  it('endpoint never leaks another seller invoices when searching', async () => {
+    const { handlers } = makeApi();
+    await seedThroughApi(handlers);
+
+    const bobRes = await call(
+      handlers.getInvoices as any,
+      createReq({ query: { sellerPublicKey: BOB } })
+    );
+    assert.equal(bobRes.statusCode, 200);
+    assert.equal(bobRes.body.data.length, 1);
+    const bobMemo = bobRes.body.data[0].memo as string;
+
+    const aliceSearch = await call(
+      handlers.getInvoices as any,
+      createReq({ query: { sellerPublicKey: ALICE, q: bobMemo } })
+    );
+
+    assert.equal(aliceSearch.statusCode, 200);
+    assert.equal(aliceSearch.body.data.length, 0);
+    assert.ok(
+      !aliceSearch.body.data.some((row: any) => row.sellerPublicKey === BOB),
+      'Alice search must never include Bob rows'
+    );
   });
 });
