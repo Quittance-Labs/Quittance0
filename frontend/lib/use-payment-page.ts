@@ -180,8 +180,9 @@ export function usePaymentPage(id: string) {
       }
 
       const message = resolveVerificationError(error);
+      const data = (error && (error as any).response && (error as any).response.data) || {};
       if (isApiUnavailableError(error)) setLoadError(apiErrorMessage(error));
-      dispatch({ type: 'VERIFY_FAILED', error: message });
+      dispatch({ type: 'VERIFY_FAILED', error: message, stage: data.stage ?? null, code: data.code ?? null });
       toast.error(message);
     }
   };
