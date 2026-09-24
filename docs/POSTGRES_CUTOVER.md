@@ -223,6 +223,24 @@ Required indexes are:
 The existing schema has all but the last uniqueness rule. Add that rule only
 after checking historical duplicates in the implementation PR.
 
+## Shared storage contract (issue #555)
+
+`InvoiceStorage` is the only write and read contract the invoice handlers use.
+Memory and Postgres adapters implement every method on that interface — including
+idempotent create (seller-scoped key lookup), public-id collision refusal,
+`payment_tx_hash` claim on settle, cancel, and payment-event append. Handlers
+must not branch on `storage.mode` or call a method that exists on only one
+adapter.
+
+Cutover rule: do not route production traffic to Postgres until the shared
+handler suite (`backend/tests/invoice-handlers.test.ts`) passes against both
+adapters with the same assertions, and the live Postgres integration test
+(`invoice-postgres.integration.test.ts`, skipped unless `DATABASE_URL` is set)
+asserts the same outcomes. Restart on Postgres must return the pending set a
+memory process loses; that contrast is pinned in
+`postgres-restart-persistence.test.ts`. Freighter remains the only identity —
+cutover does not add a login gate.
+
 ## Query boundaries
 
 Public payment and proof routes intentionally read one invoice by opaque UUID.

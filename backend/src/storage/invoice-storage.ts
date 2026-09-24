@@ -78,6 +78,31 @@ export interface MarkAsPaidOptions {
  *
  * Both implementations are wallet-scoped: the seller public key always comes
  * from the invoice input or the caller's query, never from a static env key.
+ * Freighter (the seller/payer wallet key) remains the only identity — adapters
+ * do not add a login gate.
+ *
+ * ## Handler-facing contract (issue #555)
+ *
+ * Handlers call only these methods. Every method is required on both adapters
+ * so a handler change cannot invoke a capability that exists on only one
+ * backend. Semantics that are not separate methods still live behind this
+ * contract and must match on memory and Postgres:
+ *
+ * | Handler / mutation            | Contract entry                         | Shared behaviour |
+ * | ----------------------------- | ------------------------------------- | ---------------- |
+ * | Create                        | `createInvoice`                       | Idempotency-key lookup (seller-scoped replay); public-id allocation that refuses collisions; memo uniqueness |
+ * | Public / seller read          | `getInvoiceById`                      | Lazy expiry; foreign seller list/stats still treat another seller's row as absent |
+ * | Seller list                   | `getInvoicesBySeller`                 | Scoped by `sellerPublicKey` |
+ * | Cancel                        | `cancelInvoice`                       | PENDING → CANCELLED once; seller key enforced when supplied |
+ * | Verify / monitor settle       | `markAsPaid`                          | Claims `payment_tx_hash` (one tx → one invoice); settlement context |
+ * | Rejected verify audit         | `logPaymentEvent` / `getPaymentEvents`| Append + seller-scoped read of the audit feed |
+ * | Dashboard stats               | `getInvoiceStats`                     | Seller-scoped aggregates |
+ * | Maintenance                   | `markExpiredInvoices` / `countInvoices` | Expiry sweep; cutover/health counts |
+ *
+ * The shared suite in `backend/tests/invoice-handlers.test.ts` runs the same
+ * assertions against MemoryInvoiceStorage and PostgresInvoiceStorage. Cutover
+ * traffic may move only when that suite (and the Postgres integration test
+ * when `DATABASE_URL` is set) is green — see docs/POSTGRES_CUTOVER.md.
  */
 export interface InvoiceStorage {
   /** Reported by /api/health so a running server tells you which backend it uses. */
@@ -103,14 +128,14 @@ export interface InvoiceStorage {
   /** Explicit maintenance hook; reads also apply this transition lazily. */
   markExpiredInvoices(now?: Date): Promise<number>;
   /** Returns total count of invoices currently stored. */
-  countInvoices?(): Promise<number>;
+  countInvoices(): Promise<number>;
   /**
    * Audit feed for one invoice (issue #515). Callers must authorize before
    * exposing rows — events are seller-workspace data, not public.
    */
-  getPaymentEvents?(invoiceId: string): Promise<PaymentEventRecord[]>;
+  getPaymentEvents(invoiceId: string): Promise<PaymentEventRecord[]>;
   /** Append one lifecycle/audit event row for an invoice. */
-  logPaymentEvent?(
+  logPaymentEvent(
     invoiceId: string,
     eventType: string,
     eventData?: Record<string, unknown> | null

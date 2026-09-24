@@ -10,8 +10,10 @@
 //   INVOICE_STORAGE=postgres → PostgresInvoiceStorage (requires DATABASE_URL)
 //   (unset)                  → postgres when DATABASE_URL is set, memory otherwise
 //
-// Both adapters satisfy the same InvoiceStorage interface so all handlers,
-// routes, and middleware stay identical regardless of which backend is active.
+// Both adapters satisfy the same required InvoiceStorage contract (issue #555)
+// so all handlers, routes, and middleware stay identical regardless of which
+// backend is active. Do not branch handlers on storage.mode — prove behaviour
+// in the shared suite instead.
 //
 // Usage:
 //   npm run dev:dual           # development (tsx watch)

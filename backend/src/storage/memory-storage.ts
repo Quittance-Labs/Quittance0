@@ -22,6 +22,9 @@ export interface MemoryPaymentEvent {
 
 type Invoice = StoredInvoice;
 
+// In-process map behind MemoryInvoiceStorage. Behaviour here (idempotency
+// index, public-id refusal, payment_tx_hash claim, cancel, payment events)
+// must stay aligned with PostgresInvoiceStorage (issue #555).
 class MemoryStorage {
   private invoices: Map<string, Invoice> = new Map();
   private invoicesByMemo: Map<string, string> = new Map(); // memo -> invoice id

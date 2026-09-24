@@ -1,3 +1,7 @@
+// Postgres server. Routes write through PostgresInvoiceStorage, the durable
+// half of the shared InvoiceStorage contract (issue #555). Pending invoices
+// survive process restart; the shared parity suite must stay green before
+// traffic is cut over from memory.
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';

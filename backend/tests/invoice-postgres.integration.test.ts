@@ -301,7 +301,87 @@ describe('Invoice persistence on Postgres', { skip: DATABASE_URL ? false : 'DATA
     }
   });
 
-  it('applies seed.sql idempotently without violating invoice memo uniqueness', async () => {
+  it('replays an idempotent create to the same id and memo (parity with memory suite)', async () => {
+    const pool = new Pool({ connectionString: DATABASE_URL });
+    const storage = new PostgresInvoiceStorage(new InvoiceService(pool));
+
+    try {
+      const input = createInput(SELLER_A, {
+        amount: 33,
+        description: 'Idempotent parity',
+        idempotencyKey: 'pg-parity-key-555',
+      });
+      const first = await storage.createInvoice(input);
+      const second = await storage.createInvoice(input);
+      assert.equal(second.id, first.id);
+      assert.equal(second.memo, first.memo);
+      assert.equal(second.amount, first.amount);
+    } finally {
+      await pool.end();
+    }
+  });
+
+  it('appends payment events and returns them for the owning invoice (parity with memory suite)', async () => {
+    const pool = new Pool({ connectionString: DATABASE_URL });
+    const storage = new PostgresInvoiceStorage(new InvoiceService(pool));
+
+    try {
+      const created = await storage.createInvoice(createInput(SELLER_A, { amount: 12 }));
+      await storage.logPaymentEvent(created.id, 'PAYMENT_REJECTED', {
+        code: 'MEMO_MISMATCH',
+        txHash: 'c'.repeat(64),
+        source: 'manual-verify',
+      });
+      const events = await storage.getPaymentEvents(created.id);
+      assert.ok(events.length >= 1);
+      const rejected = events.find((event) => event.eventType === 'PAYMENT_REJECTED');
+      assert.ok(rejected, 'rejected verify must land on the payment_events feed');
+      assert.equal((rejected?.eventData as any)?.code, 'MEMO_MISMATCH');
+    } finally {
+      await pool.end();
+    }
+  });
+
+  it('treats another seller\'s invoice as absent on seller-scoped list and stats (parity with memory suite)', async () => {
+    const pool = new Pool({ connectionString: DATABASE_URL });
+    const storage = new PostgresInvoiceStorage(new InvoiceService(pool));
+
+    try {
+      const created = await storage.createInvoice(createInput(SELLER_A, { amount: 77 }));
+      const listedB = await storage.getInvoicesBySeller(SELLER_B);
+      assert.equal(listedB.some((inv) => inv.id === created.id), false);
+
+      const [statsB] = await storage.getInvoiceStats(SELLER_B);
+      assert.equal(Number(statsB.total_invoices), 0);
+
+      // Public id read still resolves — seller scoping is on list/stats/cancel, not get-by-id.
+      const byId = await storage.getInvoiceById(created.id);
+      assert.equal(byId?.id, created.id);
+    } finally {
+      await pool.end();
+    }
+  });
+
+  it('cancels once then refuses a second cancel (parity with memory suite)', async () => {
+    const pool = new Pool({ connectionString: DATABASE_URL });
+    const storage = new PostgresInvoiceStorage(new InvoiceService(pool));
+
+    try {
+      const created = await storage.createInvoice(createInput(SELLER_A, { amount: 18 }));
+      const cancelled = await storage.cancelInvoice(created.id, SELLER_A);
+      assert.equal(cancelled.status, 'CANCELLED');
+      assert.ok(cancelled.cancelledAt);
+
+      await assert.rejects(
+        () => storage.cancelInvoice(created.id, SELLER_A),
+        /not found|already processed|CANCELLED/i
+      );
+    } finally {
+      await pool.end();
+    }
+  });
+
+    it('applies seed.sql idempotently without violating invoice memo uniqueness', async () => {
     const seedSql = fs.readFileSync(SEED_PATH, 'utf-8');
     await adminPool.query(seedSql);
     await adminPool.query(seedSql);

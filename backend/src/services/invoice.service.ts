@@ -16,14 +16,16 @@ import { canonicalAmount } from '../utils/safe-amount-compare';
 
 // PostgreSQL invoice service. Kept behaviourally identical to
 // InvoiceMemoryService so callers that go through the shared InvoiceStorage
-// interface cannot tell which backend is running. Invariants mirrored on both
-// sides: (1) normal markAsPaid succeeds when status is PENDING AND expires_at
-// is strictly after now(), while an exact cancelled-invoice payment may settle
-// with cancellation context, (2) cancelInvoice only succeeds when status is
-// PENDING, (3) every read path calls markExpiredInvoices first so expired rows
-// transition before being reported, (4) list + stats are scoped to the caller's
-// seller_public_key, (5) credit assets always carry their asset_issuer because
-// createInvoiceSchema already rejected anything less.
+// interface cannot tell which backend is running (issue #555). Invariants
+// mirrored on both sides: (1) createInvoice replays seller-scoped idempotency
+// keys and refuses public-id / memo collisions, (2) markAsPaid claims
+// payment_tx_hash so one chain transaction settles one invoice, and succeeds
+// when status is PENDING AND expires_at is strictly after now() (cancelled
+// invoices may settle with cancellation context), (3) cancelInvoice only
+// succeeds when status is PENDING, (4) every read path calls
+// markExpiredInvoices first, (5) list + stats + payment events are scoped to
+// the caller's seller_public_key, (6) credit assets always carry their
+// asset_issuer because createInvoiceSchema already rejected anything less.
 /** Minimal database surface used by this service (pg Pool or a test double). */
 export interface Queryable {
   query(text: string, params?: any[]): Promise<{ rows: any[]; rowCount?: number | null }>;

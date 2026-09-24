@@ -1,8 +1,11 @@
 // MVP in-memory backend. Mirrors server.ts exactly in HTTP surface, route
 // order, response envelopes and StoredInvoice shape — the only substantive
-// difference is the storage adapter passed to createInvoiceRouter. Both
+// difference is the MemoryInvoiceStorage adapter passed to createInvoiceRouter
+// (same required InvoiceStorage contract as Postgres, issue #555). Both
 // servers export startServer(port?) with the same signature so the same
 // integration harness (see invoice-payment-loop.test.ts) can drive either.
+// A process restart clears every pending invoice; that loss is accepted only
+// for local/demo MVP use — see docs/POSTGRES_CUTOVER.md.
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';

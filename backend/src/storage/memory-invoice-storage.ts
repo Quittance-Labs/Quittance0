@@ -1,7 +1,13 @@
 import { InvoiceMemoryService } from '../services/invoice-memory.service';
 import { CreateInvoiceInput } from '../utils/validation';
 import type { InvoiceStats } from './invoice-stats';
-import type { InvoiceStorage, MarkAsPaidOptions, PayerInfo, StoredInvoice } from './invoice-storage';
+import type {
+  InvoiceStorage,
+  MarkAsPaidOptions,
+  PaymentEventRecord,
+  PayerInfo,
+  StoredInvoice,
+} from './invoice-storage';
 
 export class MemoryInvoiceStorage implements InvoiceStorage {
   readonly mode = 'in-memory';
@@ -52,15 +58,22 @@ export class MemoryInvoiceStorage implements InvoiceStorage {
     return this.service.countInvoices();
   }
 
-  async getPaymentEvents(invoiceId: string) {
-    return this.service.getPaymentEvents(invoiceId);
+  async getPaymentEvents(invoiceId: string): Promise<PaymentEventRecord[]> {
+    const events = await this.service.getPaymentEvents(invoiceId);
+    return events.map((event) => ({
+      id: event.id,
+      invoiceId: event.invoiceId,
+      eventType: event.eventType,
+      eventData: (event.eventData ?? null) as Record<string, unknown> | null,
+      createdAt: event.createdAt,
+    }));
   }
 
   async logPaymentEvent(
     invoiceId: string,
     eventType: string,
     eventData?: Record<string, unknown> | null
-  ) {
+  ): Promise<void> {
     return this.service.logPaymentEvent(invoiceId, eventType, eventData);
   }
 }

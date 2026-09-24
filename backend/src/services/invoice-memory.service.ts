@@ -18,6 +18,11 @@ import type { MarkAsPaidOptions, PayerInfo } from '../storage/invoice-storage';
  */
 const DRAW_ATTEMPTS = 3;
 
+/**
+ * In-memory invoice engine behind MemoryInvoiceStorage.
+ * Implements the same create / cancel / markAsPaid / payment-event semantics
+ * as InvoiceService so the shared InvoiceStorage contract (issue #555) holds.
+ */
 export class InvoiceMemoryService {
   constructor(
     private readonly storage: MemoryStorage = memoryStorage,

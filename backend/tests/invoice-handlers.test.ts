@@ -287,7 +287,10 @@ function invoiceBody(overrides: Record<string, unknown> = {}) {
 const USDC_ISSUER = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 
 /**
- * Both storage backends must expose identical request/response behaviour.
+ * Both storage backends must expose identical request/response behaviour
+ * (issue #555). The same assertions run against MemoryInvoiceStorage and
+ * PostgresInvoiceStorage so idempotent create, id collision paths, cancel,
+ * verify, payment-event append, and seller scoping cannot drift.
  */
 function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage) {
   describe(`invoice handlers on ${name} storage`, () => {
@@ -461,7 +464,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
 
       it('redacts identity-shaped keys from event payloads', async () => {
         const invoice = await createInvoice();
-        await storage.logPaymentEvent!(invoice.id, 'PAYMENT_REJECTED', {
+        await storage.logPaymentEvent(invoice.id, 'PAYMENT_REJECTED', {
           code: 'MEMO_MISMATCH',
           txHash: TX_HASH,
           memo: 'INV-RAW-MEMO-LEAK',
@@ -682,7 +685,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       it('keeps the verify response on the public shape', async () => {
         const created = await createInvoice({ customerEmail: 'pay@client.example' });
         transaction = {
-          transaction: { memo: created.memo },
+          transaction: { memo: created.memo, created_at: new Date().toISOString() },
           operations: [
             {
               type: 'payment',
@@ -1236,6 +1239,29 @@ describe('storage adapters', () => {
   it('report the backend they are wired to', () => {
     assert.equal(new MemoryInvoiceStorage().mode, 'in-memory');
     assert.equal(new PostgresInvoiceStorage().mode, 'postgres');
+  });
+
+  it('expose every required InvoiceStorage method on both adapters (issue #555)', () => {
+    const required = [
+      'createInvoice',
+      'getInvoiceById',
+      'getInvoicesBySeller',
+      'cancelInvoice',
+      'markAsPaid',
+      'getInvoiceStats',
+      'markExpiredInvoices',
+      'countInvoices',
+      'getPaymentEvents',
+      'logPaymentEvent',
+    ] as const;
+
+    const memory = new MemoryInvoiceStorage();
+    const postgres = new PostgresInvoiceStorage(new InvoiceService(createFakePostgres()));
+
+    for (const method of required) {
+      assert.equal(typeof memory[method], 'function', `memory missing ${method}`);
+      assert.equal(typeof postgres[method], 'function', `postgres missing ${method}`);
+    }
   });
 });
 
