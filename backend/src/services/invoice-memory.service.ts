@@ -174,6 +174,7 @@ export class InvoiceMemoryService {
   }
 
   async cancelInvoice(invoiceId: string, sellerPublicKey?: string): Promise<StoredInvoice> {
+    // MemoryStorage throws InvoiceTerminalConflictError when cancel loses the race.
     const updated = this.storage.cancelInvoice(invoiceId, sellerPublicKey);
     if (!updated) {
       throw new Error('Invoice not found or already processed');

@@ -8,6 +8,7 @@ import { calculateInvoiceExpiry } from '../domain/invoice-expiry';
 import { PaymentClaimError } from '../domain/payment-attribution';
 import {
   SettlementTimeUnavailableError,
+  cancelConflictForStatus,
   type LatePaymentWarningCode,
   type SettlementContext,
 } from '../domain/invoice-settlement';
@@ -352,17 +353,23 @@ export class InvoiceService {
     const result = await this.db.query(query, [invoiceId, sellerPublicKey || null]);
 
     if (result.rows.length === 0) {
-      if (sellerPublicKey) {
-        const existing = await this.db.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
-        if (
-          existing.rows.length > 0 &&
-          existing.rows[0].status === 'PENDING' &&
-          existing.rows[0].seller_public_key !== sellerPublicKey
-        ) {
-          throw new Error('Unauthorized: only the seller can cancel this invoice');
-        }
+      const existing = await this.db.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
+      if (existing.rows.length === 0) {
+        throw new Error('Invoice not found or already processed');
       }
-      throw new Error('Invoice not found or already processed');
+      const row = existing.rows[0];
+      if (
+        sellerPublicKey &&
+        row.status === 'PENDING' &&
+        row.seller_public_key !== sellerPublicKey
+      ) {
+        throw new Error('Unauthorized: only the seller can cancel this invoice');
+      }
+      // Another terminal outcome already won — do not clear payment_tx_hash.
+      throw cancelConflictForStatus(
+        row.status,
+        row.payment_tx_hash ?? undefined
+      );
     }
 
     return this.mapRowToInvoice(result.rows[0]);

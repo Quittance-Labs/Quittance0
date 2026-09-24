@@ -20,6 +20,23 @@ Two independent mechanisms set `EXPIRED`: the 60-second sweep, and the lazy
 check on read. That matters below, because it means an invoice can be
 `PENDING` in storage while its deadline has already passed.
 
+## One terminal commit (issue #558)
+
+Cancel, manual verify, and the Horizon monitor all decide the invoice's
+terminal status through the same storage transition. The loser receives a
+stable conflict code (`INVOICE_ALREADY_PAID`, `INVOICE_ALREADY_CANCELLED`,
+`TX_HASH_ALREADY_USED`, …) and must not clear `payment_tx_hash`.
+
+PAID never becomes CANCELLED. Concurrent cancel-versus-payment on a PENDING
+invoice commits exactly one of CANCELLED or PAID. An exact on-chain payment
+discovered after cancellation may still settle CANCELLED → PAID with
+`AFTER_CANCEL` context (see [LATE_PAYMENT_POLICY.md](./LATE_PAYMENT_POLICY.md));
+that is attribution of funds that already landed, not a race overwrite.
+
+Cancel proof stays Freighter-only: the JSON body carries `sellerPublicKey`,
+`signature`, and the signed message `cancel:<invoiceId>`. Query and header
+seller keys are rejected.
+
 ## State machine
 
 ```mermaid

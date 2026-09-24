@@ -2,7 +2,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { calculateInvoiceStats } from './invoice-stats';
 import type { InvoiceStats } from './invoice-stats';
 import { isPendingInvoiceExpired } from '../domain/invoice-expiry';
-import { settlementFieldsForInvoice } from '../domain/invoice-settlement';
+import {
+  assertCancelTransitionAllowed,
+  assertPaidTransitionAllowed,
+  settlementFieldsForInvoice,
+  InvoiceTerminalConflictError,
+} from '../domain/invoice-settlement';
 import {
   InvoiceIdCollisionError,
   MemoCollisionError,
@@ -123,14 +128,17 @@ class MemoryStorage {
     return updated;
   }
 
-  // Cancel invoice
+  // Cancel invoice — PENDING → CANCELLED only; loser gets a typed terminal conflict.
   cancelInvoice(id: string, sellerPublicKey?: string): Invoice | undefined {
     this.markExpiredInvoices();
     const invoice = this.invoices.get(id);
-    if (!invoice || invoice.status !== 'PENDING') return undefined;
+    if (!invoice) return undefined;
     if (sellerPublicKey && invoice.sellerPublicKey !== sellerPublicKey) {
       throw new Error('Unauthorized: only the seller can cancel this invoice');
     }
+    // Throws InvoiceTerminalConflictError when PAID/CANCELLED/EXPIRED already won.
+    // Does not clear paymentTxHash on a lost race.
+    assertCancelTransitionAllowed(invoice.status, invoice.paymentTxHash);
     return this.updateInvoice(id, { status: 'CANCELLED', cancelledAt: new Date() });
   }
 
@@ -145,14 +153,10 @@ class MemoryStorage {
     this.markExpiredInvoices();
     const now = new Date();
     const invoice = this.invoices.get(id);
-    if (!invoice || invoice.status === 'PAID') return undefined;
-    if (
-      invoice.status !== 'PENDING' &&
-      invoice.status !== 'CANCELLED' &&
-      invoice.status !== 'EXPIRED'
-    ) {
-      return undefined;
-    }
+    if (!invoice) return undefined;
+    // Idempotent: already PAID is "already processed" for the caller, not a rewrite.
+    if (invoice.status === 'PAID') return undefined;
+    assertPaidTransitionAllowed(invoice.status);
 
     // Settlement time must come from the ledger close time; never invent one.
     const settlement = settlementFieldsForInvoice(invoice, options.settledAt);
