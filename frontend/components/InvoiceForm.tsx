@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { apiErrorMessage, invoiceApi, isApiUnavailableError } from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2, AlertTriangle } from 'lucide-react';
-import { STELLAR_ASSETS, getAssetByCode } from '@/lib/assets';
+import { stellarAssetsForNetwork, getAssetByCode } from '@/lib/assets';
 import { useWalletStore } from '@/lib/store';
 import { NETWORK_DISPLAY_NAME } from '@/lib/stellar';
 import { showFreighterWrongNetworkPrompt } from './FreighterInstallPrompt';
@@ -53,6 +53,9 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   // keep the key so the retry can find its original.
   const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
   const { isWrongNetwork } = useWalletStore();
+  // One registry, network-pinned issuers — XLM and USDC share this path (issue #447).
+  const assetCatalog = stellarAssetsForNetwork(EXPECTED_WALLET_NETWORK);
+
 
   // Focus follows the refusal: a keyboard user who pressed Create should land
   // on the input that needs them, not stay on the button that refused.
@@ -119,7 +122,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
       amount:
         parsedValue === null && amount.trim() !== '' ? amount.trim() : parsedValue ?? undefined,
       assetCode,
-      assetIssuer: getAssetByCode(assetCode)?.issuer,
+      assetIssuer: getAssetByCode(assetCode, EXPECTED_WALLET_NETWORK)?.issuer,
       description: description || undefined,
       customerName: customerName.trim() || undefined,
       customerEmail: customerEmail.trim() || undefined,
@@ -140,7 +143,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
     setLoading(true);
     setApiError(null);
     try {
-      const selectedAsset = getAssetByCode(assetCode);
+      const selectedAsset = getAssetByCode(assetCode, EXPECTED_WALLET_NETWORK);
       // Creates a pending invoice owned by the connected seller wallet
       const result = await invoiceApi.create({
         amount: parsedAmount,
@@ -255,7 +258,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
               onChange={(e) => setAssetCode(e.target.value)}
               className="input w-full sm:w-40 text-sm font-semibold pl-12 pr-3 appearance-none cursor-pointer"
             >
-              {STELLAR_ASSETS.map((asset) => (
+              {assetCatalog.map((asset) => (
                 <option key={asset.code} value={asset.code}>
                   {asset.code}
                 </option>

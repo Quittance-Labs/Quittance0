@@ -11,7 +11,7 @@
  *   - Hard failure over silent coercion. A bad input is an error, not a
  *     correctable approximation.
  *   - No trust in caller-supplied asset/issuer for USDC. The authoritative
- *     issuer comes from STELLAR_ASSETS, not from the UI field.
+ *     issuer comes from the shared asset registry, not from the UI field.
  *   - Network mismatch blocks construction before any Freighter prompt.
  *   - Memo is a security/business rule: missing or wrong memo = rejected.
  *   - Fee and amount are always kept separate; the payment operation receives
@@ -28,7 +28,7 @@ import {
   isValidPublicKey,
   loadAccount,
 } from '@/lib/stellar';
-import { STELLAR_ASSETS } from '@/lib/assets';
+import { getAssetByCode } from '@/lib/assets';
 import { networkMatches } from '@/lib/freighter-availability';
 import type { FreighterSession } from '@/lib/stellar';
 
@@ -163,11 +163,11 @@ export function shortenAddress(address: string, chars = 4): string {
  * Resolve the authoritative Stellar asset for a given code/issuer pair.
  *
  * For XLM we return the native asset directly. For credit assets the issuer
- * in STELLAR_ASSETS takes precedence over anything supplied by the caller:
- * this prevents an accidental or malicious UI field from redirecting funds to
- * a different issuer. The caller-supplied issuer is only used as a fallback
- * when STELLAR_ASSETS does not recognise the code, and it is validated before
- * use.
+ * in the shared registry (for the app network) takes precedence over anything
+ * supplied by the caller: this prevents an accidental or malicious UI field
+ * from redirecting funds to a different issuer. The caller-supplied issuer is
+ * only used as a fallback when the registry does not recognise the code, and
+ * it is validated before use.
  */
 function resolveAsset(
   assetCode: string,
@@ -183,8 +183,8 @@ function resolveAsset(
     return { asset: StellarSdk.Asset.native() };
   }
 
-  // Look up the authoritative issuer from our asset registry first.
-  const known = STELLAR_ASSETS.find((a) => a.code.toUpperCase() === code);
+  // Look up the authoritative issuer from the shared registry first.
+  const known = getAssetByCode(code, EXPECTED_WALLET_NETWORK);
   const issuer = known?.issuer ?? callerIssuer;
 
   if (!issuer) {

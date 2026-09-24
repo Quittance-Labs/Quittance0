@@ -1,5 +1,16 @@
-// Stellar Asset Configuration
-import { decimalsForAsset } from './asset-decimals';
+// Stellar asset configuration — backed by the shared registry (issue #447).
+import {
+  KNOWN_ASSETS,
+  getAssetDefinition,
+  isNativeAsset as canonicalIsNativeAsset,
+  getAssetIssuer as canonicalGetAssetIssuer,
+  formatAssetName as canonicalFormatAssetName,
+  formatAssetLabel,
+  decimalsForAsset,
+  USDC_ISSUERS,
+} from '../../shared/assets.ts';
+
+export { formatAssetLabel, USDC_ISSUERS };
 
 export interface StellarAsset {
   code: string;
@@ -10,56 +21,54 @@ export interface StellarAsset {
   decimals: number;
 }
 
-// Testnet Asset Issuers
-export const STELLAR_ASSETS: StellarAsset[] = [
-  {
-    code: 'XLM',
-    name: 'Stellar Lumens',
-    logo: 'https://assets.coingecko.com/coins/images/100/small/stellar-xlm-logo.png',
-    color: '#14b6e7',
-    decimals: 7,
-  },
-  {
-    code: 'USDC',
-    name: 'USD Coin',
-    issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5', // Testnet USDC
-    logo: 'https://assets.coingecko.com/coins/images/6319/small/usdc.png',
-    color: '#2775ca',
-    decimals: 7,
-  },
-  {
-    code: 'USDT',
-    name: 'Tether USD',
-    issuer: 'GCQTGZQQ5G4PTM2GL7CDIFKUBIPEC52BROAQIAPW53XBRJVN6ZJVTG6V', // Testnet USDT
-    logo: 'https://assets.coingecko.com/coins/images/325/small/tether.png',
-    color: '#26a17b',
-    decimals: 7,
-  },
-];
+function toStellarAsset(
+  asset: (typeof KNOWN_ASSETS)[number],
+  network: string = 'TESTNET',
+): StellarAsset {
+  return {
+    code: asset.code,
+    name: asset.name,
+    issuer: asset.isNative
+      ? undefined
+      : canonicalGetAssetIssuer(asset.code, network),
+    logo: asset.logo,
+    color: asset.color,
+    decimals: asset.decimals,
+  };
+}
 
-// Get asset by code
-export const getAssetByCode = (code: string): StellarAsset | undefined => {
-  return STELLAR_ASSETS.find(asset => asset.code.toUpperCase() === code.toUpperCase());
+/** Assets a seller can choose, pinned to the given network's issuers. */
+export function stellarAssetsForNetwork(network: string = 'TESTNET'): StellarAsset[] {
+  return KNOWN_ASSETS.map((asset) => toStellarAsset(asset, network));
+}
+
+/** Default catalog (testnet issuers) — preserved for existing call sites. */
+export const STELLAR_ASSETS: StellarAsset[] = stellarAssetsForNetwork('TESTNET');
+
+export const getAssetByCode = (
+  code: string,
+  network: string = 'TESTNET',
+): StellarAsset | undefined => {
+  const asset = getAssetDefinition(code);
+  if (!asset) return undefined;
+  return toStellarAsset(asset, network);
 };
 
-// Check if asset is native XLM
 export const isNativeAsset = (code: string): boolean => {
-  return code.toUpperCase() === 'XLM';
+  return canonicalIsNativeAsset(code);
 };
 
-// Get asset issuer address if applicable
-export const getAssetIssuer = (code: string): string | undefined => {
-  const asset = getAssetByCode(code);
-  return asset?.issuer;
+export const getAssetIssuer = (
+  code: string,
+  network: string = 'TESTNET',
+): string | undefined => {
+  return canonicalGetAssetIssuer(code, network);
 };
 
-// Format asset display name
 export const formatAssetName = (code: string): string => {
-  const asset = getAssetByCode(code);
-  return asset ? asset.code : code;
+  return canonicalFormatAssetName(code);
 };
 
-// Asset Logo Component Props
 export interface AssetLogoProps {
   code: string;
   size?: number;
@@ -67,3 +76,4 @@ export interface AssetLogoProps {
   className?: string;
 }
 
+export { decimalsForAsset };

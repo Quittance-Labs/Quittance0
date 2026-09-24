@@ -1,5 +1,6 @@
 import { buildHorizonTxUrl } from './explorer-tx-link.ts';
 import { canonicalAmount } from './stroop-amount.js';
+import { normalizeAssetCode, NATIVE_ASSET_CODE } from '../../shared/assets.ts';
 
 export const QUITTANCE_PROOF_VERSION = 'quittance.v1';
 
@@ -223,10 +224,22 @@ export function buildQuittanceProof(
       txHash: txHash ?? '',
       memo: typeof input.memo === 'string' && input.memo !== '' ? input.memo : null,
       amount,
-      asset: {
-        code: typeof input.assetCode === 'string' && input.assetCode !== '' ? input.assetCode : 'XLM',
-        issuer: typeof input.assetIssuer === 'string' && input.assetIssuer !== '' ? input.assetIssuer : null,
-      },
+      asset: (() => {
+        const code =
+          typeof input.assetCode === 'string' && input.assetCode.trim() !== ''
+            ? normalizeAssetCode(input.assetCode)
+            : NATIVE_ASSET_CODE;
+        const issuer =
+          typeof input.assetIssuer === 'string' && input.assetIssuer.trim() !== ''
+            ? input.assetIssuer.trim()
+            : null;
+        // Known catalog assets keep a consistent code/issuer pair on the proof:
+        // native never carries an issuer; known USDC keeps the invoice issuer.
+        if (code === NATIVE_ASSET_CODE) {
+          return { code: NATIVE_ASSET_CODE, issuer: null };
+        }
+        return { code, issuer };
+      })(),
       explorerUrl: txHash ? buildHorizonTxUrl(txHash, network) : null,
     },
     verification: settled

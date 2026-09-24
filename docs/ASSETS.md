@@ -15,9 +15,27 @@ including `XLM`. A code on its own identifies nothing.
 | Circle USDC (testnet) | `USDC` | `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` | code **and** issuer |
 | A look-alike | `USDC` | anyone else | a different asset entirely |
 
+
+## Shared subsystem (`shared/assets.ts`)
+
+Issue #447 consolidates create, QR/URI, verify, dashboard, and proof onto one
+module:
+
+| Concern | Helper |
+| --- | --- |
+| Registry (code, issuer, decimals, display) | `KNOWN_ASSETS`, `getAssetIssuer`, `decimalsForAsset` |
+| String-safe amounts | `parseStroops`, `formatStroops`, `compareAmounts`, `isUnderpaid` / `isOverpaid` |
+| Verify identity | `resolveInvoiceAsset`, `resolvePaymentAsset`, `assetsMatch` |
+| SEP-0007 / QR | `encodeSep0007PayUri` (also used by `formatQrPaymentPayload`) |
+| UI labels | `formatAssetLabel`, `normalizeAssetCode` |
+
+Backend `asset-helpers.ts` / `safe-amount-compare.ts` and frontend `assets.ts` /
+`asset-decimals.ts` / `asset-code-display.ts` / `stroop-amount.js` re-export from
+this module so call sites keep stable import paths.
+
 ## How Quittance represents assets
 
-`backend/src/utils/asset-helpers.ts` resolves both sides of a settlement into
+`shared/assets.ts` (re-exported by `backend/src/utils/asset-helpers.ts`) resolves both sides of a settlement into
 one of three identities:
 
 | Identity | Meaning |
@@ -42,7 +60,7 @@ being silently treated as a wildcard.
 
 ## Adding an asset to the frontend
 
-`frontend/lib/assets.ts` holds the assets a seller can choose. Every entry
+`frontend/lib/assets.ts` re-exports the shared registry (`stellarAssetsForNetwork`) so a seller can choose assets with network-correct issuers. Every entry
 except `XLM` must carry the issuer for the network it belongs to. Testnet and
 mainnet issuers differ; do not copy one into the other.
 

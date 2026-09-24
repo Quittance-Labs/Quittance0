@@ -6,7 +6,13 @@
 // any QR generation library.
 
 import { Keypair } from '@stellar/stellar-sdk';
-import { formatStroops, parseStroops, STROOP_DECIMALS } from './safe-amount-compare';
+import {
+  formatStroops,
+  parseStroops,
+  STROOP_DECIMALS,
+  NATIVE_ASSET_CODE,
+  encodeSep0007PayUri,
+} from '../../../shared/assets';
 import { fitsStellarTextMemo } from '../../../shared/memo';
 
 /**
@@ -114,17 +120,32 @@ export const formatQrPaymentPayload = (
     throw new Error('amount must be a positive number');
   }
 
-  const assetCode = asset?.code?.trim().toUpperCase() || 'XLM';
+  const assetCode = asset?.code?.trim().toUpperCase() || NATIVE_ASSET_CODE;
   const assetIssuer = asset?.issuer?.trim();
-  const isNative = assetCode === 'XLM';
+  const isNative = assetCode === NATIVE_ASSET_CODE;
 
   if (!isNative && !assetIssuer) {
     throw new Error(`asset issuer is required for ${assetCode}`);
   }
 
-  if (!isNative && assetIssuer && !isValidPublicKey(assetIssuer)) {
-    throw new Error('asset issuer must be a valid Stellar public key');
+  if (memo !== undefined && memo !== null && memo !== '') {
+    // The URI advertises memo_type=MEMO_TEXT, so refuse to encode a memo the
+    // chain could not carry as text rather than emitting a QR that submits
+    // and fails.
+    if (!fitsStellarTextMemo(memo)) {
+      throw new Error('memo exceeds the 28-byte Stellar text memo limit');
+    }
   }
+
+  // Shared SEP-0007 encoder owns amount canon + asset_code/issuer pairing so
+  // QR payloads stay aligned with verify fixtures (issue #447).
+  const uri = encodeSep0007PayUri({
+    destination,
+    amount: formatStroops(stroops),
+    assetCode,
+    assetIssuer: isNative ? undefined : assetIssuer,
+    memo: memo !== undefined && memo !== null && memo !== '' ? memo : undefined,
+  });
 
   const params: Record<string, string> = {
     destination,
@@ -137,21 +158,9 @@ export const formatQrPaymentPayload = (
   }
 
   if (memo !== undefined && memo !== null && memo !== '') {
-    // The URI advertises memo_type=MEMO_TEXT, so refuse to encode a memo the
-    // chain could not carry as text rather than emitting a QR that submits
-    // and fails.
-    if (!fitsStellarTextMemo(memo)) {
-      throw new Error('memo exceeds the 28-byte Stellar text memo limit');
-    }
     params.memo = memo;
     params.memo_type = 'MEMO_TEXT';
   }
-
-  const query = Object.entries(params)
-    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
-    .join('&');
-
-  const uri = `web+stellar:pay?${query}`;
 
   return { uri, params };
 };
