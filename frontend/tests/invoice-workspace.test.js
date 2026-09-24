@@ -128,6 +128,47 @@ test('buildInvoiceTimelineEvents: falls back to paidAt when settledAt is absent 
   assert.equal(paidEvent.timestamp, invoice.paidAt);
 });
 
+
+test('buildInvoiceTimelineEvents: AFTER_EXPIRY settlement shows created → expired → paid with warning code', () => {
+  const invoice = {
+    status: 'PAID',
+    createdAt: '2026-08-29T09:00:00.000Z',
+    expiresAt: '2026-08-30T09:00:00.000Z',
+    settledAt: '2026-08-30T10:00:00.000Z',
+    settlementContext: 'AFTER_EXPIRY',
+    priorStatus: 'EXPIRED',
+    latePaymentWarningCode: 'PAYMENT_RECEIVED_AFTER_EXPIRY',
+    paymentTxHash: 'latepay1',
+  };
+  const events = buildInvoiceTimelineEvents(invoice, NOW);
+  assert.deepEqual(
+    events.map((e) => e.type),
+    ['created', 'expired', 'paid']
+  );
+  assert.equal(events[1].timestamp, invoice.expiresAt);
+  assert.equal(events[2].lateWarningCode, 'PAYMENT_RECEIVED_AFTER_EXPIRY');
+});
+
+test('buildInvoiceTimelineEvents: ON_TIME settlement after an EXPIRED sweep does not invent an expired milestone', () => {
+  // Close time was before expiry; status was swept to EXPIRED before detect.
+  // Timeline must not show expired→paid ordered wrongly around an on-time pay.
+  const invoice = {
+    status: 'PAID',
+    createdAt: '2026-08-29T09:00:00.000Z',
+    expiresAt: '2026-08-30T09:00:00.000Z',
+    settledAt: '2026-08-30T08:59:00.000Z',
+    settlementContext: 'ON_TIME',
+    priorStatus: 'EXPIRED',
+    paymentTxHash: 'ontime1',
+  };
+  const events = buildInvoiceTimelineEvents(invoice, NOW);
+  assert.deepEqual(
+    events.map((e) => e.type),
+    ['created', 'paid']
+  );
+  assert.equal(events[1].lateWarningCode, null);
+});
+
 test('buildInvoiceTimelineEvents: an empty/missing invoice yields no events rather than throwing', () => {
   assert.deepEqual(buildInvoiceTimelineEvents(null), []);
   assert.deepEqual(buildInvoiceTimelineEvents(undefined), []);
