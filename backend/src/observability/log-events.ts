@@ -90,11 +90,37 @@ export function buildLogRecord(
   return record;
 }
 
+let logSink: ((record: StructuredLogRecord) => void) | null = null;
+
+/**
+ * Test-only hook so suites can capture emitted records without parsing stdout.
+ * Production code must leave this unset.
+ */
+export function setLogSink(sink: ((record: StructuredLogRecord) => void) | null): void {
+  logSink = sink;
+}
+
 export function emitLog(record: StructuredLogRecord): void {
+  if (logSink) logSink(record);
   const output = JSON.stringify(record);
   if (record.level === 'error') console.error(output);
   else if (record.level === 'warn') console.warn(output);
   else console.log(output);
+}
+
+/**
+ * Build and emit a structured record in one step.
+ */
+export function emitEvent(
+  level: LogLevel,
+  event: LogEventName,
+  context: LogContext,
+  fields: Record<string, unknown> = {},
+  now: Date = new Date()
+): StructuredLogRecord {
+  const record = buildLogRecord(level, event, context, fields, now);
+  emitLog(record);
+  return record;
 }
 
 export function requiredLogFields(event: LogEventName): readonly string[] {

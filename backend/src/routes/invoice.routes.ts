@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction, RequestHandler } from 'express';
+import { requestCorrelationMiddleware } from '../utils/request-correlation-id';
 import { createInvoiceHandlers, InvoiceHandlerOptions } from './invoice.handlers';
 import {
   createInvoiceRateLimiters,
@@ -35,6 +36,7 @@ export interface InvoiceRouterOptions extends InvoiceHandlerOptions {
 export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
   const handlers = createInvoiceHandlers(options);
   const router = Router();
+  router.use(requestCorrelationMiddleware);
 
   const enableRateLimiting =
     options.enableRateLimiting ??

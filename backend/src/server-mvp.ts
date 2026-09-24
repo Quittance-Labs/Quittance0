@@ -5,6 +5,7 @@
 // integration harness (see invoice-payment-loop.test.ts) can drive either.
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import { requestCorrelationMiddleware } from './utils/request-correlation-id';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createInvoiceRouter } from './routes/invoice.routes';
@@ -34,6 +35,7 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors(corsOptions()));
+app.use(requestCorrelationMiddleware);
 
 app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));

@@ -16,6 +16,12 @@ import {
   PaymentMonitorCheckpointStore,
   PostgresPaymentMonitorCheckpointStore,
 } from './payment-monitor-checkpoint';
+import { createRequestId } from '../utils/request-correlation-id';
+import {
+  emitEvent,
+  logReference,
+  type LogContext,
+} from '../observability/log-events';
 
 export interface PaymentPageSource {
   getPaymentsPage(account: string, cursor: string, limit: number): Promise<PaymentPageRecord[]>;
@@ -111,6 +117,16 @@ function defaultCheckpointStore(database?: Queryable): PaymentMonitorCheckpointS
  * replay harmless. A failure never skips later records from the same page.
  */
 export class PaymentMonitorService {
+
+  private buildLogContext(): LogContext {
+    return {
+      requestId: createRequestId(),
+      service: 'api',
+      environment: process.env.NODE_ENV || 'development',
+    };
+  }
+
+
   private account?: string;
   private network: string;
   private pollIntervalMs: number;
@@ -379,6 +395,13 @@ export class PaymentMonitorService {
       };
       this.schedule(this.pollIntervalMs);
     } catch (error: any) {
+      emitEvent('error', 'horizon.request.failed', this.buildLogContext(), {
+        operation: 'getPaymentsPage',
+        errorCode: 'HORIZON_UNAVAILABLE',
+        network: this.network,
+        attempt: 1,
+        durationMs: 0,
+      });
       const failures = this.snapshot.consecutiveFailures + 1;
       const retryMs = monitorBackoffMs(failures - 1);
       this.snapshot = {
@@ -504,6 +527,14 @@ export class PaymentMonitorService {
     if (!payable.ok && invoice.status !== 'CANCELLED' && invoice.status !== 'EXPIRED') return;
 
     const isNative = payment.assetCode === 'XLM' && !payment.assetIssuer;
+    const startedAt = Date.now();
+    const context = this.buildLogContext();
+    emitEvent('info', 'payment.verify.started', context, {
+      invoiceRef: logReference(invoice.id),
+      txRef: logReference(payment.txHash),
+      network: this.network,
+    });
+
     const verification = verifyHorizonPayment({
       txHash: payment.txHash,
       network: this.network,
@@ -528,6 +559,13 @@ export class PaymentMonitorService {
     });
 
     if (!verification.ok) {
+      emitEvent('warn', 'payment.verify.rejected', context, {
+        invoiceRef: logReference(invoice.id),
+        txRef: logReference(payment.txHash),
+        errorCode: verification.code,
+        network: this.network,
+        durationMs: Date.now() - startedAt,
+      });
       await this.invoices.logPaymentEvent(
         invoice.id,
         verification.code === 'AMOUNT_TOO_LOW' || verification.code === 'AMOUNT_MISMATCH'
@@ -560,9 +598,25 @@ export class PaymentMonitorService {
       );
       this.processedTxHashes.add(payment.txHash);
       this.unregisterWatch(invoice.id);
+      emitEvent('info', 'invoice.paid', context, {
+        invoiceRef: logReference(invoice.id),
+        sellerRef: logReference(invoice.sellerPublicKey),
+        txRef: logReference(payment.txHash),
+        assetCode: invoice.assetCode || 'XLM',
+        network: this.network,
+        storage: this.database ? 'postgres' : 'memory',
+        durationMs: Date.now() - startedAt,
+      });
     } catch (error) {
       if (error instanceof PaymentClaimError) {
         // A transaction that already settled another invoice must not settle this one
+        emitEvent('warn', 'payment.verify.rejected', context, {
+          invoiceRef: logReference(invoice.id),
+          txRef: logReference(payment.txHash),
+          errorCode: error.code || 'TX_HASH_ALREADY_USED',
+          network: this.network,
+          durationMs: Date.now() - startedAt,
+        });
         await this.invoices.logPaymentEvent(
           invoice.id,
           'PAYMENT_REJECTED',

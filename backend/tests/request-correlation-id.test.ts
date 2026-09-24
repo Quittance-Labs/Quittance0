@@ -85,3 +85,32 @@ describe('createRequestId — direct edge cases', () => {
 });
 
 export default createRequestId;
+
+import type { Request, Response, NextFunction } from 'express';
+import {
+  parseRequestIdHeader,
+  requestCorrelationMiddleware,
+  getRequestId,
+} from '../src/utils/request-correlation-id.ts';
+
+describe('requestCorrelationMiddleware', () => {
+  it('echoes validated inbound ids and rejects unsafe ones', async () => {
+    const req = { headers: { 'x-request-id': 'req-0123456789abcdef' } } as unknown as Request;
+    const headers: Record<string, string> = {};
+    const res = {
+      setHeader(name: string, value: string) {
+        headers[name.toLowerCase()] = value;
+      },
+    } as unknown as Response;
+    let seen: string | undefined;
+    await new Promise<void>((resolve) => {
+      requestCorrelationMiddleware(req, res, (() => {
+        seen = getRequestId();
+        resolve();
+      }) as NextFunction);
+    });
+    assert.equal(seen, 'req-0123456789abcdef');
+    assert.equal(headers['x-request-id'], 'req-0123456789abcdef');
+    assert.equal(parseRequestIdHeader('bad'), undefined);
+  });
+});
