@@ -469,6 +469,68 @@ export const sendPayment = async (
 };
 
 /**
+ * Explicit change_trust for a credit asset (issue #506).
+ *
+ * Separate from the payment builder: the payer must click an Add Trustline
+ * control before Freighter opens for this transaction. Never fold this
+ * operation into sendPayment / buildInvoicePayment.
+ */
+export const addTrustline = async (
+  assetCode: string,
+  assetIssuer: string
+): Promise<string> => {
+  const session = await assertFreighterReady();
+  const userPublicKey = session.publicKey as string;
+
+  const normalizedCode = (assetCode || '').trim().toUpperCase();
+  if (!normalizedCode || normalizedCode === 'XLM') {
+    throw new Error('Native XLM does not need a trustline');
+  }
+  if (!assetIssuer) {
+    throw new Error('Asset issuer is required to add a trustline');
+  }
+
+  let account;
+  try {
+    account = await loadAccount(userPublicKey);
+  } catch (error: any) {
+    if (error?.message?.includes('Not Found') || error?.response?.status === 404) {
+      throw new Error(
+        trustlinePreflightMessage('ACCOUNT_NOT_FOUND', normalizedCode, STELLAR_NETWORK.toLowerCase())
+      );
+    }
+    throw new Error(
+      trustlinePreflightMessage('HORIZON_UNAVAILABLE', normalizedCode, STELLAR_NETWORK.toLowerCase())
+    );
+  }
+
+  if (hasAssetTrustline(account, normalizedCode, assetIssuer)) {
+    return '';
+  }
+
+  const asset = new StellarSdk.Asset(normalizedCode, assetIssuer);
+  const transaction = new StellarSdk.TransactionBuilder(account, {
+    fee: StellarSdk.BASE_FEE,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(StellarSdk.Operation.changeTrust({ asset }))
+    .setTimeout(180)
+    .build();
+
+  const signedResult = await signTransaction(transaction.toXDR(), {
+    networkPassphrase: NETWORK_PASSPHRASE,
+  });
+  const signedTxXdr = readResultString(signedResult, ['signedTxXdr']);
+  if (!signedTxXdr) {
+    throw new Error('Freighter did not return a signed change_trust transaction');
+  }
+
+  const signedTx = StellarSdk.TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE);
+  const result = await server.submitTransaction(signedTx as any);
+  return result.hash;
+};
+
+/**
  * Get transaction details
  */
 export const getTransaction = async (txHash: string): Promise<any> => {
@@ -579,6 +641,7 @@ const stellarService = {
   loadAccount,
   getAccountBalance,
   preflightAssetTrustline,
+  addTrustline,
   sendPayment,
   getTransaction,
   checkTransactionStatus,

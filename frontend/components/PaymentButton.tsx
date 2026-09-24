@@ -9,6 +9,7 @@ import {
   isWrongNetwork,
   readFreighterSession,
   preflightAssetTrustline,
+  addTrustline,
   NETWORK_DISPLAY_NAME,
 } from '@/lib/stellar';
 import {
@@ -166,6 +167,7 @@ export default function PaymentButton({
 }: PaymentButtonProps) {
   const [loading, setLoading] = useState(false);
   const [preflight, setPreflight] = useState<TrustlinePreflight | null>(null);
+  const [trustlineBusy, setTrustlineBusy] = useState(false);
   const [pendingBuilt, setPendingBuilt] = useState<BuiltPayment | null>(null);
   const [signing, setSigning] = useState(false);
 
@@ -328,6 +330,36 @@ export default function PaymentButton({
     }
   };
 
+
+  // Explicit change_trust only — never folded into the payment (issue #506).
+  const handleAddTrustline = async () => {
+    if (!assetCode || !assetIssuer || assetCode.toUpperCase() === 'XLM') return;
+    setTrustlineBusy(true);
+    try {
+      toast.loading(`Add ${assetCode} trustline in Freighter…`, { id: PAY_TOAST_ID });
+      await addTrustline(assetCode, assetIssuer);
+      const check = publicKey
+        ? await preflightAssetTrustline(publicKey, assetCode, assetIssuer)
+        : { ok: true, code: 'OK' as const };
+      if (check.ok) {
+        setPreflight(null);
+        toast.success(`${assetCode} trustline added`, {
+          id: PAY_TOAST_ID,
+          description: 'You can pay this invoice now.',
+        });
+      } else {
+        setPreflight(check);
+        toast.error(check.message || 'Trustline still missing', { id: PAY_TOAST_ID });
+      }
+    } catch (err: any) {
+      const message = err?.message || `Could not add ${assetCode} trustline`;
+      toast.error(message, { id: PAY_TOAST_ID });
+      onError?.(message);
+    } finally {
+      setTrustlineBusy(false);
+    }
+  };
+
   // ── Sign + submit phase (called after user confirms review) ───────────────
 
   const handleConfirmReview = async () => {
@@ -480,16 +512,44 @@ export default function PaymentButton({
       <button
         type="button"
         onClick={handlePayment}
-        disabled={isProcessing || !destination || !amount || invoiceStatus !== 'PENDING'}
-        aria-disabled={!gate.ready}
-        aria-busy={isProcessing}
-        data-payment-state={isProcessing ? 'processing' : gate.status}
+        disabled={
+          isProcessing ||
+          trustlineBusy ||
+          !destination ||
+          !amount ||
+          invoiceStatus !== 'PENDING' ||
+          Boolean(
+            preflight &&
+              !preflight.ok &&
+              (preflight.code === 'MISSING_TRUSTLINE' || preflight.code === 'ACCOUNT_NOT_FOUND')
+          )
+        }
+        aria-disabled={
+          !gate.ready ||
+          Boolean(
+            preflight &&
+              !preflight.ok &&
+              (preflight.code === 'MISSING_TRUSTLINE' || preflight.code === 'ACCOUNT_NOT_FOUND')
+          )
+        }
+        aria-busy={isProcessing || trustlineBusy}
+        data-payment-state={
+          isProcessing || trustlineBusy
+            ? 'processing'
+            : preflight && !preflight.ok
+              ? 'trustline-blocked'
+              : gate.status
+        }
         aria-label={
           isProcessing
             ? `Processing payment of ${amount} ${assetCode}`
-            : gate.ready
-              ? `Pay ${amount} ${assetCode} with Freighter`
-              : gate.message
+            : preflight && !preflight.ok && preflight.code === 'MISSING_TRUSTLINE'
+              ? `${assetCode} trustline required before paying`
+              : preflight && !preflight.ok && preflight.code === 'ACCOUNT_NOT_FOUND'
+                ? 'Wallet account not funded'
+                : gate.ready
+                  ? `Pay ${amount} ${assetCode} with Freighter`
+                  : gate.message
         }
         className="btn btn-primary w-full flex items-center justify-center gap-2 text-lg py-4"
       >
@@ -509,6 +569,7 @@ export default function PaymentButton({
         <div
           role="alert"
           data-preflight={preflight.code}
+          data-trustline-action={preflight.code === 'MISSING_TRUSTLINE' ? 'change_trust_required' : undefined}
           className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
         >
           <span className="font-semibold block mb-0.5">
@@ -519,15 +580,30 @@ export default function PaymentButton({
                 : 'Balance check failed'}
           </span>
           <span>{preflight.message}</span>
-          {preflight.retryable && (
-            <button
-              type="button"
-              onClick={handlePayment}
-              className="mt-2 block text-xs font-medium underline"
-            >
-              Retry the balance check
-            </button>
-          )}
+          <div className="mt-2 flex flex-wrap gap-3">
+            {preflight.code === 'MISSING_TRUSTLINE' && assetIssuer && (
+              <button
+                type="button"
+                onClick={handleAddTrustline}
+                disabled={trustlineBusy || isProcessing}
+                data-action="add-trustline"
+                className="text-xs font-medium underline disabled:opacity-50"
+              >
+                {trustlineBusy ? 'Waiting for Freighter…' : `Add ${assetCode} trustline`}
+              </button>
+            )}
+            {(preflight.retryable || preflight.code === 'MISSING_TRUSTLINE') && (
+              <button
+                type="button"
+                onClick={handlePayment}
+                disabled={trustlineBusy || isProcessing}
+                data-action="recheck-trustline"
+                className="text-xs font-medium underline disabled:opacity-50"
+              >
+                Recheck balances
+              </button>
+            )}
+          </div>
         </div>
       )}
     </>
