@@ -27,6 +27,7 @@ import { invoiceApi } from '@/lib/api';
 import { showFreighterInstallPrompt, showFreighterWrongNetworkPrompt } from '@/components/FreighterInstallPrompt';
 import { describeVerifyError, normalizePayerDetails } from '@/lib/payment-page-state';
 import { resolveVerificationError } from '@/lib/verification';
+import { HORIZON_OUTAGE_MESSAGE, isHorizonOutageError } from '@/lib/horizon-outage';
 import { useWalletStore } from '@/lib/store';
 import { walletSessionGate } from '@/lib/wallet-session';
 
@@ -396,16 +397,20 @@ export default function PaymentButton({
         } catch (error) {
           // The payment is on the ledger even though verification did not
           // complete, so this is a warning and the flow still reports success.
-          // Transport failures and verification rejects are presented
-          // differently so the payer can tell which problem occurred.
+          // Horizon outages use the single VERIFY_UNAVAILABLE string — never a
+          // second invented title that could read as a memo/amount reject (#556).
           console.error('Verification failed:', error);
-          toast.warning('Payment sent but verification failed', {
-            id: PAY_TOAST_ID,
-            description: resolveVerificationError(
-              error,
-              'Refresh the page or wait for status to update'
-            ),
-          });
+          if (isHorizonOutageError(error)) {
+            toast.warning(HORIZON_OUTAGE_MESSAGE, { id: PAY_TOAST_ID });
+          } else {
+            toast.warning('Payment sent but verification failed', {
+              id: PAY_TOAST_ID,
+              description: resolveVerificationError(
+                error,
+                'Refresh the page or wait for status to update'
+              ),
+            });
+          }
         }
       } else {
         toast.success('Payment successful', {

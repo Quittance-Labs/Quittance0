@@ -15,7 +15,9 @@
 //                            transiently (outage / 429 also surface here); a
 //                            long negative TTL would turn a retry into a
 //                            permanent block.
-//   - transient-state codes -> never cached at all.
+//   - transient-state codes -> never cached at all. A get() that finds a
+//                            previously written VERIFY_UNAVAILABLE (or other
+//                            NEVER_CACHE code) drops it instead of replaying.
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { Redis } from 'ioredis';
 import { createRedisClient } from '../config/redis';
@@ -90,7 +92,17 @@ export class VerificationCache {
           const entry: CachedVerification = JSON.parse(cached);
           // Redis expires keys natively; expiresAt still guards entries that
           // were written with a longer TTL under an older policy.
-          return entry.expiresAt > this.now() ? entry : null;
+          if (entry.expiresAt <= this.now()) {
+            await client.del(key);
+            return null;
+          }
+          // Issue #556: never replay VERIFY_UNAVAILABLE (or other transient
+          // codes) even if an older build wrote them into the cache.
+          if (entry.body?.code && NEVER_CACHE_CODES.has(entry.body.code)) {
+            await client.del(key);
+            return null;
+          }
+          return entry;
         }
       }
     } catch (error) {
@@ -101,6 +113,11 @@ export class VerificationCache {
     const entry = this.memoryCache.get(key);
     if (!entry) return null;
     if (entry.expiresAt <= this.now()) {
+      this.memoryCache.delete(key);
+      return null;
+    }
+    // Drop stale VERIFY_UNAVAILABLE (and siblings) cached before this policy.
+    if (entry.body?.code && NEVER_CACHE_CODES.has(entry.body.code)) {
       this.memoryCache.delete(key);
       return null;
     }

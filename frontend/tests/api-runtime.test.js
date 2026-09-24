@@ -85,3 +85,16 @@ test('an unknown verification code falls back to the server error text', () => {
   assert.equal(apiErrorMessage(error), 'Server said no');
   assert.equal(apiErrorMessage(error, 'Fallback'), 'Server said no');
 });
+
+test('VERIFY_UNAVAILABLE keeps its canonical message on a 503', () => {
+  const normalized = toApiError({
+    response: {
+      status: 503,
+      data: { code: 'VERIFY_UNAVAILABLE', error: 'stale wording' },
+    },
+  });
+  assert.ok(normalized instanceof ApiRequestError);
+  assert.equal(normalized.code, 'VERIFY_UNAVAILABLE');
+  assert.equal(normalized.message, VERIFICATION_MESSAGES.VERIFY_UNAVAILABLE);
+  assert.equal(normalized.retryable, true);
+});

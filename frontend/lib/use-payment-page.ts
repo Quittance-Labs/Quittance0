@@ -170,12 +170,12 @@ export function usePaymentPage(id: string) {
       const latestKey = latest.connected ? latest.publicKey : null;
       if (sessionKey !== null && latestKey !== sessionKey) return;
 
-      // A Horizon or transport failure is not a rejection: keep the session,
-      // say it is retryable, and leave the verify control in place.
+      // A Horizon or transport failure is not a rejection: keep the session
+      // and show one retryable alert (ApiErrorState via loadError). Do not
+      // toast a second copy of the same string (issue #556).
       if (isHorizonOutageError(error)) {
         setLoadError(HORIZON_OUTAGE_MESSAGE);
         dispatch({ type: 'VERIFY_UNAVAILABLE' });
-        toast.error(HORIZON_OUTAGE_MESSAGE);
         return;
       }
 
