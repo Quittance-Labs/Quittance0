@@ -5,9 +5,12 @@
  * keys before rows leave the server so the audit read can never become a PII
  * side channel. Public keys, tx hashes, codes and amounts are kept — they are
  * on-chain data the seller can already see.
+ *
+ * Issue #559: the match list is shared with `IDENTITY_INVOICE_KEY_PATTERN` so
+ * a new identity key cannot leak through events while the pay DTO stay clean.
  */
 
-const REDACTED_KEY = /memo|email|customername|payername|sellername|description/i;
+import { IDENTITY_INVOICE_KEY_PATTERN } from '../../../shared/invoice';
 
 export function redactPaymentEventData(
   data: Record<string, unknown> | null | undefined
@@ -15,7 +18,7 @@ export function redactPaymentEventData(
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
   const clean: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data)) {
-    if (REDACTED_KEY.test(key)) continue;
+    if (IDENTITY_INVOICE_KEY_PATTERN.test(key)) continue;
     clean[key] =
       value && typeof value === 'object' && !Array.isArray(value)
         ? redactPaymentEventData(value as Record<string, unknown>)
