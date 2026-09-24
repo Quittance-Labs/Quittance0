@@ -123,7 +123,7 @@ export default function DashboardPage() {
         setLoaded({
           owner: publicKey,
           invoices: invoicesResult.data,
-          stats: statsResult.data[0] || {},
+          stats: statsResult.data || {},
         });
       } catch (error) {
         if (!active) return;
