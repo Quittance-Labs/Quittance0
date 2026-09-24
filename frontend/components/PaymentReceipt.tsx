@@ -5,6 +5,7 @@ import { canonicalAmount } from '@/lib/stroop-amount';
 import { describeAmount } from '@/lib/a11y';
 import { Check, Download, ExternalLink, FileText, Mail } from 'lucide-react';
 import AssetLogo from './AssetLogo';
+import { formatAssetLabel } from '@/lib/asset-code-display';
 import { openInvoicePDF, emailPaymentProof } from '@/lib/export';
 import { canSendProofEmail, getProofMailtoRecipient } from '@/lib/mailto-delivery';
 import { toast } from 'sonner';
@@ -66,7 +67,7 @@ ${warning ? `Warning: ${warning.title}. ${warning.body}` : ''}
 PAYMENT DETAILS
 ───────────────────────────────────────
 
-Amount Paid: ${canonicalAmount(invoice.amount) ?? formatAmount(invoice.amount, 7)} ${invoice.assetCode}
+Amount Paid: ${canonicalAmount(invoice.amount) ?? formatAmount(invoice.amount, 7)} ${formatAssetLabel({ assetCode: invoice.assetCode, assetIssuer: invoice.assetIssuer })}
 ${invoice.description ? `Description: ${invoice.description}` : ''}
 ${invoice.customerName ? `Customer: ${invoice.customerName}` : ''}
 ${invoice.customerEmail ? `Email: ${invoice.customerEmail}` : ''}
@@ -103,10 +104,13 @@ Stellar Blockchain Payment System
     URL.revokeObjectURL(url);
   };
 
-  const activeAssetCode = invoice.assetCode || 'XLM';
+  const activeAssetLabel = formatAssetLabel({
+    assetCode: invoice.assetCode,
+    assetIssuer: invoice.assetIssuer,
+  });
   const amountLabel = describeAmount(
     canonicalAmount(invoice.amount) ?? formatAmount(invoice.amount, 7),
-    activeAssetCode
+    activeAssetLabel
   );
   /*
    * The explorer link has to follow the network the payment was made on. A
@@ -171,7 +175,7 @@ Stellar Blockchain Payment System
                 {canonicalAmount(invoice.amount) ?? formatAmount(invoice.amount, 7)}
               </p>
               <p className="text-lg font-semibold text-green-700 mt-1">
-                {invoice.assetCode}
+                {activeAssetLabel}
               </p>
             </div>
           </div>

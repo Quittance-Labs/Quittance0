@@ -1,14 +1,9 @@
-// Asset decimal lookup helper.
-// Returns the number of decimal places the UI should use when displaying or
-// validating a given Stellar asset code.
+import {
+  decimalsForAsset as canonicalDecimalsForAsset,
+  STROOP_DECIMALS,
+} from '../../shared/assets.ts';
 
-export const DEFAULT_DECIMALS = 7;
-
-const ASSET_DECIMALS: Record<string, number> = Object.freeze({
-  XLM: 7,
-  USDC: 7,
-  USDT: 7,
-});
+export const DEFAULT_DECIMALS = STROOP_DECIMALS;
 
 /**
  * Look up the decimal precision for an asset code.
@@ -17,10 +12,7 @@ const ASSET_DECIMALS: Record<string, number> = Object.freeze({
  * @returns Number of decimal places.
  */
 export function decimalsForAsset(assetCode: unknown): number {
-  if (typeof assetCode !== 'string') {
-    return DEFAULT_DECIMALS;
-  }
-
-  const code = assetCode.trim().toUpperCase();
-  return ASSET_DECIMALS[code] ?? DEFAULT_DECIMALS;
+  return canonicalDecimalsForAsset(assetCode);
 }
+
+export default { DEFAULT_DECIMALS, decimalsForAsset };
