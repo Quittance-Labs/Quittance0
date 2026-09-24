@@ -15,12 +15,18 @@ import {
   VERIFICATION_CHECKS,
   VERIFICATION_CODES,
   VERIFICATION_MESSAGES,
+  VERIFICATION_STAGES,
+  STAGE_REJECTION_CODES,
   messageForCode,
+  stageForCode,
 } from '../../shared/verification';
 import {
   VERIFICATION_CODES as BACKEND_CODES,
   VERIFICATION_MESSAGES as BACKEND_MESSAGES,
+  VERIFICATION_STAGES as BACKEND_STAGES,
+  STAGE_REJECTION_CODES as BACKEND_STAGE_CODES,
   messageForCode as backendMessageForCode,
+  stageForCode as backendStageForCode,
 } from '../src/services/payment-verification';
 
 describe('shared verification contract', () => {
@@ -47,7 +53,32 @@ describe('shared verification contract', () => {
     ]);
   });
 
-  it('has a message for every declared code, with no extras', () => {
+  it('keeps the seven verification pipeline stages in their fixed order', () => {
+    assert.deepEqual([...VERIFICATION_STAGES], [
+      'fetch_transaction',
+      'match_destination',
+      'match_asset',
+      'match_amount',
+      'match_memo',
+      'attribute',
+      'persist_paid',
+    ]);
+    assert.deepEqual([...BACKEND_STAGES], [...VERIFICATION_STAGES]);
+  });
+
+  it('maps each pipeline stage to shared rejection codes', () => {
+    assert.deepEqual(BACKEND_STAGE_CODES, STAGE_REJECTION_CODES);
+    for (const stage of VERIFICATION_STAGES) {
+      const codes = STAGE_REJECTION_CODES[stage];
+      assert.ok(codes.length > 0);
+      for (const code of codes) {
+        assert.equal(stageForCode(code), stage);
+        assert.equal(backendStageForCode(code), stage);
+      }
+    }
+  });
+
+    it('has a message for every declared code, with no extras', () => {
     assert.deepEqual(
       Object.keys(VERIFICATION_MESSAGES).sort(),
       [...VERIFICATION_CODES].sort()

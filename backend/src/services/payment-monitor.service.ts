@@ -3,11 +3,12 @@ import stellarService, { PaymentPageRecord, PaymentRecord } from './stellar.serv
 import invoiceService, { InvoiceService, Queryable } from './invoice.service';
 import { SELLER_PUBLIC_KEY, STELLAR_NETWORK } from '../config/stellar';
 import { pool } from '../config/database';
-import { checkInvoiceIsPayable, verifyHorizonPayment } from './payment-verification';
-import { canonicalAmount } from '../utils/safe-amount-compare';
-import { PaymentClaimError } from '../domain/payment-attribution';
 import {
-  parseSettlementTime,
+  checkInvoiceIsPayable,
+  executePaymentVerificationPipeline,
+} from './payment-verification';
+import { canonicalAmount } from '../utils/safe-amount-compare';
+import {
   SettlementTimeUnavailableError,
 } from '../domain/invoice-settlement';
 import { monitorBackoffMs } from '../utils/monitor-retry-backoff';
@@ -504,10 +505,12 @@ export class PaymentMonitorService {
     if (!payable.ok && invoice.status !== 'CANCELLED' && invoice.status !== 'EXPIRED') return;
 
     const isNative = payment.assetCode === 'XLM' && !payment.assetIssuer;
-    const verification = verifyHorizonPayment({
+    const pipeline = await executePaymentVerificationPipeline({
+      invoice,
       txHash: payment.txHash,
       network: this.network,
-      transaction: { memo: payment.memo, memo_type: payment.memoType },
+      expectedNetwork: this.network,
+      transaction: { memo: payment.memo, memo_type: payment.memoType, created_at: payment.createdAt },
       operations: [{
         type: 'payment',
         from: payment.from,
@@ -517,24 +520,37 @@ export class PaymentMonitorService {
         asset_code: isNative ? undefined : payment.assetCode,
         asset_issuer: payment.assetIssuer,
       }],
-      expected: {
-        memo: invoice.memo,
-        amount: invoice.amount,
-        destination: invoice.sellerPublicKey,
-        assetCode: invoice.assetCode,
-        assetIssuer: invoice.assetIssuer,
-        network: this.network,
+      storage: {
+        markAsPaid: async (id, txHash, payerPublicKey, payerInfo, options) => {
+          await this.saveTransaction(payment, id);
+          return this.invoices.markAsPaid(
+            id,
+            txHash,
+            payerPublicKey ?? payment.from,
+            payerInfo,
+            options
+          );
+        },
+        getInvoiceById: async (id) => {
+          const byMemo = await this.invoices.getInvoiceByMemo(invoice.memo);
+          return byMemo && byMemo.id === id ? byMemo : null;
+        },
       },
+      requireSettledAt: true,
     });
 
-    if (!verification.ok) {
+    if (!pipeline.ok) {
+      if (pipeline.code === 'TRANSACTION_CLOSE_TIME_UNAVAILABLE') {
+        throw new SettlementTimeUnavailableError();
+      }
       await this.invoices.logPaymentEvent(
         invoice.id,
-        verification.code === 'AMOUNT_TOO_LOW' || verification.code === 'AMOUNT_MISMATCH'
+        pipeline.code === 'AMOUNT_TOO_LOW' || pipeline.code === 'AMOUNT_MISMATCH'
           ? 'PARTIAL_PAYMENT'
           : 'PAYMENT_REJECTED',
         {
-          code: verification.code,
+          code: pipeline.code,
+          stage: pipeline.stage,
           txHash: payment.txHash,
           expectedAmount: canonicalAmount(invoice.amount) ?? String(invoice.amount),
           receivedAmount: payment.amount,
@@ -544,38 +560,8 @@ export class PaymentMonitorService {
       return;
     }
 
-    const settledAt = parseSettlementTime(payment.createdAt) ?? verification.value.settledAt;
-    if (!settledAt) {
-      throw new SettlementTimeUnavailableError();
-    }
-
-    try {
-      await this.saveTransaction(payment, invoice.id);
-      await this.invoices.markAsPaid(
-        invoice.id,
-        payment.txHash,
-        payment.from,
-        undefined,
-        { settledAt, destinationMuxedId: verification.value.toMuxedId }
-      );
-      this.processedTxHashes.add(payment.txHash);
-      this.unregisterWatch(invoice.id);
-    } catch (error) {
-      if (error instanceof PaymentClaimError) {
-        // A transaction that already settled another invoice must not settle this one
-        await this.invoices.logPaymentEvent(
-          invoice.id,
-          'PAYMENT_REJECTED',
-          {
-            code: 'TX_HASH_ALREADY_USED',
-            txHash: payment.txHash,
-            error: error.message,
-          }
-        );
-        return;
-      }
-      throw error;
-    }
+    this.processedTxHashes.add(payment.txHash);
+    this.unregisterWatch(invoice.id);
   }
 
   private async saveTransaction(payment: PaymentRecord, invoiceId: string) {

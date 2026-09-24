@@ -8,6 +8,9 @@ const {
   resolveVerificationError,
   normalizeTransactionHash,
   messageForCode,
+  VERIFICATION_STAGES,
+  STAGE_REJECTION_CODES,
+  stageForCode,
 } = require('../lib/verification');
 
 const TX_HASH = 'a1b2c3d4'.repeat(8); // 64 hex characters
@@ -120,4 +123,25 @@ test('messageForCode maps a known code and returns nothing for an unknown one', 
   assert.equal(messageForCode('ASSET_MISMATCH'), 'Asset mismatch');
   assert.equal(messageForCode('SOMETHING_NEW'), undefined);
   assert.equal(messageForCode(undefined), undefined);
+});
+
+test('exports the 7 verification stages and maps all codes to stages', () => {
+  assert.deepEqual([...VERIFICATION_STAGES], [
+    'fetch_transaction',
+    'match_destination',
+    'match_asset',
+    'match_amount',
+    'match_memo',
+    'attribute',
+    'persist_paid',
+  ]);
+
+  for (const stage of VERIFICATION_STAGES) {
+    const codes = STAGE_REJECTION_CODES[stage];
+    assert.ok(Array.isArray(codes));
+    assert.ok(codes.length > 0);
+    for (const code of codes) {
+      assert.equal(stageForCode(code), stage);
+    }
+  }
 });
