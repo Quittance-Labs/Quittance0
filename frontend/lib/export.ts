@@ -21,6 +21,7 @@ import {
 // printed document cannot name a different network from the link it prints.
 import { buildHorizonTxUrl, resolveExplorerNetwork } from './explorer-tx-link.ts';
 
+import { latePaymentWarningForCode } from '../../shared/settlement';
 import {
   buildQuittanceProof,
   createQuittanceProofPdf,
@@ -90,19 +91,7 @@ interface Invoice {
 }
 
 function latePaymentWarning(invoice: Invoice): { title: string; body: string } | null {
-  if (invoice.latePaymentWarningCode === 'PAYMENT_RECEIVED_AFTER_CANCEL') {
-    return {
-      title: 'Payment received after cancellation',
-      body: 'This transaction proves funds reached the seller. Contact the seller to reconcile the payment.',
-    };
-  }
-  if (invoice.latePaymentWarningCode === 'PAYMENT_RECEIVED_AFTER_EXPIRY') {
-    return {
-      title: 'Payment received after invoice expiry',
-      body: 'This transaction proves funds reached the seller after the original payment window.',
-    };
-  }
-  return null;
+  return latePaymentWarningForCode(invoice.latePaymentWarningCode);
 }
 
 export function generateInvoiceCSV(invoices: Invoice[]): string {

@@ -507,7 +507,13 @@ export class PaymentMonitorService {
     const verification = verifyHorizonPayment({
       txHash: payment.txHash,
       network: this.network,
-      transaction: { memo: payment.memo, memo_type: payment.memoType },
+      transaction: {
+        memo: payment.memo,
+        memo_type: payment.memoType,
+        // Ledger close time must travel with the verification input so the
+        // shared classifier never sees a verify path that omits created_at.
+        created_at: payment.createdAt,
+      },
       operations: [{
         type: 'payment',
         from: payment.from,
