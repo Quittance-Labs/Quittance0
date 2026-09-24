@@ -4,6 +4,11 @@
  * Implements the one-shot snapshot export, strict schema and collision validation,
  * ACID transactional import, and parity verification specified in docs/POSTGRES_CUTOVER.md
  * and docs/POSTGRES-CUTOVER.md.
+ *
+ * Request handlers never call this service: seller-scoped reads and writes go
+ * only through InvoiceStorage (issue #555). Export reaches into MemoryStorage
+ * solely for the one-shot snapshot; after cutover, PostgresInvoiceStorage is
+ * the sole runtime adapter.
  */
 
 import { createHash } from 'node:crypto';

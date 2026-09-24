@@ -3,8 +3,9 @@
 // Issue #452 — Requirement 6 / Requirement 14: Stable public payment IDs.
 //
 // Demonstrates that the public /pay/[id] identifier of an invoice remains
-// stable after the PostgreSQL storage is closed and re-opened.  The test
-// simulates a process restart by:
+// stable after the PostgreSQL storage is closed and re-opened, and that the
+// pending set Postgres returns after restart is exactly what a memory process
+// loses (issue #555). The test simulates a process restart by:
 //   1. Creating a PostgresInvoiceStorage backed by an in-process fake database.
 //   2. Creating an invoice and capturing its id (the /pay/[id] path segment).
 //   3. Discarding the first storage instance (simulating process exit).
@@ -21,6 +22,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { PostgresInvoiceStorage } from '../src/storage/postgres-invoice-storage.ts';
+import { MemoryInvoiceStorage } from '../src/storage/memory-invoice-storage.ts';
+import { InvoiceMemoryService } from '../src/services/invoice-memory.service.ts';
+import { MemoryStorage } from '../src/storage/memory-storage.ts';
 import { InvoiceService } from '../src/services/invoice.service.ts';
 import type { StoredInvoice } from '../src/storage/invoice-storage.ts';
 
@@ -30,6 +34,7 @@ const SELLER_A = 'GB3Q3VRHH3OQDYITTLONDLEHWQGKB27T2BEDSFHIUMOERULVXPDXRKG4';
 const PAYER    = 'GCBIBQVH2B3STCBIYSMTQH6DWKSB2XUGLXH7RGPIN3OXPCFCIQEICVZ6';
 const USDC_ISSUER = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 const TX_HASH = 'd'.repeat(64);
+const SETTLED_AT = new Date();
 
 // ── Shared in-process "database" ──────────────────────────────────────────
 //
@@ -240,7 +245,7 @@ describe('Postgres restart persistence — stable public payment IDs (Issue #452
     await storageBefore.markAsPaid(created.id, TX_HASH, PAYER, {
       payerName: 'Satoshi Nakamoto',
       payerEmail: 'satoshi@example.com',
-    });
+    }, { settledAt: SETTLED_AT });
 
     const publicPaymentId = created.id;
 
@@ -311,5 +316,56 @@ describe('Postgres restart persistence — stable public payment IDs (Issue #452
     assert.ok(ids.includes(inv1.id), 'invoice 1 must appear after restart');
     assert.ok(ids.includes(inv2.id), 'invoice 2 must appear after restart');
     assert.ok(listed.every(r => r.sellerPublicKey === SELLER_A));
+  });
+});
+
+describe('Restart contrast — Postgres keeps the pending set memory loses (issue #555)', () => {
+  it('returns the same pending invoices after a Postgres restart that a fresh memory process cannot', async () => {
+    const db = createSharedFakeDatabase();
+    const pgBefore = new PostgresInvoiceStorage(new InvoiceService(db));
+
+    const pendingA = await pgBefore.createInvoice({
+      sellerPublicKey: SELLER_A,
+      amount: 15,
+      assetCode: 'XLM',
+      expiresInDays: 7,
+    } as any);
+    const pendingB = await pgBefore.createInvoice({
+      sellerPublicKey: SELLER_A,
+      amount: 25,
+      assetCode: 'XLM',
+      expiresInDays: 7,
+    } as any);
+
+    // Postgres "restart": new adapter, same durable rows.
+    const pgAfter = new PostgresInvoiceStorage(new InvoiceService(db));
+    const pgPending = await pgAfter.getInvoicesBySeller(SELLER_A, 'PENDING');
+    const pgIds = pgPending.map((row) => row.id).sort();
+    assert.deepEqual(
+      pgIds,
+      [pendingA.id, pendingB.id].sort(),
+      'Postgres restart must return the same pending set'
+    );
+
+    // Memory "restart": a new empty MemoryStorage stands in for process exit.
+    const memStore = new MemoryStorage();
+    const memBefore = new MemoryInvoiceStorage(new InvoiceMemoryService(memStore));
+    const memPendingA = await memBefore.createInvoice({
+      sellerPublicKey: SELLER_A,
+      amount: 15,
+      assetCode: 'XLM',
+      expiresInDays: 7,
+    } as any);
+    assert.ok(memPendingA.id);
+
+    const memAfter = new MemoryInvoiceStorage(new InvoiceMemoryService(new MemoryStorage()));
+    const memPending = await memAfter.getInvoicesBySeller(SELLER_A, 'PENDING');
+    assert.equal(
+      memPending.length,
+      0,
+      'a memory process restart loses every pending invoice; Postgres does not'
+    );
+    assert.equal(await memAfter.countInvoices(), 0);
+    assert.ok((await pgAfter.countInvoices()) >= 2);
   });
 });

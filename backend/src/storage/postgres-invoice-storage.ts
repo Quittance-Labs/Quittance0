@@ -4,15 +4,16 @@ import type { InvoiceStats } from './invoice-stats';
 import type { InvoiceStorage, MarkAsPaidOptions, PaymentEventRecord, PayerInfo, StoredInvoice } from './invoice-storage';
 
 /**
- * PostgreSQL storage backend. Same contract as the in-memory backend, but the
- * invoices survive restarts. Field parity with the memory backend is enforced
- * through the shared StoredInvoice interface: every column the Postgres path
- * writes (seller_email, asset_issuer, payer_name/email, expires_at, metadata,
- * paid_at, cancellation and settlement context fields) is matched by the same
- * field name in MemoryStorage. Behavioural parity (expires_at > NOW() guard
+ * PostgreSQL storage backend. Same required InvoiceStorage contract as the
+ * in-memory backend (issue #555), but invoices survive restarts. Field parity
+ * is enforced through StoredInvoice: every column the Postgres path writes
+ * (seller_email, asset_issuer, payer_name/email, expires_at, metadata,
+ * paid_at, cancellation and settlement context, idempotency_key) is matched by
+ * the same field name in MemoryStorage. Behavioural parity (idempotent create,
+ * public-id collision refusal, payment_tx_hash claim, expires_at > NOW() guard
  * for normal PENDING settlement, cancel-aware late settlement, seller-scoped
- * list+stats, PENDING-only cancel) is enforced by the SQL WHERE clauses
- * mirroring the branches in memory-storage.ts.
+ * list+stats, PENDING-only cancel, payment-event append) is enforced by SQL
+ * that mirrors memory-storage.ts and proven by the shared handler suite.
  */
 export class PostgresInvoiceStorage implements InvoiceStorage {
   readonly mode = 'postgres';

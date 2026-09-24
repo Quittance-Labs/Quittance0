@@ -17,6 +17,11 @@
 --   metadata (JSONB)
 
 -- Invoices Table
+-- Issue #555: this schema is the durable half of the shared InvoiceStorage
+-- contract. Columns and uniqueness rules (memo, payment_tx_hash, seller+
+-- idempotency_key) must keep memory and Postgres behaviour interchangeable.
+-- Do not add a second setup guide; cutover lives in docs/POSTGRES_CUTOVER.md.
+
 CREATE TABLE IF NOT EXISTS invoices (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   seller_public_key VARCHAR(56) NOT NULL,
