@@ -11,6 +11,7 @@
  */
 
 const { rejectionLabel: _rejectionLabel } = require('./verify-rejection-label.ts');
+const { isEdgeLimitError, edgeLimitMessage } = require('./edge-limit.js');
 
 const { VERIFICATION_MESSAGES } = require('../../shared/verification.ts');
 
@@ -91,9 +92,16 @@ const messageForCode = (code) =>
  * two sides drift; falls back to the server text, then a generic message.
  */
 const resolveVerificationError = (error, fallback = 'Verification failed') => {
-  const data = (error && error.response && error.response.data) || {};
+  // Edge / rate / body limits are not payment outcomes — never let them fall
+  // through as a memo or amount rejection string.
+  if (isEdgeLimitError(error)) {
+    return edgeLimitMessage(error);
+  }
 
-  const canonical = messageForCode(data.code);
+  const data = (error && error.response && error.response.data) || {};
+  // ApiRequestError from the interceptor carries code/message on the error.
+  const code = data.code || (error && error.code);
+  const canonical = messageForCode(code);
   if (canonical) {
     return canonical;
   }

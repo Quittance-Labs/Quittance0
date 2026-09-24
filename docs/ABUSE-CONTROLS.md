@@ -1,20 +1,21 @@
 # Abuse controls for the public pay and verify endpoints
 
-Status: proposal (issue #383). Written against the code as it is today; the
-ranking below is based on what is reachable, not on what is theoretically
-possible.
+Status: implemented for the public edge (issues #383 / #450). The ranking
+below is historical context for *why* the controls exist; the live wiring is
+documented under "Middleware order" and driven by env (see edge-control
+variables in `backend/env.mvp.example` and `backend/env.example.txt`).
 
 ## What the surface looks like today
 
 | Fact | Evidence |
 |---|---|
-| No rate limiting anywhere in the backend | no `rate-limit` / `throttle` dependency or middleware matches anywhere under `backend/src` |
-| Request bodies are parsed with the framework default (100 kB) | `express.json()` with no `limit` option in `backend/src/server-mvp.ts` and `server.ts` |
+| Rate limiting on create / list / cancel / verify | `backend/src/middleware/rate-limit.ts` + `invoice.routes.ts` |
+| Request bodies capped at 16 kB (env-overridable) | `express.json({ limit: MAX_BODY_STRING })` + `bodyLimitErrorHandler` → 413 `PAYLOAD_TOO_LARGE` |
 | The invoice surface is public | `backend/src/routes/invoice.routes.ts` mounts create, list, payment-info, cancel, verify and the dev-only simulate route |
-| Cancellation accepts an optional claimed key | `cancelInvoice(id, sellerPublicKey?)` in `backend/src/storage/memory-storage.ts` skips the ownership check entirely when the key is absent (`if (sellerPublicKey && ...)`) |
+| Cancellation requires seller proof | auth pre-check + signature verification (401 / 403) before the cancel rate limit |
 | The seller key is not a secret | `GET /invoices/:id/payment-info` returns the destination the payer must pay, which is the seller's public key |
-| Verification spends a Horizon round trip per call | `docs/VERIFY.md` step 1 note: the hash is validated *before* the round trip, so a malformed hash is cheap and a well-formed one is not |
-| MVP storage is in-memory | `EVIDENCE.md`: a restart clears invoices |
+| Verification caches outcomes to spare Horizon | `backend/src/middleware/verify-cache.ts` (replay with `cached: true`) |
+| MVP storage is in-memory with a global ceiling | `INVOICE_CEILING` (default 5000) → 503 `INVOICE_STORE_FULL` |
 
 ## Ranked scenarios
 
@@ -32,6 +33,31 @@ does not fix either, which is the single most important point in this document.
 | 6 | **Oversized bodies** | No explicit JSON limit, so the framework default applies and validation happens after parse | Cheap memory pressure per request | Set an explicit small `limit` and reject with 413 |
 | 7 | **Dev-only route exposure** | `POST /invoices/:id/simulate-payment` already refuses to run when `NODE_ENV=production` | A misconfigured deployment could mark invoices PAID without a payment | Keep the guard and assert it in a test that fails if the default flips |
 | 8 | **Faucet abuse** | The evidence flow funds testnet accounts | Not a service risk, but a reviewability one | Document the one-account-per-run assumption in the evidence automation design |
+
+
+## Middleware order (issue #450)
+
+Composed in code (`middleware/edge-config.ts`, `routes/invoice.routes.ts`) so a
+reordering cannot silently turn a 429 into a 413 (or vice versa):
+
+1. **Body size** (app-level) → `413 PAYLOAD_TOO_LARGE`
+2. **POST /invoices**: ceiling → create rate limits → handler  
+   (`503 INVOICE_STORE_FULL`, then `429 RATE_LIMIT_EXCEEDED`)
+3. **GET /invoices**: list rate limit → handler
+4. **POST /invoices/:id/cancel**: auth pre-check → cancel rate limit → handler  
+   (`401` before `429`)
+5. **POST /invoices/:id/verify**: concurrency lock → verify rate limits → replay cache → handler  
+   (`429 VERIFY_IN_PROGRESS`, `429 RATE_LIMIT_EXCEEDED`, cache hit, then handler
+   `429 VERIFY_RATE_LIMIT_EXCEEDED`)
+
+Frontend pay/verify UX maps `429` and `413` through `frontend/lib/edge-limit.js`
+as retryable copy and never as memo/amount rejection.
+
+## Edge-control environment variables
+
+Every variable is listed in `backend/env.mvp.example` and `backend/env.example.txt`
+and resolved by `resolveEdgeControlConfig()` with the safe demo defaults in the
+table below.
 
 ## Proposed limits and HTTP behaviour
 
