@@ -4,6 +4,7 @@ import {
   horizonCall,
   horizonErrorStatus,
   isHorizonUnavailable,
+  classifyHorizonFailure,
   parseRetryAfterMs,
   HorizonUnavailableError,
   HORIZON_MAX_ATTEMPTS,
@@ -196,5 +197,48 @@ describe('horizon error helpers', () => {
     assert.equal(parseRetryAfterMs('garbage'), undefined);
     assert.equal(parseRetryAfterMs(undefined), undefined);
     assert.equal(parseRetryAfterMs('-5'), 0);
+  });
+});
+
+describe('classifyHorizonFailure — named outage classes', () => {
+  it('names HTTP 429 as rate_limited', () => {
+    assert.equal(classifyHorizonFailure(httpError(429)), 'rate_limited');
+  });
+
+  it('names HTTP 503 as server_error', () => {
+    assert.equal(classifyHorizonFailure(httpError(503)), 'server_error');
+  });
+
+  it('names a hung-call HorizonTimeout as timeout', async () => {
+    let caught: unknown;
+    try {
+      await horizonCall(async () => new Promise(() => {}), {
+        sleepFn: noSleep,
+        timeoutMs: 20,
+        maxAttempts: 1,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    assert.ok(caught instanceof HorizonUnavailableError);
+    assert.equal(classifyHorizonFailure(caught), 'connection');
+  });
+
+  it('names ECONNRESET as connection', () => {
+    const err = Object.assign(new TypeError('fetch failed'), { code: 'ECONNRESET' });
+    assert.equal(classifyHorizonFailure(err), 'connection');
+  });
+
+  it('names ETIMEDOUT as timeout', () => {
+    const err = Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' });
+    assert.equal(classifyHorizonFailure(err), 'timeout');
+  });
+
+  it('returns null for a 404 missing transaction', () => {
+    assert.equal(classifyHorizonFailure(httpError(404)), null);
+  });
+
+  it('returns null for an ordinary bug so compare paths stay reachable', () => {
+    assert.equal(classifyHorizonFailure(new RangeError('bug')), null);
   });
 });

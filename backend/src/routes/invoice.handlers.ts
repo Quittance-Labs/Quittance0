@@ -48,7 +48,7 @@ import {
   type CachedVerificationBody,
 } from '../middleware/verify-cache';
 import { verifySellerSignature } from '../utils/signature-verification';
-import { isHorizonUnavailable } from '../utils/horizon-client';
+import { classifyHorizonFailure } from '../utils/horizon-client';
 import { redactPaymentEventData } from '../utils/payment-event-redaction';
 
 /** Kept explicit so clients can tune polling without duplicating backend policy. */
@@ -497,7 +497,8 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           txDetails = await stellar.getTransaction(hashCheck.value);
         } catch (error: any) {
           logError('Verify payment lookup error:', error);
-          if (isHorizonUnavailable(error)) {
+          // Classify timeout/429/connection before memo/amount compare (#556).
+          if (classifyHorizonFailure(error)) {
             // Horizon is overloaded or unreachable. A 503 invites the payer to
             // retry; it is never cached — caching an outage as a rejection
             // would poison the hash against later retries.

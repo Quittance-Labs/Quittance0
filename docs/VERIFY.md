@@ -12,7 +12,14 @@ timeout, retries 429/5xx honoring `Retry-After`, and shares one concurrency
 budget between verify and the monitor. When Horizon stays unreachable the
 caller reports `VERIFY_UNAVAILABLE` (503) rather than
 `TRANSACTION_NOT_FOUND` — an outage must never read as a rejection, and it
-is never written to the verify cache.
+is never written to the verify cache. Timeout, HTTP 429, and connection
+failures are classified by `classifyHorizonFailure` in
+`backend/src/utils/horizon-client.ts` before verify or the monitor compare
+memo, destination, or amount. A previously cached `VERIFY_UNAVAILABLE` is
+dropped on read. The pay page shows one retryable alert using the canonical
+message (aligned with the monitor's `BACKOFF_MAX_MS` / 30s ceiling); the
+per-invoice verify rate limit still returns `VERIFY_RATE_LIMIT_EXCEEDED`
+when the payer — not Horizon — is flooding verify.
 
 ## Order of checks
 
@@ -121,6 +128,10 @@ cd backend && npm test
   double-POST of one verification
 - `tests/payment-attribution.test.ts` — hash-to-invoice claims, memo
   uniqueness, and the one-transaction-one-invoice rule
+- `tests/horizon-client.test.ts` — named Horizon failure classes (429,
+  timeout, connection) and the shared retry budget
+- `tests/verify-cache.test.ts` — VERIFY_UNAVAILABLE is never stored and a
+  previously cached entry is dropped on get
 
 Which invoice a transaction settles, and what a second caller sees, is covered
 separately in [VERIFY-IDEMPOTENCY.md](./VERIFY-IDEMPOTENCY.md).

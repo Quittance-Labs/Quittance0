@@ -72,23 +72,48 @@ const NETWORK_ERROR_CODES = new Set([
   'EAI_AGAIN',
 ]);
 
+/**
+ * Named Horizon failure classes (issue #556). Verify and the monitor call this
+ * before comparing memo, destination, or amount so a timeout or 429 never
+ * becomes MEMO_MISMATCH / AMOUNT_MISMATCH / DESTINATION_MISMATCH.
+ */
+export type HorizonFailureClass =
+  | 'timeout'
+  | 'rate_limited'
+  | 'server_error'
+  | 'connection';
+
+/**
+ * Classify a thrown error into one Horizon outage class, or null when the
+ * failure is not an outage (404, ordinary bugs, semantic verification rejects).
+ */
+export function classifyHorizonFailure(error: unknown): HorizonFailureClass | null {
+  if (error instanceof HorizonTimeout) return 'timeout';
+  if (error instanceof HorizonUnavailableError) {
+    if (error.status === 429) return 'rate_limited';
+    if (error.status !== undefined && error.status >= 500) return 'server_error';
+    return error.status === undefined ? 'connection' : 'server_error';
+  }
+
+  const status = horizonErrorStatus(error);
+  if (status === 429) return 'rate_limited';
+  if (status !== undefined && status >= 500) return 'server_error';
+  if (status !== undefined) return null;
+
+  const err = error as any;
+  if (!(error instanceof Error)) return null;
+  if (err?.name === 'HorizonTimeout' || err?.code === 'ETIMEDOUT' || err?.code === 'ECONNABORTED') {
+    return 'timeout';
+  }
+  if (NETWORK_ERROR_CODES.has(err?.code)) return 'connection';
+  if (err?.request !== undefined && err?.response === undefined) return 'connection';
+  if (error instanceof TypeError) return 'connection';
+  return null;
+}
+
 /** Whether a thrown error came from an overloaded or unreachable Horizon. */
 export function isHorizonUnavailable(error: unknown): boolean {
-  if (error instanceof HorizonUnavailableError) return true;
-  if (error instanceof HorizonTimeout) return true;
-  const status = horizonErrorStatus(error);
-  if (status !== undefined) {
-    return status === 429 || status >= 500;
-  }
-  // No status means the request never got a response. That is only an outage
-  // when the failure is actually transport-shaped — fetch's TypeError, an
-  // axios request with no response, or a known network errno — never an
-  // ordinary bug in the callback.
-  const err = error as any;
-  if (!(error instanceof Error)) return false;
-  if (NETWORK_ERROR_CODES.has(err?.code)) return true;
-  if (err?.request !== undefined && err?.response === undefined) return true;
-  return error instanceof TypeError;
+  return classifyHorizonFailure(error) !== null;
 }
 
 /**

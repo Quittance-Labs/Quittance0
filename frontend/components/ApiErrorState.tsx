@@ -9,10 +9,15 @@ interface ApiErrorStateProps {
 }
 
 export default function ApiErrorState({ message, onRetry, compact = false }: ApiErrorStateProps) {
-  const isNetworkOrOutage = /stellar|horizon|outage|network/i.test(message);
-  const title = isNetworkOrOutage
-    ? 'Stellar Network Service Issue'
-    : 'The Quittance API is unavailable';
+  // Horizon / VERIFY_UNAVAILABLE already carries the full payer-facing sentence.
+  // Do not invent a second title alongside it (issue #556).
+  const isHorizonOutage =
+    /verification is temporarily unavailable|stellar|horizon|outage/i.test(message);
+  const title = isHorizonOutage
+    ? null
+    : /quittance api|unreachable|connection/i.test(message)
+      ? 'The Quittance API is unavailable'
+      : null;
 
   return (
     <div
@@ -22,8 +27,8 @@ export default function ApiErrorState({ message, onRetry, compact = false }: Api
       className={`border border-red-200 bg-red-50 text-red-950 rounded-2xl ${compact ? 'p-4' : 'card py-10 text-center'}`}
     >
       <AlertTriangle className={`${compact ? 'w-5 h-5 inline mr-2' : 'w-12 h-12 mx-auto mb-4'} text-red-600`} aria-hidden="true" />
-      <p className="font-semibold">{title}</p>
-      <p className="text-sm text-red-800 mt-1">{message}</p>
+      {title ? <p className="font-semibold">{title}</p> : null}
+      <p className={`${title ? 'text-sm text-red-800 mt-1' : 'font-semibold'}`}>{message}</p>
       {onRetry && (
         <button
           type="button"

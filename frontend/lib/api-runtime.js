@@ -67,6 +67,24 @@ function toApiError(error) {
 
   const status = error?.response?.status;
   const responseData = error?.response?.data;
+
+  // A stable verification code wins — including VERIFY_UNAVAILABLE on a 503
+  // Horizon outage (issue #556). Prefer the canonical message over a generic
+  // offline string so the pay page shows one retryable alert.
+  const canonical = messageForCode(responseData?.code);
+  if (canonical) {
+    return new ApiRequestError(canonical, {
+      cause: error,
+      code: responseData.code,
+      status,
+      retryable:
+        responseData.code === 'VERIFY_UNAVAILABLE' ||
+        status === 408 ||
+        status === 429 ||
+        Number(status) >= 500,
+    });
+  }
+
   const networkFailure =
     !error?.response ||
     ['ERR_NETWORK', 'ECONNABORTED', 'ETIMEDOUT'].includes(error?.code) ||
@@ -74,11 +92,8 @@ function toApiError(error) {
 
   if (networkFailure) return new ApiUnavailableError(OFFLINE_MESSAGE, error);
 
-  // A stable verification code wins: it maps to the canonical message shared
-  // with the pay page, so every banner reads the same rejection copy.
-  const canonical = messageForCode(responseData?.code);
   return new ApiRequestError(
-    canonical || responseData?.error || error?.message || 'Quittance API request failed.',
+    responseData?.error || error?.message || 'Quittance API request failed.',
     {
       cause: error,
       code: responseData?.code,
