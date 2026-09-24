@@ -15,6 +15,12 @@ export type InvoiceStatus = 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED';
 /** ISO-8601 timestamp, as produced by JSON serialisation of a Date. */
 export type IsoTimestamp = string;
 
+export type SettlementContext = 'ON_TIME' | 'AFTER_EXPIRY' | 'AFTER_CANCEL';
+
+export type LatePaymentWarningCode =
+  | 'PAYMENT_RECEIVED_AFTER_EXPIRY'
+  | 'PAYMENT_RECEIVED_AFTER_CANCEL';
+
 export interface InvoiceDto {
   id: string;
   sellerPublicKey: string;
@@ -35,8 +41,15 @@ export interface InvoiceDto {
   payerEmail?: string;
   createdAt: IsoTimestamp;
   paidAt?: IsoTimestamp;
+  cancelledAt?: IsoTimestamp;
+  settledAt?: IsoTimestamp;
+  settlementContext?: SettlementContext;
+  priorStatus?: InvoiceStatus;
+  latePaymentWarningCode?: LatePaymentWarningCode;
   expiresAt: IsoTimestamp;
   metadata?: unknown;
+  /** Allow benign extra wire fields without a second parallel invoice type. */
+  [key: string]: unknown;
 }
 
 /**
@@ -59,8 +72,8 @@ export interface PublicInvoiceDto {
   memo: string;
   status: InvoiceStatus;
   paymentTxHash?: string;
-  latePaymentWarningCode?: string;
-  settlementContext?: string;
+  latePaymentWarningCode?: LatePaymentWarningCode;
+  settlementContext?: SettlementContext;
   priorStatus?: InvoiceStatus;
   createdAt: IsoTimestamp;
   paidAt?: IsoTimestamp;
@@ -98,8 +111,8 @@ export function toPublicInvoiceDto(invoice: {
   memo: string;
   status: InvoiceStatus;
   paymentTxHash?: string;
-  latePaymentWarningCode?: string;
-  settlementContext?: string;
+  latePaymentWarningCode?: LatePaymentWarningCode;
+  settlementContext?: SettlementContext;
   priorStatus?: InvoiceStatus;
   createdAt: Date | IsoTimestamp;
   paidAt?: Date | IsoTimestamp;

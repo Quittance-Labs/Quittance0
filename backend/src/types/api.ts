@@ -1,32 +1,19 @@
 import { Response } from 'express';
 import type { VerificationCode } from '../services/payment-verification';
+import type {
+  ApiFailure as SharedApiFailure,
+  ApiPagination as SharedApiPagination,
+  ApiSuccess as SharedApiSuccess,
+  ValidationFailureBody as SharedValidationFailureBody,
+  VerificationFailureBody as SharedVerificationFailureBody,
+} from '../../../shared/invoice-contract';
 
-// Shared response envelope used by both the MVP and the Postgres server.
-// Both servers send the same success/failure shape so clients stay
-// storage-agnostic: a frontend pointed at server-mvp.ts behaves exactly the
-// same against server.ts (only persistence duration changes).
-// sendSuccess / sendFailure wrap this envelope; they are shared helpers, so
-// HTTP status codes and envelope keys are also pinned across backends.
-export interface ApiPagination {
-  limit: number;
-  offset: number;
-  total: number;
-}
-
-export interface ApiSuccess<T> {
-  success: true;
-  data: T;
-  message?: string;
-  code?: string;
-  warning?: string;
-  pagination?: ApiPagination;
-}
-
-export interface ApiFailure {
-  success: false;
-  error: string;
-  code?: VerificationCode;
-}
+// Envelope types live in shared/invoice-contract.ts so Express handlers and the
+// Next.js client agree on success/failure shapes (issue #446). HTTP helpers
+// below stay backend-only because they need Express Response.
+export type ApiPagination = SharedApiPagination;
+export type ApiSuccess<T> = SharedApiSuccess<T>;
+export type ApiFailure = SharedApiFailure;
 
 export interface CancelInvoiceInput {
   sellerPublicKey?: string;
@@ -80,12 +67,7 @@ export function sendFailure(res: Response, status: number, error: string): void 
  * fieldErrors is the same information keyed by payload field, so a form can
  * mark the inputs instead of showing one toast that names nothing.
  */
-export interface ValidationFailureBody {
-  success: false;
-  code: 'VALIDATION_ERROR';
-  error: string;
-  fieldErrors: Record<string, string>;
-}
+export type ValidationFailureBody = SharedValidationFailureBody;
 
 export function sendValidationFailure(
   res: Response,
@@ -115,11 +97,7 @@ export function sendVerificationFailure(
  * `success` is the literal `false` rather than `boolean` so this discriminates
  * from a success envelope at the type level instead of only at runtime.
  */
-export interface VerificationFailureBody {
-  success: false;
-  code: VerificationCode;
-  error: string;
-}
+export type VerificationFailureBody = SharedVerificationFailureBody;
 
 /** Build a verification failure envelope with a stable code and its message. */
 export function verificationFailureBody(

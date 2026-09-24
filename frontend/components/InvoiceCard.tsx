@@ -15,29 +15,9 @@ import { describeAmount, statusBadgeLabel, statusText } from '@/lib/a11y';
 import { invoiceApi } from '@/lib/api';
 import { signInvoiceCancelMessage } from '@/lib/stellar';
 
-interface Invoice {
-  id: string;
-  amount: number;
-  assetCode: string;
-  description?: string;
-  customerName?: string;
-  customerEmail?: string;
-  status: string;
-  createdAt: string;
-  expiresAt: string;
-  memo: string;
-  sellerPublicKey?: string;
-  sellerName?: string;
-  sellerEmail?: string;
-  payerPublicKey?: string;
-  payerName?: string;
-  payerEmail?: string;
-  paymentTxHash?: string;
-  paidAt?: string;
-}
-
+import type { InvoiceDto } from '../../shared/invoice';
 interface InvoiceCardProps {
-  invoice: Invoice;
+  invoice: InvoiceDto;
   userWallet?: string | null;
   onCancel?: (id: string) => void;
 }
