@@ -91,6 +91,7 @@ test('covers every rejection code with a message', () => {
     'PAYER_INFO_TOO_LONG',
     'VERIFY_RATE_LIMIT_EXCEEDED',
     'INVOICE_ALREADY_PAID',
+    'INVOICE_ALREADY_CANCELLED',
     'INVOICE_EXPIRED',
     'INVOICE_NOT_PENDING',
     'TRANSACTION_NOT_FOUND',

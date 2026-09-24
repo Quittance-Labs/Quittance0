@@ -35,6 +35,7 @@ import {
 import { PaymentClaimError } from '../domain/payment-attribution';
 import {
   SettlementTimeUnavailableError,
+  InvoiceTerminalConflictError,
   warningForLatePayment,
 } from '../domain/invoice-settlement';
 import { cutoverDrainMode, simulationAllowed } from '../config/runtime';
@@ -345,16 +346,23 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
     async cancelInvoice(req: Request, res: Response): Promise<void> {
       try {
-        // Issue #517 — one proof path: the seller key, signature and message
-        // all travel in the JSON body. Query params and headers are legacy
-        // transports; when they carry a key that disagrees with the body the
-        // request is ambiguous and fails closed.
+        // Issue #558 / #517 — one proof path: seller key, signature, and
+        // `cancel:<invoiceId>` message all travel in the JSON body. Query and
+        // header seller keys are rejected even when they match the body.
         const bodyKeyRaw = req.body?.sellerPublicKey;
         const queryKeyRaw = req.query?.sellerPublicKey;
         const headerKeyRaw = req.headers?.['x-seller-public-key'];
         const alternates = [queryKeyRaw, headerKeyRaw]
           .flat()
           .filter((v): v is string => typeof v === 'string' && v.trim() !== '');
+
+        if (alternates.length > 0) {
+          return sendFailure(
+            res,
+            400,
+            'Send sellerPublicKey in the request body; query and header keys are not accepted'
+          );
+        }
 
         let sellerPublicKey: string | undefined;
         if (typeof bodyKeyRaw === 'string' && bodyKeyRaw.trim() !== '') {
@@ -363,26 +371,6 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
             return sendFailure(res, 400, 'Invalid Stellar public key format');
           }
           sellerPublicKey = parsed.data;
-        }
-
-        if (alternates.length > 0) {
-          if (!sellerPublicKey) {
-            return sendFailure(
-              res,
-              400,
-              'Send sellerPublicKey in the request body; query and header keys are not accepted'
-            );
-          }
-          for (const alt of alternates) {
-            const parsed = stellarPublicKeySchema.safeParse(alt);
-            if (!parsed.success || parsed.data !== sellerPublicKey) {
-              return sendFailure(
-                res,
-                400,
-                'Conflicting sellerPublicKey values between body, query, and header'
-              );
-            }
-          }
         }
 
         if (!sellerPublicKey) {
@@ -444,6 +432,17 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         sendSuccess(res, 200, invoice);
       } catch (error: any) {
         logError('Cancel invoice error:', error);
+        if (error instanceof InvoiceTerminalConflictError) {
+          // Stable code for the race loser; payment_tx_hash is left intact.
+          res.status(409).json({
+            success: false,
+            code: error.code,
+            error: error.message,
+            ...(error.paymentTxHash ? { paymentTxHash: error.paymentTxHash } : {}),
+            ...(error.currentStatus ? { status: error.currentStatus } : {}),
+          });
+          return;
+        }
         const message = error.message || 'Failed to cancel invoice';
         const lowerMessage = message.toLowerCase();
         const isSellerMismatch = lowerMessage.includes('only the seller can cancel');

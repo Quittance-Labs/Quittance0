@@ -42,6 +42,7 @@ export type VerificationCode =
   | 'PAYER_INFO_TOO_LONG'
   | 'VERIFY_RATE_LIMIT_EXCEEDED'
   | 'INVOICE_ALREADY_PAID'
+  | 'INVOICE_ALREADY_CANCELLED'
   | 'INVOICE_EXPIRED'
   | 'INVOICE_NOT_PENDING'
   | 'TRANSACTION_NOT_FOUND'
@@ -92,6 +93,7 @@ export const VERIFICATION_MESSAGES: Record<VerificationCode, string> = {
   PAYER_INFO_TOO_LONG: 'Payer information is too long',
   VERIFY_RATE_LIMIT_EXCEEDED: 'Too many verification attempts for this invoice',
   INVOICE_ALREADY_PAID: 'Invoice has already been paid',
+  INVOICE_ALREADY_CANCELLED: 'Invoice has already been cancelled',
   INVOICE_EXPIRED: 'Invoice has expired and can no longer accept payment',
   INVOICE_NOT_PENDING: 'Invoice is not pending',
   TRANSACTION_NOT_FOUND: 'Transaction not found on Stellar',

@@ -398,7 +398,10 @@ function runManualVerifySuite(name: string, createStorage: () => InvoiceStorage)
         createReq({ params: { id: invoice.id }, body: { sellerPublicKey: SELLER } })
       );
 
-      assert.equal(cancelled.statusCode, 400);
+      assert.equal(cancelled.statusCode, 409, JSON.stringify(cancelled.body));
+      assert.equal(cancelled.body.code, 'INVOICE_ALREADY_PAID');
+      assert.equal(cancelled.body.status, 'PAID');
+      assert.equal(cancelled.body.paymentTxHash, TX_HASH);
       const stored = await storage.getInvoiceById(invoice.id);
       assert.equal(stored?.status, 'PAID');
       assert.equal(stored?.paymentTxHash, TX_HASH);
@@ -602,6 +605,121 @@ describe('cancel versus payment monitor attribution on memory storage', () => {
 
 runManualVerifySuite('in-memory storage', createMemoryStorage);
 runManualVerifySuite('postgres storage double', createPostgresStorage);
+
+
+describe('cancel versus monitor attribution race (issue #558)', () => {
+  let rawStorage: MemoryStorage;
+  let invoiceService: InvoiceMemoryService;
+
+  beforeEach(() => {
+    rawStorage = new MemoryStorage();
+    invoiceService = new InvoiceMemoryService(rawStorage);
+  });
+
+  it('monitor attribution after payment wins leaves cancel rejected without clearing the hash', async () => {
+    const invoice = rawStorage.createInvoice({
+      sellerPublicKey: SELLER,
+      amount: 42.5,
+      assetCode: 'XLM',
+      memo: 'INV-MONITOR-CANCEL',
+    });
+    const settledAt = new Date().toISOString();
+
+    const monitor = new PaymentMonitorService({
+      account: SELLER,
+      network: 'TESTNET',
+      source: monitorSource(settledAt),
+      invoices: invoiceService,
+      checkpoints: new MemoryCheckpointStore(),
+      database: undefined,
+    });
+
+    await monitor.runOnce();
+
+    const storedPaid = rawStorage.getInvoiceById(invoice.id);
+    assert.equal(storedPaid?.status, 'PAID');
+    assert.equal(storedPaid?.paymentTxHash, TX_HASH_2);
+
+    let conflict: unknown;
+    try {
+      rawStorage.cancelInvoice(invoice.id, SELLER);
+    } catch (error) {
+      conflict = error;
+    }
+    assert.ok(conflict, 'cancel must refuse after monitor committed PAID');
+    assert.equal((conflict as any).code, 'INVOICE_ALREADY_PAID');
+    assert.equal((conflict as any).paymentTxHash, TX_HASH_2);
+
+    const stored = rawStorage.getInvoiceById(invoice.id);
+    assert.equal(stored?.status, 'PAID');
+    assert.equal(stored?.paymentTxHash, TX_HASH_2);
+  });
+
+  it('two invoices racing one monitor hash leave one PAID and one TX_HASH_ALREADY_USED', async () => {
+    const first = rawStorage.createInvoice({
+      sellerPublicKey: SELLER,
+      amount: 42.5,
+      assetCode: 'XLM',
+      memo: 'INV-MONITOR-CANCEL',
+    });
+    const second = rawStorage.createInvoice({
+      sellerPublicKey: SELLER,
+      amount: 42.5,
+      assetCode: 'XLM',
+      memo: 'INV-OTHER-MEMO',
+    });
+
+    // First invoice claims the hash through the shared payment-claim lock.
+    const settled = rawStorage.markAsPaid(first.id, TX_HASH_2, PAYER, undefined, {
+      settledAt: new Date(),
+      destinationMuxedId: '4242',
+    });
+    assert.equal(settled?.status, 'PAID');
+
+    let rejection: unknown;
+    try {
+      rawStorage.markAsPaid(second.id, TX_HASH_2, PAYER, undefined, {
+        settledAt: new Date(),
+        destinationMuxedId: '4242',
+      });
+    } catch (error) {
+      rejection = error;
+    }
+    assert.ok(rejection instanceof PaymentClaimError);
+    assert.equal((rejection as PaymentClaimError).code, 'TX_HASH_ALREADY_USED');
+    assert.equal((rejection as PaymentClaimError).settledInvoiceId, first.id);
+
+    const other = rawStorage.getInvoiceById(second.id);
+    assert.equal(other?.status, 'PENDING');
+    assert.equal(other?.paymentTxHash, undefined);
+  });
+
+  it('cancel that wins before monitor keeps CANCELLED when the payment mismatches', async () => {
+    const invoice = rawStorage.createInvoice({
+      sellerPublicKey: SELLER,
+      amount: 42.5,
+      assetCode: 'XLM',
+      memo: 'INV-MONITOR-CANCEL',
+    });
+    const cancelled = rawStorage.cancelInvoice(invoice.id, SELLER);
+    assert.equal(cancelled?.status, 'CANCELLED');
+
+    const monitor = new PaymentMonitorService({
+      account: SELLER,
+      network: 'TESTNET',
+      source: monitorSource(isoOffset(cancelled!.cancelledAt!, 1000), { amount: '41.0000000' }),
+      invoices: invoiceService,
+      checkpoints: new MemoryCheckpointStore(),
+      database: undefined,
+    });
+
+    await monitor.runOnce();
+
+    const stored = rawStorage.getInvoiceById(invoice.id);
+    assert.equal(stored?.status, 'CANCELLED');
+    assert.equal(stored?.paymentTxHash, undefined);
+  });
+});
 
 // Issue #501: one transaction hash settles at most one invoice. The in-memory
 // engine enforces it through PaymentClaimIndex; the Postgres engine through the
