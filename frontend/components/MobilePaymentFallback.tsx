@@ -15,6 +15,14 @@ interface MobilePaymentFallbackProps {
   assetIssuer?: string;
   memo: string;
   paymentUrl: string;
+  /**
+   * Server-built SEP-0007 URI from the pay-link artifact (issue #557). When
+   * present this is used instead of rebuilding the URI client-side, so the
+   * mobile deep link matches create and the QR copy row.
+   */
+  stellarUri?: string;
+  /** Passphrase from the same resolver explorer links use. */
+  networkPassphrase?: string;
   onCopy?: (text: string, label: string) => void;
 }
 
@@ -31,24 +39,29 @@ export default function MobilePaymentFallback({
   assetIssuer,
   memo,
   paymentUrl,
+  stellarUri,
+  networkPassphrase,
   onCopy,
 }: MobilePaymentFallbackProps) {
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  // Ask the wallet to return the payer to this same pay page after signing
-  // (SEP-0007 callback=url:...). The callback is only ever our own same-origin
-  // paymentUrl — a caller-supplied or foreign return target is never embedded.
+  // Prefer the server pay-link artifact so the deep link matches create and
+  // the QR (issue #557). Only rebuild client-side when the artifact is absent
+  // (mock / offline paths), still pinning network from the shared resolver.
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const callback = isAllowedPayReturnUrl(paymentUrl, origin) ? paymentUrl : undefined;
 
-  const sep0007Uri = buildSep0007PayUri({
-    destination,
-    amount,
-    assetCode,
-    assetIssuer,
-    memo,
-    callback,
-  });
+  const sep0007Uri =
+    stellarUri ||
+    buildSep0007PayUri({
+      destination,
+      amount,
+      assetCode,
+      assetIssuer,
+      memo,
+      networkPassphrase,
+      callback,
+    });
 
   const handleCopy = async (text: string, fieldName: string, label: string) => {
     const success = await copyWithFeedback(text);
