@@ -35,6 +35,34 @@ const api = axios.create({
   },
 });
 
+
+function createBrowserRequestId(): string {
+  const bytes = new Uint8Array(8);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < 8; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `req-${hex}`;
+}
+
+api.interceptors.request.use((config) => {
+  const headers = config.headers ?? {};
+  const existing =
+    headers['X-Request-Id'] ||
+    headers['x-request-id'] ||
+    headers['X-Correlation-Id'] ||
+    headers['x-correlation-id'];
+  if (!existing) {
+    const id = createBrowserRequestId();
+    headers['X-Request-Id'] = id;
+    headers['X-Correlation-Id'] = id;
+  }
+  config.headers = headers;
+  return config;
+});
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {

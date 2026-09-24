@@ -11,7 +11,8 @@
 import { Request, Response } from 'express';
 import { buildQuittanceProof, serializeQuittanceProof, checkQuittanceProofInvariants } from '../services/quittance-proof.service';
 import { sendSuccess, sendFailure } from '../types/api';
-import { createRequestId } from '../utils/request-correlation-id';
+import { createRequestId, getRequestId } from '../utils/request-correlation-id';
+import { emitEvent, logReference } from '../observability/log-events';
 import { STELLAR_NETWORK } from '../config/stellar';
 
 /**
@@ -29,7 +30,15 @@ function resolveProofNetwork(queryNetwork: unknown): string | null {
 }
 
 export async function getQuittanceProof(req: Request, res: Response): Promise<void> {
-  const requestId = createRequestId();
+  const requestId =
+    (req as Request & { requestId?: string }).requestId ||
+    getRequestId() ||
+    createRequestId();
+  const context = {
+    requestId,
+    service: 'api' as const,
+    environment: process.env.NODE_ENV || 'development',
+  };
   try {
     const { id } = req.params;
     const network = resolveProofNetwork(req.query.network);
@@ -81,6 +90,12 @@ export async function getQuittanceProof(req: Request, res: Response): Promise<vo
       return sendFailure(res, 500, 'Proof generation failed: invariant violation');
     }
 
+    emitEvent('info', 'proof.downloaded', context, {
+      invoiceRef: logReference(invoice.id),
+      txRef: logReference(invoice.paymentTxHash),
+      proofFormat: 'json',
+    });
+
     // Return the canonical JSON proof
     sendSuccess(res, 200, {
       ...proof,
@@ -92,7 +107,15 @@ export async function getQuittanceProof(req: Request, res: Response): Promise<vo
 }
 
 export async function getQuittanceProofPDF(req: Request, res: Response): Promise<void> {
-  const requestId = createRequestId();
+  const requestId =
+    (req as Request & { requestId?: string }).requestId ||
+    getRequestId() ||
+    createRequestId();
+  const context = {
+    requestId,
+    service: 'api' as const,
+    environment: process.env.NODE_ENV || 'development',
+  };
   try {
     const { id } = req.params;
     const network = resolveProofNetwork(req.query.network);
@@ -147,7 +170,13 @@ export async function getQuittanceProofPDF(req: Request, res: Response): Promise
     const html = generateProofHTML(proof, invoice);
 
     // Set headers for browser print/PDF save
-    res.set('Content-Type', 'text/html; charset=utf-8');
+    emitEvent('info', 'proof.downloaded', context, {
+      invoiceRef: logReference(invoice.id),
+      txRef: logReference(invoice.paymentTxHash),
+      proofFormat: 'pdf',
+    });
+
+    res.set('Content-Type' , 'text/html; charset=utf-8');
     res.set('Content-Disposition', `inline; filename="quittance-${invoice.id}.html"`);
     res.send(html);
   } catch (error: any) {

@@ -1,5 +1,6 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import { requestCorrelationMiddleware } from './utils/request-correlation-id';
 import dotenv from 'dotenv';
 import routes from './routes';
 import { pool } from './config/database';
@@ -15,6 +16,7 @@ const app: Application = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors(corsOptions()));
+app.use(requestCorrelationMiddleware);
 
 app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));

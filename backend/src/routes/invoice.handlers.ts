@@ -40,7 +40,12 @@ import {
 import { cutoverDrainMode, simulationAllowed } from '../config/runtime';
 import { canonicalAmount } from '../utils/safe-amount-compare';
 import { idempotencyKeyForCreate } from '../utils/idempotency';
-import { createRequestId } from '../utils/request-correlation-id';
+import { createRequestId, getRequestId } from '../utils/request-correlation-id';
+import {
+  emitEvent,
+  logReference,
+  type LogContext,
+} from '../observability/log-events';
 import { checkInvoiceVerifyLimit } from '../middleware/rate-limit';
 import {
   verificationCache,
@@ -98,6 +103,22 @@ function logError(label: string, error: any, requestId?: string): void {
   const prefix = requestId ? `[${requestId}] ` : '';
   console.error(`${prefix}${label}`, error?.stack || error?.message || error);
 }
+
+function resolveLogContext(req?: Request): LogContext {
+  const fromReq = req ? (req as Request & { requestId?: string }).requestId : undefined;
+  return {
+    requestId: fromReq || getRequestId() || createRequestId(),
+    service: 'api',
+    environment: process.env.NODE_ENV || 'development',
+  };
+}
+
+function storageLabel(mode: string): string {
+  if (mode === 'in-memory' || mode === 'memory') return 'memory';
+  if (mode === 'postgres' || mode === 'postgresql') return 'postgres';
+  return mode;
+}
+
 
 function toPositiveInt(value: unknown, fallback: number): number {
   const parsed = parseInt(String(value), 10);
@@ -172,17 +193,34 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
   return {
     async createInvoice(req: Request, res: Response) {
       if (cutoverDrainMode()) {
+        const context = resolveLogContext(req);
+        emitEvent('warn', 'invoice.create.rejected', context, {
+          errorCode: 'CUTOVER_DRAIN',
+          network: STELLAR_NETWORK,
+          storage: storageLabel(storage.mode),
+          durationMs: 0,
+        });
         return sendFailure(
           res,
           503,
           'System is in cutover drain mode. New invoice creation is temporarily paused.'
         );
       }
-      const requestId = createRequestId();
+      const startedAt = Date.now();
+      const context = resolveLogContext(req);
+      const requestId = context.requestId;
+      const storageMode = storageLabel(storage.mode);
       try {
         const parsed = createInvoiceSchema.safeParse(req.body);
         if (!parsed.success) {
           const fieldErrors = createInvoiceFieldErrors(parsed.error);
+          emitEvent('warn', 'invoice.create.rejected', context, {
+            sellerRef: logReference(req.body?.sellerPublicKey),
+            errorCode: 'VALIDATION_FAILED',
+            network: STELLAR_NETWORK,
+            storage: storageMode,
+            durationMs: Date.now() - startedAt,
+          });
           return sendValidationFailure(
             res,
             firstCreateInvoiceMessage(fieldErrors) || 'Invalid invoice payload',
@@ -191,6 +229,13 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         }
         const validatedData = parsed.data;
         if (validatedData.network && validatedData.network !== STELLAR_NETWORK) {
+          emitEvent('warn', 'invoice.create.rejected', context, {
+            sellerRef: logReference(validatedData.sellerPublicKey),
+            errorCode: 'NETWORK_MISMATCH',
+            network: validatedData.network,
+            storage: storageMode,
+            durationMs: Date.now() - startedAt,
+          });
           return sendFailure(res, 400, 'Client wallet network does not match the server Stellar network');
         }
         // Issue #514: prefer the caller's Idempotency-Key header; fall back to
@@ -199,14 +244,36 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         const headerKey = req.headers?.['idempotency-key'];
         if (typeof headerKey === 'string' && headerKey) {
           if (headerKey.length > 200 || !/^[A-Za-z0-9_:\-]+$/.test(headerKey)) {
+            emitEvent('warn', 'invoice.create.rejected', context, {
+              sellerRef: logReference(validatedData.sellerPublicKey),
+              errorCode: 'INVALID_IDEMPOTENCY_KEY',
+              network: STELLAR_NETWORK,
+              storage: storageMode,
+              durationMs: Date.now() - startedAt,
+            });
             return sendFailure(res, 400, 'Idempotency-Key header is invalid');
           }
           validatedData.idempotencyKey = headerKey;
         }
         validatedData.idempotencyKey = idempotencyKeyForCreate(validatedData);
+        emitEvent('info', 'invoice.create.started', context, {
+          sellerRef: logReference(validatedData.sellerPublicKey),
+          assetCode: validatedData.assetCode || 'XLM',
+          network: STELLAR_NETWORK,
+          storage: storageMode,
+        });
         const invoice = await storage.createInvoice(validatedData);
         options.paymentMonitor?.registerWatch(invoice);
         const payment = await buildPaymentPayload(invoice);
+
+        emitEvent('info', 'invoice.create.succeeded', context, {
+          sellerRef: logReference(invoice.sellerPublicKey),
+          invoiceRef: logReference(invoice.id),
+          assetCode: invoice.assetCode || 'XLM',
+          network: STELLAR_NETWORK,
+          storage: storageMode,
+          durationMs: Date.now() - startedAt,
+        });
 
         sendSuccess(res, 201, {
           invoice,
@@ -219,6 +286,13 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           stellarQrEncodesUri: payment.stellarQrEncodesUri,
         });
       } catch (error: any) {
+        emitEvent('warn', 'invoice.create.rejected', context, {
+          sellerRef: logReference(req.body?.sellerPublicKey),
+          errorCode: 'CREATE_FAILED',
+          network: STELLAR_NETWORK,
+          storage: storageMode,
+          durationMs: Date.now() - startedAt,
+        });
         logError('Create invoice error:', error, requestId);
         sendFailure(res, 400, error.message || 'Failed to create invoice');
       }
@@ -453,12 +527,23 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
     },
 
     async verifyPayment(req: Request, res: Response) {
+      const startedAt = Date.now();
+      const context = resolveLogContext(req);
+      const requestId = context.requestId;
+      const storageMode = storageLabel(storage.mode);
       try {
         const { id } = req.params;
         const { network } = req.body || {};
 
         const verifyLimit = checkInvoiceVerifyLimit(id);
         if (!verifyLimit.allowed) {
+          emitEvent('warn', 'payment.verify.rejected', context, {
+            invoiceRef: logReference(id),
+            txRef: logReference(req.body?.txHash),
+            errorCode: 'VERIFY_RATE_LIMIT_EXCEEDED',
+            network: STELLAR_NETWORK,
+            durationMs: Date.now() - startedAt,
+          });
           return sendVerificationFailure(
             res,
             429,
@@ -469,17 +554,38 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
         const hashCheck = checkTxHash(req.body?.txHash);
         if (!hashCheck.ok) {
+          emitEvent('warn', 'payment.verify.rejected', context, {
+            invoiceRef: logReference(id),
+            txRef: logReference(req.body?.txHash),
+            errorCode: hashCheck.code,
+            network: STELLAR_NETWORK,
+            durationMs: Date.now() - startedAt,
+          });
           return sendVerificationFailure(res, 400, hashCheck.code, hashCheck.error);
         }
 
         const payerCheck = checkPayerInfo(req.body);
         if (!payerCheck.ok) {
+          emitEvent('warn', 'payment.verify.rejected', context, {
+            invoiceRef: logReference(id),
+            txRef: logReference(req.body?.txHash),
+            errorCode: payerCheck.code,
+            network: STELLAR_NETWORK,
+            durationMs: Date.now() - startedAt,
+          });
           return sendVerificationFailure(res, 400, payerCheck.code, payerCheck.error);
         }
 
         const invoice = await storage.getInvoiceById(id);
 
         if (!invoice) {
+          emitEvent('warn', 'payment.verify.rejected', context, {
+            invoiceRef: logReference(id),
+            txRef: logReference(req.body?.txHash),
+            errorCode: 'INVOICE_NOT_FOUND',
+            network: STELLAR_NETWORK,
+            durationMs: Date.now() - startedAt,
+          });
           return sendFailure(res, 404, 'Invoice not found');
         }
 
@@ -489,8 +595,21 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           invoice.status !== 'CANCELLED' &&
           invoice.status !== 'EXPIRED'
         ) {
+          emitEvent('warn', 'payment.verify.rejected', context, {
+            invoiceRef: logReference(id),
+            txRef: logReference(req.body?.txHash),
+            errorCode: statusCheck.code,
+            network: STELLAR_NETWORK,
+            durationMs: Date.now() - startedAt,
+          });
           return sendVerificationFailure(res, 400, statusCheck.code, statusCheck.error);
         }
+
+        emitEvent('info', 'payment.verify.started', context, {
+          invoiceRef: logReference(invoice.id),
+          txRef: logReference(hashCheck.value),
+          network: STELLAR_NETWORK,
+        });
 
         let txDetails;
         try {
@@ -501,6 +620,13 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
             // Horizon is overloaded or unreachable. A 503 invites the payer to
             // retry; it is never cached — caching an outage as a rejection
             // would poison the hash against later retries.
+            emitEvent('error', 'horizon.request.failed', context, {
+              operation: 'getTransaction',
+              errorCode: 'HORIZON_UNAVAILABLE',
+              network: STELLAR_NETWORK,
+              attempt: 1,
+              durationMs: Date.now() - startedAt,
+            });
             const unavailable = failure('VERIFY_UNAVAILABLE');
             return sendVerificationFailure(res, 503, unavailable.code, unavailable.error);
           }
@@ -508,6 +634,13 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           // Cached with the short negative TTL: the hash may be ahead of
           // Horizon indexing or the lookup may have failed transiently, and a
           // long cache entry would turn a retry into a permanent block.
+          emitEvent('warn', 'payment.verify.rejected', context, {
+            invoiceRef: logReference(id),
+            txRef: logReference(req.body?.txHash),
+            errorCode: notFound.code,
+            network: STELLAR_NETWORK,
+            durationMs: Date.now() - startedAt,
+          });
           const body = verificationFailureBody(notFound.code, notFound.error);
           await cacheResult(id, hashCheck.value, 404, body);
           res.status(404).json(body);
@@ -532,6 +665,13 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         if (!verification.ok) {
           // Semantic rejections are permanent facts about the transaction —
           // safe to replay for the full expiry window.
+          emitEvent('warn', 'payment.verify.rejected', context, {
+            invoiceRef: logReference(id),
+            txRef: logReference(req.body?.txHash),
+            errorCode: verification.code,
+            network: STELLAR_NETWORK,
+            durationMs: Date.now() - startedAt,
+          });
           const body = verificationFailureBody(verification.code, verification.error);
           await cacheResult(id, hashCheck.value, 400, body);
           // Issue #515: a rejected verify lands on the seller's audit feed with
@@ -552,6 +692,13 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         }
 
         if (!verification.value.settledAt) {
+          emitEvent('warn', 'payment.verify.rejected', context, {
+            invoiceRef: logReference(id),
+            txRef: logReference(req.body?.txHash),
+            errorCode: 'TRANSACTION_CLOSE_TIME_UNAVAILABLE',
+            network: STELLAR_NETWORK,
+            durationMs: Date.now() - startedAt,
+          });
           return sendVerificationFailure(
             res,
             503,
@@ -574,6 +721,16 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           );
           options.paymentMonitor?.unregisterWatch(id);
 
+          emitEvent('info', 'invoice.paid', context, {
+            invoiceRef: logReference(updatedInvoice.id),
+            sellerRef: logReference(updatedInvoice.sellerPublicKey),
+            txRef: logReference(verification.value.txHash),
+            assetCode: updatedInvoice.assetCode || 'XLM',
+            network: STELLAR_NETWORK,
+            storage: storageMode,
+            durationMs: Date.now() - startedAt,
+          });
+
           // PAID is terminal — the cached success replays for the full window.
           await cacheResult(
             id,
@@ -593,12 +750,26 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
             // this one as well. 409, not 400: the request is well formed and it
             // is the server's recorded state that refuses it. The conflict is a
             // stable fact about the tx hash, so it is safe to replay.
+            emitEvent('warn', 'payment.verify.rejected', context, {
+            invoiceRef: logReference(id),
+            txRef: logReference(req.body?.txHash),
+            errorCode: error.code,
+            network: STELLAR_NETWORK,
+            durationMs: Date.now() - startedAt,
+          });
             const body = verificationFailureBody(error.code, messageForCode(error.code));
             await cacheResult(id, hashCheck.value, 409, body);
             res.status(409).json(body);
             return;
           }
           if (error instanceof SettlementTimeUnavailableError) {
+            emitEvent('warn', 'payment.verify.rejected', context, {
+            invoiceRef: logReference(id),
+            txRef: logReference(req.body?.txHash),
+            errorCode: 'TRANSACTION_CLOSE_TIME_UNAVAILABLE',
+            network: STELLAR_NETWORK,
+            durationMs: Date.now() - startedAt,
+          });
             return sendVerificationFailure(
               res,
               503,
@@ -634,7 +805,14 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
             : undefined,
         });
       } catch (error: any) {
-        logError('Verify payment error:', error);
+        emitEvent('warn', 'payment.verify.rejected', context, {
+          invoiceRef: logReference(req.params?.id),
+          txRef: logReference(req.body?.txHash),
+          errorCode: 'VERIFY_FAILED',
+          network: STELLAR_NETWORK,
+          durationMs: Date.now() - startedAt,
+        });
+        logError('Verify payment error:', error, requestId);
         sendFailure(res, 500, error.message || 'Failed to verify payment');
       }
     },
