@@ -6,6 +6,7 @@ import { pool } from '../config/database';
 import { checkInvoiceIsPayable, verifyHorizonPayment } from './payment-verification';
 import { canonicalAmount } from '../utils/safe-amount-compare';
 import { PaymentClaimError } from '../domain/payment-attribution';
+import { IllegalStateTransitionError } from '../domain/invoice-lifecycle';
 import {
   parseSettlementTime,
   SettlementTimeUnavailableError,
@@ -572,6 +573,20 @@ export class PaymentMonitorService {
             error: error.message,
           }
         );
+        return;
+      }
+      if (error instanceof IllegalStateTransitionError) {
+        // Status raced (e.g. paid elsewhere); keep the stream healthy.
+        console.warn(
+          'Payment monitor skipped settling invoice due to state conflict:',
+          error.message
+        );
+        await this.invoices.logPaymentEvent(invoice.id, 'PAYMENT_REJECTED', {
+          code: error.code,
+          txHash: payment.txHash,
+          fromStatus: error.fromStatus,
+          toStatus: error.toStatus,
+        });
         return;
       }
       throw error;

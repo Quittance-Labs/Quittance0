@@ -33,6 +33,36 @@ function isActionableInvoice(invoice, now = Date.now()) {
   return effectiveInvoiceStatus(invoice, now) === 'PENDING' && !invoice?.paymentTxHash;
 }
 
+const LEGAL_INVOICE_TRANSITIONS = Object.freeze({
+  PENDING: Object.freeze(['PAID', 'CANCELLED', 'EXPIRED']),
+  CANCELLED: Object.freeze(['PAID']),
+  EXPIRED: Object.freeze(['PAID']),
+  PAID: Object.freeze([]),
+});
+
+const UI_TERMINAL_INVOICE_STATUSES = Object.freeze(['PAID', 'EXPIRED', 'CANCELLED']);
+
+function isLegalInvoiceTransition(fromStatus, toStatus, options) {
+  const allowed = LEGAL_INVOICE_TRANSITIONS[fromStatus];
+  if (!allowed || !allowed.includes(toStatus)) {
+    return false;
+  }
+  if ((fromStatus === 'CANCELLED' || fromStatus === 'EXPIRED') && toStatus === 'PAID') {
+    return Boolean(options && options.settledAt);
+  }
+  return true;
+}
+
+function isTerminalInvoiceStatus(status) {
+  const allowed = LEGAL_INVOICE_TRANSITIONS[status];
+  return !allowed || allowed.length === 0;
+}
+
+function isUiTerminalInvoiceStatus(status) {
+  if (typeof status !== 'string') return false;
+  return UI_TERMINAL_INVOICE_STATUSES.includes(status.trim().toUpperCase());
+}
+
 module.exports = {
   expiryTimestamp,
   hasInvoiceExpired,
@@ -40,4 +70,9 @@ module.exports = {
   applyExpiryStatus,
   applyExpiryLifecycle,
   isActionableInvoice,
+  LEGAL_INVOICE_TRANSITIONS,
+  UI_TERMINAL_INVOICE_STATUSES,
+  isLegalInvoiceTransition,
+  isTerminalInvoiceStatus,
+  isUiTerminalInvoiceStatus,
 };

@@ -7,6 +7,10 @@ import type { InvoiceStats } from '../storage/invoice-stats';
 import { calculateInvoiceExpiry } from '../domain/invoice-expiry';
 import { PaymentClaimError } from '../domain/payment-attribution';
 import {
+  IllegalStateTransitionError,
+  assertLegalInvoiceTransition,
+} from '../domain/invoice-lifecycle';
+import {
   SettlementTimeUnavailableError,
   type LatePaymentWarningCode,
   type SettlementContext,
@@ -248,9 +252,23 @@ export class InvoiceService {
 
       if (result.rows.length === 0) {
         const existing = await this.db.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
-        if (existing.rows.length > 0 && !settledAt) {
+        if (existing.rows.length === 0) {
+          throw new Error('Invoice not found');
+        }
+        const fromStatus = existing.rows[0].status as
+          | 'PENDING'
+          | 'PAID'
+          | 'EXPIRED'
+          | 'CANCELLED';
+        if (fromStatus === 'PAID') {
+          throw new IllegalStateTransitionError('PAID', 'PAID');
+        }
+        if (!settledAt) {
           throw new SettlementTimeUnavailableError();
         }
+        // Canonical machine: illegal transitions get stable codes; a legal
+        // transition that still missed the row stays the generic race error.
+        assertLegalInvoiceTransition(fromStatus, 'PAID', { settledAt });
         throw new Error('Invoice not found, expired, or already processed');
       }
 
@@ -258,7 +276,10 @@ export class InvoiceService {
 
       return this.mapRowToInvoice(result.rows[0]);
     } catch (error: any) {
-      if (error instanceof SettlementTimeUnavailableError) {
+      if (
+        error instanceof SettlementTimeUnavailableError ||
+        error instanceof IllegalStateTransitionError
+      ) {
         throw error;
       }
       // Durable form of the payment claim lock (issue #501): the partial
@@ -352,15 +373,23 @@ export class InvoiceService {
     const result = await this.db.query(query, [invoiceId, sellerPublicKey || null]);
 
     if (result.rows.length === 0) {
-      if (sellerPublicKey) {
-        const existing = await this.db.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
-        if (
-          existing.rows.length > 0 &&
-          existing.rows[0].status === 'PENDING' &&
-          existing.rows[0].seller_public_key !== sellerPublicKey
-        ) {
-          throw new Error('Unauthorized: only the seller can cancel this invoice');
-        }
+      const existing = await this.db.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
+      if (existing.rows.length === 0) {
+        throw new Error('Invoice not found');
+      }
+      const current = existing.rows[0];
+      if (
+        sellerPublicKey &&
+        current.status === 'PENDING' &&
+        current.seller_public_key !== sellerPublicKey
+      ) {
+        throw new Error('Unauthorized: only the seller can cancel this invoice');
+      }
+      if (current.status !== 'PENDING') {
+        throw new IllegalStateTransitionError(
+          current.status as 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED',
+          'CANCELLED'
+        );
       }
       throw new Error('Invoice not found or already processed');
     }

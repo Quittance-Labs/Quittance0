@@ -401,7 +401,7 @@ function runDualBackendSuite(
       it('rejects cancel for a missing invoice', async () => {
         await assert.rejects(
           () => storage.cancelInvoice('00000000-0000-4000-8000-000000000000', SELLER_A),
-          /Invoice not found or already processed/
+          /Invoice not found/
         );
       });
     });
