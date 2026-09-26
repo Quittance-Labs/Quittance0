@@ -21,14 +21,6 @@ export default function PayAmountBlock({ invoice }: { invoice: PayPageInvoice })
             </div>
           </div>
         </div>
-        {invoice.description && <p className="pay-detail-panel"><span>Payment for</span>{invoice.description}</p>}
-        {(invoice.sellerName || invoice.sellerEmail) && (
-          <div className="pay-detail-panel">
-            <span>Seller</span>
-            {invoice.sellerName && <p>{invoice.sellerName}</p>}
-            {invoice.sellerEmail && <p>{invoice.sellerEmail}</p>}
-          </div>
-        )}
         <PaymentStatus status={invoice.status} txHash={invoice.paymentTxHash ?? undefined} compact />
         {invoice.status === 'PENDING' && invoice.expiresAt && (
           <p className="pay-detail-panel"><span>Expires in</span>{getTimeRemaining(invoice.expiresAt)}</p>

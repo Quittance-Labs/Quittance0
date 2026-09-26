@@ -51,9 +51,11 @@ Given identical inputs and clock injection, the serialization output must be byt
 Settlement records link exactly one payer account (`G...`) to one recipient seller account (`G...`). Multi-party or list structures for payers are rejected.
 
 ### Invariant 6: Anti-Leak / Zero-PII
-Proof documents and rendered exports must never contain:
+Proof documents, mailto bodies, payment-event payloads, and structured logs must never contain:
 - Stellar secret keys (matching regex `S[A-Z2-7]{55}`).
-- Personally Identifiable Information (such as payer email addresses or real names).
+- Personally Identifiable Information (client email, payer email, payer name, seller profile fields).
+
+Issue #559: `PUBLIC_INVOICE_FIELDS` in `shared/invoice.ts` is the single allowlist for anonymous pay, payment-info, and verify responses. `SELLER_ONLY_INVOICE_FIELDS` names the identity keys that must stay off those surfaces, proof HTML, mailto bodies, and redacted event/log payloads. Seller workspace reads gated by the invoice Freighter wallet remain the only path that returns client contact.
 
 ### Invariant 7: No Inferred Ownership
 Unsettled invoices or invoices lacking explicit payer keys must have `payer: null`. The system must never guess, infer, or populate default payer addresses.

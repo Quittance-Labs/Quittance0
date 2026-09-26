@@ -8,7 +8,7 @@ import { PostgresInvoiceStorage } from '../src/storage/postgres-invoice-storage.
 import { InvoiceService } from '../src/services/invoice.service.ts';
 import memoryStorage from '../src/storage/memory-storage.ts';
 import type { InvoiceStorage } from '../src/storage/invoice-storage.ts';
-import { PUBLIC_INVOICE_FIELDS } from '../../shared/invoice.ts';
+import { PUBLIC_INVOICE_FIELDS, SELLER_ONLY_INVOICE_FIELDS } from '../../shared/invoice.ts';
 
 const SELLER_A = 'GB3Q3VRHH3OQDYITTLONDLEHWQGKB27T2BEDSFHIUMOERULVXPDXRKG4';
 const SELLER_B = 'GB6IHEZ4QNOHJZRYRFLOC45P4SK3KKL6KNPI5WEG6FNVSZ2K5FS2MNY7';
@@ -581,18 +581,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
     });
 
     describe('public pay DTO (issue #503)', () => {
-      const PII_KEYS = [
-        'customerName',
-        'customerEmail',
-        'sellerName',
-        'sellerEmail',
-        'payerPublicKey',
-        'payerName',
-        'payerEmail',
-        'description',
-        'metadata',
-        'userId',
-      ];
+      const PII_KEYS = [...SELLER_ONLY_INVOICE_FIELDS];
 
       it('returns the public shape to an anonymous caller — no client or identity fields', async () => {
         const created = await createInvoice({
@@ -682,7 +671,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       it('keeps the verify response on the public shape', async () => {
         const created = await createInvoice({ customerEmail: 'pay@client.example' });
         transaction = {
-          transaction: { memo: created.memo },
+          transaction: { memo: created.memo, created_at: new Date().toISOString() },
           operations: [
             {
               type: 'payment',

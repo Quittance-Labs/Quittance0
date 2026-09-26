@@ -67,9 +67,6 @@ PAYMENT DETAILS
 ───────────────────────────────────────
 
 Amount Paid: ${canonicalAmount(invoice.amount) ?? formatAmount(invoice.amount, 7)} ${invoice.assetCode}
-${invoice.description ? `Description: ${invoice.description}` : ''}
-${invoice.customerName ? `Customer: ${invoice.customerName}` : ''}
-${invoice.customerEmail ? `Email: ${invoice.customerEmail}` : ''}
 
 ───────────────────────────────────────
 TRANSACTION DETAILS
@@ -79,7 +76,7 @@ Transaction Hash:
 ${invoice.paymentTxHash}
 
 From (Payer):
-${invoice.payerPublicKey || 'N/A'}
+On-chain counterparty (see transaction)
 
 To (Recipient):
 ${invoice.sellerPublicKey}
@@ -119,7 +116,7 @@ Stellar Blockchain Payment System
     invoice.paymentTxHash,
     resolveExplorerNetwork(invoice)
   );
-  const canEmail = Boolean(invoice.customerEmail);
+  const canEmail = canSendProofEmail(invoice as any);
   const proofRecipient = getProofMailtoRecipient(invoice as any);
   const emailReasonId = 'receipt-email-reason';
 
@@ -177,12 +174,6 @@ Stellar Blockchain Payment System
           </div>
         </div>
 
-        {invoice.description && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-xs text-gray-600 mb-1">Payment For</p>
-            <p className="text-gray-800 font-medium">{invoice.description}</p>
-          </div>
-        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-gray-50 rounded-lg p-4">
@@ -198,45 +189,8 @@ Stellar Blockchain Payment System
           </div>
         </div>
 
-        {(invoice.sellerName || invoice.sellerEmail) && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
-            <p className="text-sm text-blue-700 font-semibold">Seller Information</p>
-            {invoice.sellerName && (
-              <div>
-                <p className="text-xs text-blue-700">Name</p>
-                <p className="text-sm text-blue-800">{invoice.sellerName}</p>
-              </div>
-            )}
-            {invoice.sellerEmail && (
-              <div>
-                <p className="text-xs text-blue-700">Email</p>
-                <p className="text-sm text-blue-800">{invoice.sellerEmail}</p>
-              </div>
-            )}
-          </div>
-        )}
 
-        {invoice.sellerName && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-            <p className="text-sm text-blue-700 font-semibold">Paid to</p>
-            <p className="text-lg font-bold text-blue-800">{invoice.sellerName}</p>
-            {invoice.sellerEmail && (
-              <p className="text-sm text-blue-700">{invoice.sellerEmail}</p>
-            )}
-          </div>
-        )}
 
-        {(invoice.payerName || invoice.payerEmail) && (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-            <p className="text-sm text-green-700 font-semibold">Paid by</p>
-            {invoice.payerName && (
-              <p className="text-lg font-bold text-green-800">{invoice.payerName}</p>
-            )}
-            {invoice.payerEmail && (
-              <p className="text-sm text-green-700">{invoice.payerEmail}</p>
-            )}
-          </div>
-        )}
       </div>
 
       <div className="border-t pt-6 mb-6">
@@ -248,12 +202,6 @@ Stellar Blockchain Payment System
             <p className="text-xs font-mono text-gray-900 break-all">{invoice.paymentTxHash}</p>
           </div>
 
-          {invoice.payerPublicKey && (
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-xs text-gray-600 mb-1">From (Payer Address)</p>
-              <p className="text-xs font-mono text-gray-900 break-all">{invoice.payerPublicKey}</p>
-            </div>
-          )}
 
           <div className="bg-gray-50 rounded-lg p-4">
             <p className="text-xs text-gray-600 mb-1">To (Recipient Address)</p>
@@ -293,7 +241,7 @@ Stellar Blockchain Payment System
         </button>
         {!canEmail && (
           <p id={emailReasonId} className="field-hint text-center">
-            Unavailable: this invoice has no client email.
+            Unavailable: no client email on public invoice. Emailing proof is available from the seller workspace after connecting the invoice wallet.
           </p>
         )}
 
