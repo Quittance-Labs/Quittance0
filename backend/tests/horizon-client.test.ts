@@ -4,6 +4,7 @@ import {
   horizonCall,
   horizonErrorStatus,
   isHorizonUnavailable,
+  classifyHorizonFailure,
   parseRetryAfterMs,
   HorizonUnavailableError,
   HORIZON_MAX_ATTEMPTS,
@@ -196,5 +197,53 @@ describe('horizon error helpers', () => {
     assert.equal(parseRetryAfterMs('garbage'), undefined);
     assert.equal(parseRetryAfterMs(undefined), undefined);
     assert.equal(parseRetryAfterMs('-5'), 0);
+  });
+});
+
+describe('classifyHorizonFailure — simulated statuses and error classes', () => {
+  it('simulates Horizon status 429 Too Many Requests as 429', () => {
+    assert.equal(classifyHorizonFailure(httpError(429)), '429');
+  });
+
+  it('simulates Horizon status 504 Gateway Timeout as timeout', () => {
+    assert.equal(classifyHorizonFailure(httpError(504)), 'timeout');
+  });
+
+  it('simulates Horizon status 503 Service Unavailable as connection', () => {
+    assert.equal(classifyHorizonFailure(httpError(503)), 'connection');
+  });
+
+  it('simulates Horizon status 502 Bad Gateway as connection', () => {
+    assert.equal(classifyHorizonFailure(httpError(502)), 'connection');
+  });
+
+  it('simulates TimeoutError class as timeout', () => {
+    const timeoutErr = new Error('Request timed out');
+    timeoutErr.name = 'TimeoutError';
+    assert.equal(classifyHorizonFailure(timeoutErr), 'timeout');
+  });
+
+  it('simulates AbortError class as timeout', () => {
+    const abortErr = new Error('The operation was aborted');
+    abortErr.name = 'AbortError';
+    assert.equal(classifyHorizonFailure(abortErr), 'timeout');
+  });
+
+  it('simulates ECONNREFUSED error code as connection', () => {
+    const connErr = Object.assign(new TypeError('fetch failed'), { code: 'ECONNREFUSED' });
+    assert.equal(classifyHorizonFailure(connErr), 'connection');
+  });
+
+  it('simulates ETIMEDOUT error code as timeout', () => {
+    const connErr = Object.assign(new TypeError('fetch failed'), { code: 'ETIMEDOUT' });
+    assert.equal(classifyHorizonFailure(connErr), 'timeout');
+  });
+
+  it('simulates Horizon status 404 Not Found as null', () => {
+    assert.equal(classifyHorizonFailure(httpError(404)), null);
+  });
+
+  it('simulates Horizon status 400 Bad Request as null', () => {
+    assert.equal(classifyHorizonFailure(httpError(400)), null);
   });
 });

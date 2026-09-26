@@ -72,23 +72,62 @@ const NETWORK_ERROR_CODES = new Set([
   'EAI_AGAIN',
 ]);
 
+export type HorizonFailureKind = 'timeout' | '429' | 'connection';
+
+/**
+ * Classify a Horizon error into timeout, 429, or connection failure.
+ * Returns null if the error is not an infrastructure failure.
+ */
+export function classifyHorizonFailure(error: unknown): HorizonFailureKind | null {
+  if (error == null) return null;
+  const err = error as any;
+
+  if (
+    error instanceof HorizonTimeout ||
+    err?.name === 'HorizonTimeout' ||
+    err?.name === 'TimeoutError' ||
+    err?.name === 'AbortError'
+  ) {
+    return 'timeout';
+  }
+
+  const status = horizonErrorStatus(error);
+  if (status === 504 || status === 408) return 'timeout';
+  if (status === 429) return '429';
+  if (typeof status === 'number' && status >= 500) return 'connection';
+
+  if (
+    err?.code === 'ETIMEDOUT' ||
+    err?.code === 'ECONNABORTED' ||
+    err?.code === 'UND_ERR_CONNECT_TIMEOUT'
+  ) {
+    return 'timeout';
+  }
+
+  if (NETWORK_ERROR_CODES.has(err?.code) || err?.code === 'UND_ERR_SOCKET') {
+    return 'connection';
+  }
+
+  if (error instanceof HorizonUnavailableError) {
+    if (error.status === 429) return '429';
+    if (error.status === 504 || error.status === 408) return 'timeout';
+    return 'connection';
+  }
+
+  if (err?.request !== undefined && err?.response === undefined) return 'connection';
+  if (error instanceof TypeError) return 'connection';
+
+  const msg = typeof err?.message === 'string' ? err.message : typeof error === 'string' ? error : '';
+  if (/timed?\s?out|timeout/i.test(msg)) return 'timeout';
+  if (/too many requests|rate limit/i.test(msg)) return '429';
+  if (/fetch failed|network error|econnrefused|socket hang up|econnreset/i.test(msg)) return 'connection';
+
+  return null;
+}
+
 /** Whether a thrown error came from an overloaded or unreachable Horizon. */
 export function isHorizonUnavailable(error: unknown): boolean {
-  if (error instanceof HorizonUnavailableError) return true;
-  if (error instanceof HorizonTimeout) return true;
-  const status = horizonErrorStatus(error);
-  if (status !== undefined) {
-    return status === 429 || status >= 500;
-  }
-  // No status means the request never got a response. That is only an outage
-  // when the failure is actually transport-shaped — fetch's TypeError, an
-  // axios request with no response, or a known network errno — never an
-  // ordinary bug in the callback.
-  const err = error as any;
-  if (!(error instanceof Error)) return false;
-  if (NETWORK_ERROR_CODES.has(err?.code)) return true;
-  if (err?.request !== undefined && err?.response === undefined) return true;
-  return error instanceof TypeError;
+  return classifyHorizonFailure(error) !== null;
 }
 
 /**

@@ -610,6 +610,83 @@ describe('verifyHorizonPayment — multi-operation transactions (#504)', () => {
   });
 });
 
+describe('verifyHorizonPayment — Horizon failure classification and precedence', () => {
+  const makeHttpError = (status: number) => {
+    const err = new Error(`Horizon ${status}`) as any;
+    err.response = { status, statusText: String(status) };
+    return err;
+  };
+
+  it('simulates Horizon 429 Too Many Requests: returns VERIFY_UNAVAILABLE and never MEMO_MISMATCH even when memo differs', () => {
+    const result = verifyHorizonPayment(
+      input({
+        transaction: { memo: 'COMPLETELY_WRONG_MEMO', memo_type: 'text' },
+        error: makeHttpError(429),
+      })
+    );
+    assert.equal(result.ok, false);
+    assert.equal(codeOf(result), 'VERIFY_UNAVAILABLE');
+    assert.notEqual(codeOf(result), 'MEMO_MISMATCH');
+  });
+
+  it('simulates Horizon 504 Gateway Timeout: returns VERIFY_UNAVAILABLE and never AMOUNT_MISMATCH even when amount differs', () => {
+    const result = verifyHorizonPayment(
+      input({
+        operations: [paymentOp({ amount: '999.0000000' })],
+        error: makeHttpError(504),
+      })
+    );
+    assert.equal(result.ok, false);
+    assert.equal(codeOf(result), 'VERIFY_UNAVAILABLE');
+    assert.notEqual(codeOf(result), 'AMOUNT_MISMATCH');
+  });
+
+  it('simulates TimeoutError class: returns VERIFY_UNAVAILABLE and never DESTINATION_MISMATCH even when destination differs', () => {
+    const timeoutErr = new Error('Request timed out');
+    timeoutErr.name = 'TimeoutError';
+    const result = verifyHorizonPayment(
+      input({
+        operations: [paymentOp({ to: OTHER_ACCOUNT })],
+        error: timeoutErr,
+      })
+    );
+    assert.equal(result.ok, false);
+    assert.equal(codeOf(result), 'VERIFY_UNAVAILABLE');
+    assert.notEqual(codeOf(result), 'DESTINATION_MISMATCH');
+  });
+
+  it('simulates ECONNREFUSED connection drop: returns VERIFY_UNAVAILABLE', () => {
+    const connErr = Object.assign(new TypeError('fetch failed'), { code: 'ECONNREFUSED' });
+    const result = verifyHorizonPayment(
+      input({
+        error: connErr,
+      })
+    );
+    assert.equal(result.ok, false);
+    assert.equal(codeOf(result), 'VERIFY_UNAVAILABLE');
+  });
+
+  it('simulates Horizon 429 inside transaction.error: returns VERIFY_UNAVAILABLE', () => {
+    const result = verifyHorizonPayment(
+      input({
+        transaction: { memo: 'INV-WRONG', memo_type: 'text', error: makeHttpError(429) },
+      })
+    );
+    assert.equal(result.ok, false);
+    assert.equal(codeOf(result), 'VERIFY_UNAVAILABLE');
+  });
+
+  it('simulates Horizon 504 inside operations.error: returns VERIFY_UNAVAILABLE', () => {
+    const result = verifyHorizonPayment(
+      input({
+        operations: { error: makeHttpError(504) },
+      })
+    );
+    assert.equal(result.ok, false);
+    assert.equal(codeOf(result), 'VERIFY_UNAVAILABLE');
+  });
+});
+
 describe('shared contract', () => {
   it('matches the client mirror code for code and message for message', () => {
     // Acceptance criterion 1: every verify path must reject with equivalent

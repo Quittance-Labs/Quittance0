@@ -96,7 +96,7 @@ export const VERIFICATION_MESSAGES: Record<VerificationCode, string> = {
   INVOICE_NOT_PENDING: 'Invoice is not pending',
   TRANSACTION_NOT_FOUND: 'Transaction not found on Stellar',
   TRANSACTION_CLOSE_TIME_UNAVAILABLE: 'Transaction close time is unavailable; try verification again later',
-  VERIFY_UNAVAILABLE: 'Verification is temporarily unavailable; try again shortly',
+  VERIFY_UNAVAILABLE: 'Network problem reaching Stellar. Nothing was rejected - retry in a moment.',
   NO_PAYMENT_OPERATION: 'No payment operation found in transaction',
   AMBIGUOUS_PAYMENT_OPERATION: 'Transaction contains more than one payment to the invoice destination',
   MEMO_TYPE_MISMATCH: 'Payment memo type is not a text memo',

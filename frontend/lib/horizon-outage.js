@@ -38,6 +38,9 @@ function matchesNetworkText(value) {
 function isHorizonOutageError(error) {
   if (error == null) return false;
 
+  const code = error.code ?? error.response?.data?.code;
+  if (code === 'VERIFY_UNAVAILABLE') return true;
+
   if (isApiUnavailableError(error)) return true;
   if (matchesNetworkText(error)) return true;
 

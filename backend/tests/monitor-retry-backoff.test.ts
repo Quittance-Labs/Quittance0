@@ -12,8 +12,8 @@ import {
 } from './fixtures/monitor-retry-backoff.fixture';
 
 describe('BACKOFF constants', () => {
-  it('base delay is 1000ms (1 second)', () => {
-    assert.equal(BACKOFF_BASE_MS, 1_000);
+  it('base delay is 3000ms (3 seconds)', () => {
+    assert.equal(BACKOFF_BASE_MS, 3_000);
   });
 
   it('factor is 2 (classic exponential doubling)', () => {

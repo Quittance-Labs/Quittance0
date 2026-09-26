@@ -530,8 +530,9 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         });
 
         if (!verification.ok) {
-          // Semantic rejections are permanent facts about the transaction —
-          // safe to replay for the full expiry window.
+          if (verification.code === 'VERIFY_UNAVAILABLE') {
+            return sendVerificationFailure(res, 503, verification.code, verification.error);
+          }
           const body = verificationFailureBody(verification.code, verification.error);
           await cacheResult(id, hashCheck.value, 400, body);
           // Issue #515: a rejected verify lands on the seller's audit feed with

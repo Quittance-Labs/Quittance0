@@ -12,6 +12,10 @@ import {
 } from '../domain/invoice-settlement';
 import { monitorBackoffMs } from '../utils/monitor-retry-backoff';
 import {
+  classifyHorizonFailure,
+  HorizonUnavailableError,
+} from '../utils/horizon-client';
+import {
   FilePaymentMonitorCheckpointStore,
   PaymentMonitorCheckpointStore,
   PostgresPaymentMonitorCheckpointStore,
@@ -469,9 +473,13 @@ export class PaymentMonitorService {
   }
 
   private async handlePayment(payment: PaymentRecord): Promise<void> {
+    const paymentError = (payment as any)?.error;
+    if (paymentError && classifyHorizonFailure(paymentError)) {
+      throw new HorizonUnavailableError('Horizon failure in payment record');
+    }
+
     if (!payment.memo) return;
 
-    // Idempotency: skip if already processed in this runtime instance
     if (this.processedTxHashes.has(payment.txHash)) {
       return;
     }
@@ -479,15 +487,12 @@ export class PaymentMonitorService {
     const invoice = await this.invoices.getInvoiceByMemo(payment.memo);
     if (!invoice) return;
 
-    // If invoice is already paid:
-    // If by this exact transaction hash, replay is harmless
     if (invoice.status === 'PAID') {
       if (invoice.paymentTxHash === payment.txHash) {
         this.processedTxHashes.add(payment.txHash);
         this.unregisterWatch(invoice.id);
         return;
       }
-      // Invoice was already paid by a different transaction
       await this.invoices.logPaymentEvent(
         invoice.id,
         'PAYMENT_REJECTED',
@@ -525,9 +530,13 @@ export class PaymentMonitorService {
         assetIssuer: invoice.assetIssuer,
         network: this.network,
       },
+      error: paymentError,
     });
 
     if (!verification.ok) {
+      if (verification.code === 'VERIFY_UNAVAILABLE') {
+        throw new HorizonUnavailableError('Verification temporarily unavailable');
+      }
       await this.invoices.logPaymentEvent(
         invoice.id,
         verification.code === 'AMOUNT_TOO_LOW' || verification.code === 'AMOUNT_MISMATCH'
