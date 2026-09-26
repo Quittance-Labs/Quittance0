@@ -20,6 +20,7 @@ import {
 import { amountsMatch as stroopAmountsMatch } from '../utils/verify-amount-tolerance';
 import { describeAmountDelta } from '../utils/safe-amount-compare';
 import { parseSettlementTime } from '../domain/invoice-settlement';
+import { classifyHorizonFailure } from '../utils/horizon-client';
 
 import {
   messageForCode,
@@ -340,14 +341,15 @@ export interface VerifiedPayment {
 export interface VerifyPaymentInput {
   txHash: string;
   expected: ExpectedPayment;
-  transaction: HorizonTransactionLike;
-  operations: HorizonOperationLike[];
+  transaction?: HorizonTransactionLike | null;
+  operations?: HorizonOperationLike[] | null;
   /**
    * Network the caller observed the transaction on, e.g. `TESTNET`. Clients send
    * their own network so a testnet payment cannot settle a pubnet invoice.
    * Skipped when either side is unknown.
    */
   network?: string;
+  error?: unknown;
 }
 
 function normalizeMemo(memo: unknown): string {
@@ -364,7 +366,7 @@ function normalizeMemoType(memoType: unknown): string | undefined {
   return memoType.toLowerCase().replace(/^memo_/, '');
 }
 
-export function transactionSettlementTime(transaction: HorizonTransactionLike): Date | undefined {
+export function transactionSettlementTime(transaction: HorizonTransactionLike | null | undefined): Date | undefined {
   return parseSettlementTime(transaction?.created_at) ?? undefined;
 }
 
@@ -402,6 +404,16 @@ export function amountRejectionCode(
  * tx hash, network, payment operation, memo, destination, amount, asset.
  */
 export function verifyHorizonPayment(input: VerifyPaymentInput): VerificationResult<VerifiedPayment> {
+  const outage =
+    classifyHorizonFailure(input.error) ??
+    classifyHorizonFailure((input.transaction as any)?.error) ??
+    classifyHorizonFailure((input.operations as any)?.error) ??
+    (classifyHorizonFailure(input.transaction) ? classifyHorizonFailure(input.transaction) : null);
+
+  if (outage) {
+    return failure('VERIFY_UNAVAILABLE');
+  }
+
   const hashCheck = checkTxHash(input.txHash);
   if (!hashCheck.ok) {
     return hashCheck;
@@ -413,7 +425,7 @@ export function verifyHorizonPayment(input: VerifyPaymentInput): VerificationRes
     return failure('NETWORK_MISMATCH');
   }
 
-  const selection = selectInvoicePaymentOperation(operations, expected.destination);
+  const selection = selectInvoicePaymentOperation(operations ?? [], expected.destination);
 
   if (selection.kind === 'none') {
     return failure('NO_PAYMENT_OPERATION');

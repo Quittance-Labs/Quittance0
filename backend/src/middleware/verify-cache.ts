@@ -88,8 +88,15 @@ export class VerificationCache {
         const cached = await client.get(key);
         if (cached) {
           const entry: CachedVerification = JSON.parse(cached);
-          // Redis expires keys natively; expiresAt still guards entries that
-          // were written with a longer TTL under an older policy.
+          if (
+            entry.httpStatus === 503 ||
+            entry.body?.code === 'VERIFY_UNAVAILABLE' ||
+            (entry.body?.code && NEVER_CACHE_CODES.has(entry.body.code))
+          ) {
+            await client.del(key).catch(() => undefined);
+            this.memoryCache.delete(key);
+            return null;
+          }
           return entry.expiresAt > this.now() ? entry : null;
         }
       }
@@ -97,9 +104,16 @@ export class VerificationCache {
       console.warn('[VerifyCache] Redis get failed, trying memory:', error);
     }
 
-    // Fallback to memory
     const entry = this.memoryCache.get(key);
     if (!entry) return null;
+    if (
+      entry.httpStatus === 503 ||
+      entry.body?.code === 'VERIFY_UNAVAILABLE' ||
+      (entry.body?.code && NEVER_CACHE_CODES.has(entry.body.code))
+    ) {
+      this.memoryCache.delete(key);
+      return null;
+    }
     if (entry.expiresAt <= this.now()) {
       this.memoryCache.delete(key);
       return null;
@@ -108,6 +122,13 @@ export class VerificationCache {
   }
 
   async set(invoiceId: string, txHash: string, httpStatus: number, body: CachedVerificationBody): Promise<void> {
+    if (
+      httpStatus === 503 ||
+      body?.code === 'VERIFY_UNAVAILABLE' ||
+      (body?.code && NEVER_CACHE_CODES.has(body.code))
+    ) {
+      return;
+    }
     const ttl = verificationCacheTtl(body);
     if (ttl === null) return;
 

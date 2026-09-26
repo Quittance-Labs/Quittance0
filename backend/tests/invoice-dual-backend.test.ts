@@ -411,10 +411,16 @@ function runDualBackendSuite(
     describe('markAsPaid (payment attribution)', () => {
       it('attributes payment to the correct invoice with all payer fields', async () => {
         const inv = await storage.createInvoice(baseInput(SELLER_A));
-        const paid = await storage.markAsPaid(inv.id, TX_HASH_1, PAYER, {
-          payerName: 'Hal Finney',
-          payerEmail: 'hal@example.com',
-        });
+        const paid = await storage.markAsPaid(
+          inv.id,
+          TX_HASH_1,
+          PAYER,
+          {
+            payerName: 'Hal Finney',
+            payerEmail: 'hal@example.com',
+          },
+          { settledAt: new Date() }
+        );
 
         assert.equal(paid.status, 'PAID');
         assert.equal(paid.paymentTxHash, TX_HASH_1);
@@ -426,24 +432,31 @@ function runDualBackendSuite(
 
       it('rejects attribution when the invoice has already been paid', async () => {
         const inv = await storage.createInvoice(baseInput(SELLER_A));
-        await storage.markAsPaid(inv.id, TX_HASH_1, PAYER);
+        await storage.markAsPaid(inv.id, TX_HASH_1, PAYER, undefined, { settledAt: new Date() });
 
         await assert.rejects(
-          () => storage.markAsPaid(inv.id, TX_HASH_2, PAYER),
+          () => storage.markAsPaid(inv.id, TX_HASH_2, PAYER, undefined, { settledAt: new Date() }),
           /Invoice not found|expired|already processed/
         );
       });
 
       it('rejects attribution for a missing invoice', async () => {
         await assert.rejects(
-          () => storage.markAsPaid('00000000-0000-4000-8000-000000000000', TX_HASH_1, PAYER),
+          () =>
+            storage.markAsPaid(
+              '00000000-0000-4000-8000-000000000000',
+              TX_HASH_1,
+              PAYER,
+              undefined,
+              { settledAt: new Date() }
+            ),
           /Invoice not found|expired|already processed/
         );
       });
 
       it('getInvoiceById returns the paid state after successful attribution', async () => {
         const inv = await storage.createInvoice(baseInput(SELLER_A));
-        await storage.markAsPaid(inv.id, TX_HASH_1, PAYER);
+        await storage.markAsPaid(inv.id, TX_HASH_1, PAYER, undefined, { settledAt: new Date() });
         const fetched = await storage.getInvoiceById(inv.id);
 
         assert.equal(fetched?.status, 'PAID');
@@ -457,7 +470,7 @@ function runDualBackendSuite(
       it('returns counts scoped to the requesting seller', async () => {
         await storage.createInvoice(baseInput(SELLER_A));
         const bInv = await storage.createInvoice(baseInput(SELLER_B, { amount: 100 }));
-        await storage.markAsPaid(bInv.id, TX_HASH_1, PAYER);
+        await storage.markAsPaid(bInv.id, TX_HASH_1, PAYER, undefined, { settledAt: new Date() });
 
         const [statsA] = await storage.getInvoiceStats(SELLER_A);
         const [statsB] = await storage.getInvoiceStats(SELLER_B);

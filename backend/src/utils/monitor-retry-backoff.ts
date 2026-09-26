@@ -10,7 +10,7 @@
 /**
  * Base delay applied for the first failure, in milliseconds.
  */
-export const BACKOFF_BASE_MS = 1_000; // 1 second
+export const BACKOFF_BASE_MS = 3_000;
 
 /**
  * Multiplier applied per failure count. A value of 2 yields classic
