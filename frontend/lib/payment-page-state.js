@@ -23,7 +23,6 @@
  * moves the page back out of them.
  */
 
-/** Every state the pay page can be in. */
 const PAY_STATES = Object.freeze({
   IDLE: 'idle',
   PAYING: 'paying',
@@ -31,9 +30,10 @@ const PAY_STATES = Object.freeze({
   PAID: 'paid',
   ERROR: 'error',
   EXPIRED: 'expired',
+  CANCELLED: 'cancelled',
 });
 
-const TERMINAL_STATES = Object.freeze([PAY_STATES.PAID, PAY_STATES.EXPIRED]);
+const TERMINAL_STATES = Object.freeze([PAY_STATES.PAID, PAY_STATES.EXPIRED, PAY_STATES.CANCELLED]);
 const { isTerminalPayState } = require('./pay-terminal-guard.ts');
 const { effectiveInvoiceStatus, hasInvoiceExpired } = require('./invoice-lifecycle');
 const { walletSessionChanged, walletSessionGate } = require('./wallet-session');
@@ -89,11 +89,12 @@ function getPayPageWalletGate(invoice, session, expectedNetwork, now) {
   return walletSessionGate(session, expectedNetwork);
 }
 
-/** Maps an invoice status onto the state it forces, or null if it forces none. */
 function stateForStatus(statusOrInvoice, now) {
-  const status = effectiveInvoiceStatus(asInvoice(statusOrInvoice), now);
+  const invoice = asInvoice(statusOrInvoice);
+  if (invoice?.status === 'CANCELLED') return PAY_STATES.CANCELLED;
+  const status = effectiveInvoiceStatus(invoice, now);
   if (status === 'PAID') return PAY_STATES.PAID;
-  if (isExpiredInvoice(status)) return PAY_STATES.EXPIRED;
+  if (isExpiredInvoice(status, now)) return PAY_STATES.EXPIRED;
   return null;
 }
 
@@ -299,35 +300,16 @@ function isResultState(state) {
   );
 }
 
-/**
- * Whether a result should interrupt the screen reader.
- *
- * Only a failure does: the payer is blocked on it. A confirmed payment is good
- * news that can wait for a gap in the announcement queue.
- */
 function paymentStateKind(state) {
   return state?.status === PAY_STATES.ERROR ? 'error' : 'status';
 }
 
-/**
- * Ends a clause with a full stop.
- *
- * Backend rejections arrive as fragments — "Memo mismatch", "Amount mismatch"
- * — and a live region reads its content straight through, so two announcements
- * run together into one breathless sentence without this.
- */
 function asSentence(text) {
   const trimmed = (text ?? '').trim();
   if (!trimmed) return '';
   return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
-/**
- * The sentence a live region reads when the pay page changes state.
- *
- * Every branch returns English prose rather than a state name, because this
- * text is read aloud verbatim — "verifying" on its own is not a sentence.
- */
 function describePaymentState(state) {
   switch (state?.status) {
     case PAY_STATES.PAYING:
@@ -338,6 +320,8 @@ function describePaymentState(state) {
       return 'Payment confirmed. Your payment proof is ready to download.';
     case PAY_STATES.EXPIRED:
       return 'This invoice has expired and can no longer be paid.';
+    case PAY_STATES.CANCELLED:
+      return 'This invoice has been cancelled by the seller.';
     case PAY_STATES.ERROR:
       return state?.error
         ? `Payment could not be completed. ${asSentence(state.error)}`

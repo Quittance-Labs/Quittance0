@@ -232,8 +232,7 @@ function runIsolationSuite(backendName: string, factory: () => InvoiceStorage) {
     });
 
     it('Seller B stats are isolated from Seller A payment state', async () => {
-      // Pay Seller A invoice, then confirm Seller B stats are unaffected.
-      await storage.markAsPaid(invoiceA.id, TX_HASH, PAYER);
+      await storage.markAsPaid(invoiceA.id, TX_HASH, PAYER, undefined, { settledAt: new Date() });
 
       const [statsA] = await storage.getInvoiceStats(SELLER_A);
       const [statsB] = await storage.getInvoiceStats(SELLER_B);
@@ -282,7 +281,7 @@ function runIsolationSuite(backendName: string, factory: () => InvoiceStorage) {
     // Seller B's stats or list.
 
     it('paying Seller A invoice does not appear in Seller B list or stats', async () => {
-      await storage.markAsPaid(invoiceA.id, TX_HASH, PAYER);
+      await storage.markAsPaid(invoiceA.id, TX_HASH, PAYER, undefined, { settledAt: new Date() });
 
       const bList = await storage.getInvoicesBySeller(SELLER_B);
       assert.equal(bList.some(r => r.id === invoiceA.id), false,

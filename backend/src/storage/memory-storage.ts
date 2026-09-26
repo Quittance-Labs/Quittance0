@@ -2,7 +2,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { calculateInvoiceStats } from './invoice-stats';
 import type { InvoiceStats } from './invoice-stats';
 import { isPendingInvoiceExpired } from '../domain/invoice-expiry';
-import { settlementFieldsForInvoice } from '../domain/invoice-settlement';
+import {
+  settlementFieldsForInvoice,
+  assertLegalStatusTransition,
+} from '../domain/invoice-settlement';
 import {
   InvoiceIdCollisionError,
   MemoCollisionError,
@@ -145,16 +148,16 @@ class MemoryStorage {
     this.markExpiredInvoices();
     const now = new Date();
     const invoice = this.invoices.get(id);
-    if (!invoice || invoice.status === 'PAID') return undefined;
-    if (
-      invoice.status !== 'PENDING' &&
-      invoice.status !== 'CANCELLED' &&
-      invoice.status !== 'EXPIRED'
-    ) {
+    if (!invoice) {
+      return undefined;
+    }
+    if (invoice.status === 'CANCELLED') {
+      assertLegalStatusTransition(invoice.status, 'PAID');
+    }
+    if (invoice.status !== 'PENDING' && invoice.status !== 'EXPIRED') {
       return undefined;
     }
 
-    // Settlement time must come from the ledger close time; never invent one.
     const settlement = settlementFieldsForInvoice(invoice, options.settledAt);
 
     // One transaction settles one invoice. The claim below reads and records in

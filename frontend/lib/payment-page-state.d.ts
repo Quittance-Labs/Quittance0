@@ -1,6 +1,6 @@
 import type { WalletGateResult } from './freighter-availability';
 
-export type PayStatus = 'idle' | 'paying' | 'verifying' | 'paid' | 'error' | 'expired';
+export type PayStatus = 'idle' | 'paying' | 'verifying' | 'paid' | 'error' | 'expired' | 'cancelled';
 
 export interface PayInvoice {
   status: string;
@@ -60,6 +60,7 @@ export declare const PAY_STATES: {
   readonly PAID: 'paid';
   readonly ERROR: 'error';
   readonly EXPIRED: 'expired';
+  readonly CANCELLED: 'cancelled';
 };
 
 export declare const TERMINAL_STATES: readonly PayStatus[];

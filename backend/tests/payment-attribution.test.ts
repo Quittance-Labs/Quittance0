@@ -17,7 +17,10 @@ import {
   PaymentClaimError,
   PaymentClaimIndex,
 } from '../src/domain/payment-attribution';
-import { SettlementTimeUnavailableError } from '../src/domain/invoice-settlement';
+import {
+  IllegalStatusTransitionError,
+  SettlementTimeUnavailableError,
+} from '../src/domain/invoice-settlement';
 import { MemoryStorage } from '../src/storage/memory-storage';
 import { InvoiceMemoryService } from '../src/services/invoice-memory.service';
 import { createInvoiceSchema } from '../src/utils/validation';
@@ -126,7 +129,7 @@ describe('one transaction settles one invoice', () => {
 
     assert.throws(
       () => storage.markAsPaid(cancelled.id, TX_A, SELLER),
-      SettlementTimeUnavailableError
+      IllegalStatusTransitionError
     );
     assert.equal(
       storage.getPaymentClaim(TX_A),
