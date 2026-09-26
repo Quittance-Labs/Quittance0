@@ -11,7 +11,7 @@ function buildRedisClient(): Redis {
     enableOfflineQueue: false,
     maxRetriesPerRequest: 1,
     retryStrategy(times) {
-      if (times > 1) return null;
+      if (process.env.NODE_ENV === 'test' || times > 1) return null;
       return Math.min(times * 50, 200);
     },
   });
