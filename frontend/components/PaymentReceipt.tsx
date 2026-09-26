@@ -6,6 +6,7 @@ import { describeAmount } from '@/lib/a11y';
 import { Check, Download, ExternalLink, FileText, Mail } from 'lucide-react';
 import AssetLogo from './AssetLogo';
 import { openInvoicePDF, emailPaymentProof } from '@/lib/export';
+import { canSendProofEmail, getProofMailtoRecipient } from '@/lib/mailto-delivery';
 import { toast } from 'sonner';
 import type { PayPageInvoice } from './pay-page.types';
 import { buildHorizonTxUrl, resolveExplorerNetwork } from '@/lib/explorer-tx-link';
@@ -115,10 +116,8 @@ Stellar Blockchain Payment System
     invoice.paymentTxHash,
     resolveExplorerNetwork(invoice)
   );
-  // Public pay DTOs never carry client email (#559); emailing proof stays
-  // on the seller workspace where the wallet-gated DTO still has contact.
-  const canEmail = false;
-  const proofRecipient = '';
+  const canEmail = canSendProofEmail(invoice as any);
+  const proofRecipient = getProofMailtoRecipient(invoice as any);
   const emailReasonId = 'receipt-email-reason';
 
   return (
@@ -242,7 +241,7 @@ Stellar Blockchain Payment System
         </button>
         {!canEmail && (
           <p id={emailReasonId} className="field-hint text-center">
-            Emailing proof is available from the seller workspace after connecting the invoice wallet.
+            Unavailable: no client email on public invoice. Emailing proof is available from the seller workspace after connecting the invoice wallet.
           </p>
         )}
 

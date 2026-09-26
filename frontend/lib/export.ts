@@ -367,7 +367,9 @@ export function generateInvoicePDF(invoiceOrProof: Invoice | QuittanceProof): st
   <div class="info-grid">
     <div class="info-section">
       <h3>Bill To</h3>
-      <div class="info-value">N/A</div>
+      ${invoice.customerName ? `<div class="info-row"><div class="info-label">Customer Name</div><div class="info-value">${escapeHtml(invoice.customerName)}</div></div>` : ''}
+      ${invoice.customerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${escapeHtml(invoice.customerEmail)}</div></div>` : ''}
+      ${!invoice.customerName && !invoice.customerEmail ? `<div class="info-value">N/A</div>` : ''}
     </div>
 
     <div class="info-section">
@@ -384,7 +386,19 @@ export function generateInvoicePDF(invoiceOrProof: Invoice | QuittanceProof): st
     </div>
   </div>
 
+  ${invoice.sellerName || invoice.sellerEmail ? `
+  <div class="info-section" style="margin-bottom: 20px;">
+    <h3>Seller Information</h3>
+    ${invoice.sellerName ? `<div class="info-row"><div class="info-label">Name</div><div class="info-value">${escapeHtml(invoice.sellerName)}</div></div>` : ''}
+    ${invoice.sellerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${escapeHtml(invoice.sellerEmail)}</div></div>` : ''}
+  </div>` : ''}
 
+  ${isPaid && (invoice.payerName || invoice.payerEmail) ? `
+  <div class="info-section" style="margin-bottom: 20px;">
+    <h3>Payer Information</h3>
+    ${invoice.payerName ? `<div class="info-row"><div class="info-label">Name</div><div class="info-value">${escapeHtml(invoice.payerName)}</div></div>` : ''}
+    ${invoice.payerEmail ? `<div class="info-row"><div class="info-label">Email</div><div class="info-value">${escapeHtml(invoice.payerEmail)}</div></div>` : ''}
+  </div>` : ''}
 
   <div class="amount-section">
     <div class="amount-label">Amount ${isPaid ? 'Paid' : 'Due'}</div>
@@ -394,6 +408,7 @@ export function generateInvoicePDF(invoiceOrProof: Invoice | QuittanceProof): st
 
   ${warning ? `<div class="late-warning"><p><strong>${escapeHtml(warning.title)}</strong></p><p>${escapeHtml(warning.body)}</p></div>` : ''}
 
+  ${invoice.description ? `<div class="info-section" style="margin-bottom: 20px;"><h3>Description</h3><p style="color: #1f2937; line-height: 1.6;">${escapeHtml(invoice.description)}</p></div>` : ''}
 
   <table class="details-table">
     <tr><td>Invoice ID</td><td style="font-family: monospace; font-size: 12px;">${escapeHtml(invoice.id)}</td></tr>
@@ -402,7 +417,9 @@ export function generateInvoicePDF(invoiceOrProof: Invoice | QuittanceProof): st
     ${isPaid && invoice.paymentTxHash ? `
     <tr><td>Transaction Hash</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${escapeHtml(invoice.paymentTxHash)}</td></tr>
     ${explorerUrl ? `<tr><td>Explorer</td><td style="font-size: 11px; word-break: break-all;"><a href="${escapeHtml(explorerUrl)}">${escapeHtml(explorerUrl)}</a></td></tr>` : ''}
-    <tr><td>Payer Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${escapeHtml(invoice.payerPublicKey || 'N/A')}</td></tr>` : ''}
+    <tr><td>Payer Address</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${escapeHtml(invoice.payerPublicKey || 'N/A')}</td></tr>
+    ${invoice.payerName ? `<tr><td>Payer Name</td><td>${escapeHtml(invoice.payerName)}</td></tr>` : ''}
+    ${invoice.payerEmail ? `<tr><td>Payer Email</td><td>${escapeHtml(invoice.payerEmail)}</td></tr>` : ''}` : ''}
     <tr><td>Network</td><td>${network}</td></tr>
   </table>
 
