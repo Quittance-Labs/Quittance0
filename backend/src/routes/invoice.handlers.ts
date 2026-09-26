@@ -308,7 +308,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           return sendFailure(res, 403, 'Forbidden: not the seller of this invoice');
         }
 
-        const events = (await storage.getPaymentEvents?.(invoice.id)) ?? [];
+        const events = await storage.getPaymentEvents(invoice.id);
         sendSuccess(
           res,
           200,
@@ -537,7 +537,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           // Issue #515: a rejected verify lands on the seller's audit feed with
           // the same taxonomy the monitor uses, so "still PENDING" answers
           // itself without the payer having to say so.
-          await storage.logPaymentEvent?.(
+          await storage.logPaymentEvent(
             id,
             verification.code === 'AMOUNT_TOO_LOW' || verification.code === 'AMOUNT_MISMATCH'
               ? 'PARTIAL_PAYMENT'
