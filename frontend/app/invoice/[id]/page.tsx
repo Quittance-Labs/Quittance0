@@ -99,8 +99,24 @@ export default function InvoiceDetailPage() {
     void loadInvoice();
   }, [loadInvoice]);
 
-  /** The canonical share URL for this invoice: the payer's page. */
-  const payLink = () => `${window.location.origin}${invoiceSharePath(invoice.id)}`;
+  /**
+   * Canonical share URL from the server pay-link artifact when available
+   * (issue #557). Falls back to the same-origin path only when payment-info
+   * has not loaded yet.
+   */
+  const payLink = () =>
+    paymentInfo?.paymentUrl ||
+    `${window.location.origin}${invoiceSharePath(invoice.id)}`;
+
+  /**
+   * What the QR decided to encode — the same string create and the pay page
+   * copy. Prefers the artifact's copyValue so seller and payer cannot diverge.
+   */
+  const qrCopyValue = () =>
+    paymentInfo?.copyValue ||
+    paymentInfo?.stellarUri ||
+    paymentInfo?.paymentUrl ||
+    payLink();
 
   const handleShare = async () => {
     const url = payLink();
@@ -126,12 +142,17 @@ export default function InvoiceDetailPage() {
    * device. The Web Share sheet is not universally available and the async
    * clipboard is refused outright in an insecure context, so this goes through
    * `copyWithFeedback`, which reports the failure instead of leaving the
-   * seller with a silent no-op (issue #431).
+   * seller with a silent no-op (issue #431). The string is the same one the
+   * QR decided (issue #557).
    */
   const handleCopyPayLink = async () => {
-    const copied = await copyWithFeedback(payLink());
+    const copied = await copyWithFeedback(qrCopyValue());
     if (copied) {
-      toast.success('Payment link copied');
+      toast.success(
+        paymentInfo?.stellarQrEncodesUri === false
+          ? 'Payment link copied'
+          : 'Payment URI copied'
+      );
     } else {
       toast.error('Could not copy the payment link — select it on the payment page instead');
     }
@@ -485,14 +506,29 @@ export default function InvoiceDetailPage() {
                     Payment QR Code
                   </h3>
                   <QRCodeDisplay
-                    value={paymentInfo.paymentUrl}
+                    value={
+                      paymentInfo.stellarQrCode ||
+                      paymentInfo.paymentUrl ||
+                      ''
+                    }
                     size={200}
                     showCopy={true}
                     description={`a payment link for ${describeAmount(
                       canonicalAmount(invoice.amount) ?? formatAmount(invoice.amount, 7),
                       invoice.assetCode
                     )}`}
+                    copyValue={
+                      paymentInfo.copyValue ||
+                      paymentInfo.stellarUri ||
+                      paymentInfo.paymentUrl ||
+                      undefined
+                    }
                   />
+                  {paymentInfo.stellarQrEncodesUri === false && (
+                    <p className="text-xs text-gray-600 text-center mt-2">
+                      QR opens the pay link; the full Stellar URI is still available to copy.
+                    </p>
+                  )}
                   <Link
                     href={`/pay/${invoice.id}`}
                     className="btn btn-primary w-full mt-4"

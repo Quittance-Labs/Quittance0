@@ -8,26 +8,19 @@ describe('SEP-0007 wallet research vectors', () => {
     it(vector.name, () => {
       assert.ok(vector.walletNote.length > 10);
       if (vector.current === 'accept') {
-        const { networkPassphrase: _network, ...currentInput } = vector.input;
-        assert.equal(formatQrPaymentPayload(currentInput).uri, vector.expectedUri);
+        assert.equal(formatQrPaymentPayload(vector.input).uri, vector.expectedUri);
         return;
       }
 
       if (vector.current === 'reject') {
-        const { networkPassphrase: _network, ...currentInput } = vector.input;
-        assert.throws(() => formatQrPaymentPayload(currentInput), {
+        assert.throws(() => formatQrPaymentPayload(vector.input), {
           message: vector.expectedError,
         });
         return;
       }
 
-      const { networkPassphrase, ...currentInput } = vector.input;
-      const current = formatQrPaymentPayload(currentInput);
-      if (networkPassphrase) {
-        assert.equal(current.params.network_passphrase, undefined);
-      } else {
-        assert.ok(Buffer.byteLength(current.params.memo || '', 'utf8') > 28);
-      }
+      // Remaining gaps are deliberate — named in docs/SEP_0007_QR.md.
+      assert.equal(vector.current, 'gap');
     });
   }
 
