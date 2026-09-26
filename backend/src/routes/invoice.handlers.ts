@@ -35,6 +35,7 @@ import {
 import { PaymentClaimError } from '../domain/payment-attribution';
 import {
   SettlementTimeUnavailableError,
+  IllegalStatusTransitionError,
   warningForLatePayment,
 } from '../domain/invoice-settlement';
 import { cutoverDrainMode, simulationAllowed } from '../config/runtime';
@@ -486,7 +487,6 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         const statusCheck = checkInvoiceIsPayable(invoice.status);
         if (
           !statusCheck.ok &&
-          invoice.status !== 'CANCELLED' &&
           invoice.status !== 'EXPIRED'
         ) {
           return sendVerificationFailure(res, 400, statusCheck.code, statusCheck.error);
@@ -606,14 +606,11 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
               messageForCode('TRANSACTION_CLOSE_TIME_UNAVAILABLE')
             );
           }
-          // The payment lookup can cross expiresAt after the first status read.
-          // Re-read so that race still returns the public expiry contract.
           const latest = await storage.getInvoiceById(id);
           const latestStatus = latest && checkInvoiceIsPayable(latest.status);
           if (
             latestStatus &&
             !latestStatus.ok &&
-            latest!.status !== 'CANCELLED' &&
             latest!.status !== 'EXPIRED'
           ) {
             return sendVerificationFailure(
@@ -621,6 +618,14 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
               400,
               latestStatus.code,
               latestStatus.error
+            );
+          }
+          if (error instanceof IllegalStatusTransitionError) {
+            return sendVerificationFailure(
+              res,
+              400,
+              'INVOICE_NOT_PENDING',
+              'Invoice is not pending'
             );
           }
           throw error;

@@ -198,8 +198,7 @@ class FakePostgresDb implements Queryable {
         Number.isFinite(settledAt.getTime()) &&
         (
           row.status === 'PENDING' ||
-          row.status === 'EXPIRED' ||
-          (row.status === 'CANCELLED' && row.cancelled_at)
+          row.status === 'EXPIRED'
         );
 
       if (!row || !canSettle) {
@@ -207,21 +206,12 @@ class FakePostgresDb implements Queryable {
       }
 
       const priorStatus = row.status;
-      const afterCancel =
-        priorStatus === 'CANCELLED' &&
-        settledAt.getTime() >= new Date(row.cancelled_at).getTime();
       const expiresAt = row.expires_at ? new Date(row.expires_at) : null;
       const afterExpiry = expiresAt
         ? settledAt.getTime() >= expiresAt.getTime()
         : priorStatus === 'EXPIRED';
-      const settlementContext =
-        priorStatus === 'CANCELLED'
-          ? afterCancel ? 'AFTER_CANCEL' : 'ON_TIME'
-          : afterExpiry ? 'AFTER_EXPIRY' : 'ON_TIME';
-      const warningCode =
-        priorStatus === 'CANCELLED'
-          ? afterCancel ? 'PAYMENT_RECEIVED_AFTER_CANCEL' : null
-          : afterExpiry ? 'PAYMENT_RECEIVED_AFTER_EXPIRY' : null;
+      const settlementContext = afterExpiry ? 'AFTER_EXPIRY' : 'ON_TIME';
+      const warningCode = afterExpiry ? 'PAYMENT_RECEIVED_AFTER_EXPIRY' : null;
 
       Object.assign(row, {
         status: 'PAID',
@@ -258,6 +248,20 @@ class FakePostgresDb implements Queryable {
         eventData: typeof params[2] === 'string' ? JSON.parse(params[2]) : params[2],
       });
       return { rows: [], rowCount: 1 };
+    }
+
+    if (sql.includes('FROM payment_events WHERE invoice_id =')) {
+      const found = this.events.filter((e) => e.invoiceId === params[0]);
+      return {
+        rows: found.map((e, idx) => ({
+          id: `evt-${idx}`,
+          invoice_id: e.invoiceId,
+          event_type: e.eventType,
+          event_data: e.eventData,
+          created_at: new Date(),
+        })),
+        rowCount: found.length,
+      };
     }
 
     if (sql.startsWith('SELECT * FROM invoices WHERE id =')) {
@@ -317,7 +321,7 @@ function runManualVerifySuite(name: string, createStorage: () => InvoiceStorage)
       transaction = undefined;
     });
 
-    it('turns a matching payment detected after seller cancellation into PAID AFTER_CANCEL', async () => {
+    it('rejects payment verification when the invoice has already been cancelled', async () => {
       const invoice = await createInvoice();
       const cancelled = await cancelInvoice(invoice.id);
       const settledAt = isoOffset(cancelled.cancelledAt, 1000);
@@ -328,36 +332,13 @@ function runManualVerifySuite(name: string, createStorage: () => InvoiceStorage)
         createReq({ params: { id: invoice.id }, body: { txHash: TX_HASH } })
       );
 
-      assert.equal(verified.statusCode, 200, JSON.stringify(verified.body));
-      assert.equal(verified.body.success, true);
-      assert.equal(verified.body.code, 'PAYMENT_RECEIVED_AFTER_CANCEL');
-      assert.equal(verified.body.warning, 'Payment was received after this invoice was cancelled.');
-      assert.equal(verified.body.data.status, 'PAID');
-      assert.equal(verified.body.data.paymentTxHash, TX_HASH);
-      assert.equal(verified.body.data.settlementContext, 'AFTER_CANCEL');
-      assert.equal(new Date(verified.body.data.settledAt).toISOString(), settledAt);
-      assert.equal(verified.body.data.priorStatus, 'CANCELLED');
-      assert.equal(verified.body.data.latePaymentWarningCode, 'PAYMENT_RECEIVED_AFTER_CANCEL');
-    });
+      assert.equal(verified.statusCode, 400, JSON.stringify(verified.body));
+      assert.equal(verified.body.success, false);
+      assert.equal(verified.body.code, 'INVOICE_NOT_PENDING');
 
-    it('classifies a payment already on-chain before cancellation as ON_TIME when detected later', async () => {
-      const invoice = await createInvoice();
-      const cancelled = await cancelInvoice(invoice.id);
-      const settledAt = isoOffset(cancelled.cancelledAt, -1000);
-      transaction = paymentTransaction({ memo: invoice.memo, createdAt: settledAt });
-
-      const verified = await call(
-        handlers().verifyPayment,
-        createReq({ params: { id: invoice.id }, body: { txHash: TX_HASH } })
-      );
-
-      assert.equal(verified.statusCode, 200, JSON.stringify(verified.body));
-      assert.equal(verified.body.code, undefined);
-      assert.equal(verified.body.warning, undefined);
-      assert.equal(verified.body.data.status, 'PAID');
-      assert.equal(verified.body.data.settlementContext, 'ON_TIME');
-      assert.equal(new Date(verified.body.data.settledAt).toISOString(), settledAt);
-      assert.equal(verified.body.data.priorStatus, 'CANCELLED');
+      const stored = await storage.getInvoiceById(invoice.id);
+      assert.equal(stored?.status, 'CANCELLED');
+      assert.equal(Boolean(stored?.paymentTxHash), false);
     });
 
     it('keeps a cancelled invoice unchanged when the later transaction mismatches', async () => {
@@ -375,7 +356,7 @@ function runManualVerifySuite(name: string, createStorage: () => InvoiceStorage)
       );
 
       assert.equal(verified.statusCode, 400, JSON.stringify(verified.body));
-      assert.equal(verified.body.code, 'AMOUNT_TOO_LOW');
+      assert.equal(verified.body.code, 'INVOICE_NOT_PENDING');
 
       const stored = await storage.getInvoiceById(invoice.id);
       assert.equal(stored?.status, 'CANCELLED');
@@ -502,7 +483,11 @@ class MemoryCheckpointStore implements PaymentMonitorCheckpointStore {
   }
 }
 
-function monitorSource(createdAt: string, overrides: { amount?: string } = {}): PaymentPageSource {
+function monitorSource(
+  memo: string,
+  createdAt: string,
+  overrides: { amount?: string } = {}
+): PaymentPageSource {
   return {
     async getLatestPaymentCursor() {
       return 'cursor-0';
@@ -519,7 +504,7 @@ function monitorSource(createdAt: string, overrides: { amount?: string } = {}): 
             to: SELLER,
             amount: overrides.amount ?? '42.5000000',
             assetCode: 'XLM',
-            memo: 'INV-MONITOR-CANCEL',
+            memo,
             memoType: 'text',
             ledger: 123,
             createdAt,
@@ -530,75 +515,126 @@ function monitorSource(createdAt: string, overrides: { amount?: string } = {}): 
   };
 }
 
-describe('cancel versus payment monitor attribution on memory storage', () => {
-  let rawStorage: MemoryStorage;
-  let invoiceService: InvoiceMemoryService;
+interface MonitorTestHarness {
+  invoices: InvoiceService | InvoiceMemoryService;
+  database?: any;
+  createInvoice: () => Promise<{ id: string; memo: string }>;
+  cancelInvoice: (id: string) => Promise<{ cancelledAt: string | Date }>;
+  getInvoice: (id: string) => Promise<{ status: string; paymentTxHash?: string | null } | null | undefined>;
+  getPaymentEvents: (id: string) => Promise<Array<{ eventType: string; eventData: any }>>;
+}
 
-  beforeEach(() => {
-    rawStorage = new MemoryStorage();
-    invoiceService = new InvoiceMemoryService(rawStorage);
+function createMemoryMonitorHarness(): MonitorTestHarness {
+  const rawStorage = new MemoryStorage();
+  const invoiceService = new InvoiceMemoryService(rawStorage);
+  return {
+    invoices: invoiceService,
+    database: undefined,
+    createInvoice: async () => {
+      const inv = await invoiceService.createInvoice({
+        sellerPublicKey: SELLER,
+        amount: 42.5,
+        assetCode: 'XLM',
+      });
+      return { id: inv.id, memo: inv.memo };
+    },
+    cancelInvoice: async (id: string) => {
+      const cancelled = rawStorage.cancelInvoice(id, SELLER);
+      return { cancelledAt: cancelled!.cancelledAt! };
+    },
+    getInvoice: async (id: string) => rawStorage.getInvoiceById(id),
+    getPaymentEvents: async (id: string) => invoiceService.getPaymentEvents(id),
+  };
+}
+
+function createPostgresMonitorHarness(): MonitorTestHarness {
+  const db = new FakePostgresDb();
+  const invoiceService = new InvoiceService(db as any);
+  return {
+    invoices: invoiceService,
+    database: db as any,
+    createInvoice: async () => {
+      const inv = await invoiceService.createInvoice({
+        sellerPublicKey: SELLER,
+        amount: 42.5,
+        assetCode: 'XLM',
+      });
+      return { id: inv.id, memo: inv.memo };
+    },
+    cancelInvoice: async (id: string) => {
+      const cancelled = await invoiceService.cancelInvoice(id, SELLER);
+      return { cancelledAt: cancelled!.cancelledAt! };
+    },
+    getInvoice: async (id: string) => invoiceService.getInvoiceById(id),
+    getPaymentEvents: async (id: string) => invoiceService.getPaymentEvents(id),
+  };
+}
+
+function runMonitorCancelSuite(name: string, createHarness: () => MonitorTestHarness) {
+  describe(`cancel versus payment monitor attribution on ${name}`, () => {
+    let harness: MonitorTestHarness;
+
+    beforeEach(() => {
+      harness = createHarness();
+    });
+
+    it('rejects an exact payment found after cancellation and logs PAYMENT_REJECTED', async () => {
+      const invoice = await harness.createInvoice();
+      const cancelled = await harness.cancelInvoice(invoice.id);
+      assert.ok(cancelled?.cancelledAt, 'cancellation must record cancelledAt');
+      const settledAt = isoOffset(cancelled.cancelledAt, 1000);
+
+      const monitor = new PaymentMonitorService({
+        account: SELLER,
+        network: 'TESTNET',
+        source: monitorSource(invoice.memo, settledAt),
+        invoices: harness.invoices,
+        checkpoints: new MemoryCheckpointStore(),
+        database: harness.database,
+      });
+
+      await monitor.runOnce();
+
+      const stored = await harness.getInvoice(invoice.id);
+      assert.equal(stored?.status, 'CANCELLED');
+      assert.equal(Boolean(stored?.paymentTxHash), false);
+
+      const events = await harness.getPaymentEvents(invoice.id);
+      assert.equal(events.length, 1);
+      assert.equal(events[0].eventType, 'PAYMENT_REJECTED');
+      assert.equal(events[0].eventData.code, 'INVOICE_NOT_PENDING');
+    });
+
+    it('logs a mismatch after cancellation without changing the cancelled invoice', async () => {
+      const invoice = await harness.createInvoice();
+      const cancelled = await harness.cancelInvoice(invoice.id);
+      assert.ok(cancelled?.cancelledAt, 'cancellation must record cancelledAt');
+
+      const monitor = new PaymentMonitorService({
+        account: SELLER,
+        network: 'TESTNET',
+        source: monitorSource(invoice.memo, isoOffset(cancelled.cancelledAt, 1000), { amount: '41.0000000' }),
+        invoices: harness.invoices,
+        checkpoints: new MemoryCheckpointStore(),
+        database: harness.database,
+      });
+
+      await monitor.runOnce();
+
+      const stored = await harness.getInvoice(invoice.id);
+      assert.equal(stored?.status, 'CANCELLED');
+      assert.equal(Boolean(stored?.paymentTxHash), false);
+
+      const events = await harness.getPaymentEvents(invoice.id);
+      assert.equal(events.length, 1);
+      assert.equal(events[0].eventType, 'PAYMENT_REJECTED');
+      assert.equal(events[0].eventData.code, 'INVOICE_NOT_PENDING');
+    });
   });
+}
 
-  it('settles an exact payment found after cancellation with AFTER_CANCEL context', async () => {
-    const invoice = rawStorage.createInvoice({
-      sellerPublicKey: SELLER,
-      amount: 42.5,
-      assetCode: 'XLM',
-      memo: 'INV-MONITOR-CANCEL',
-    });
-    const cancelled = rawStorage.cancelInvoice(invoice.id, SELLER);
-    assert.ok(cancelled?.cancelledAt, 'cancellation must record cancelledAt');
-    const settledAt = isoOffset(cancelled.cancelledAt, 1000);
-
-    const monitor = new PaymentMonitorService({
-      account: SELLER,
-      network: 'TESTNET',
-      source: monitorSource(settledAt),
-      invoices: invoiceService,
-      checkpoints: new MemoryCheckpointStore(),
-      database: undefined,
-    });
-
-    await monitor.runOnce();
-
-    const stored = rawStorage.getInvoiceById(invoice.id);
-    assert.equal(stored?.status, 'PAID');
-    assert.equal(stored?.paymentTxHash, TX_HASH_2);
-    assert.equal(stored?.settlementContext, 'AFTER_CANCEL');
-    assert.equal(stored?.latePaymentWarningCode, 'PAYMENT_RECEIVED_AFTER_CANCEL');
-  });
-
-  it('logs a mismatch after cancellation without changing the cancelled invoice', async () => {
-    const invoice = rawStorage.createInvoice({
-      sellerPublicKey: SELLER,
-      amount: 42.5,
-      assetCode: 'XLM',
-      memo: 'INV-MONITOR-CANCEL',
-    });
-    const cancelled = rawStorage.cancelInvoice(invoice.id, SELLER);
-    assert.ok(cancelled?.cancelledAt, 'cancellation must record cancelledAt');
-
-    const monitor = new PaymentMonitorService({
-      account: SELLER,
-      network: 'TESTNET',
-      source: monitorSource(isoOffset(cancelled.cancelledAt, 1000), { amount: '41.0000000' }),
-      invoices: invoiceService,
-      checkpoints: new MemoryCheckpointStore(),
-      database: undefined,
-    });
-
-    await monitor.runOnce();
-
-    const stored = rawStorage.getInvoiceById(invoice.id);
-    assert.equal(stored?.status, 'CANCELLED');
-    assert.equal(stored?.paymentTxHash, undefined);
-
-    const events = await invoiceService.getPaymentEvents(invoice.id);
-    assert.equal(events.length, 1);
-    assert.equal(events[0].eventType, 'PARTIAL_PAYMENT');
-    assert.equal(events[0].eventData.code, 'AMOUNT_TOO_LOW');
-  });
-});
+runMonitorCancelSuite('in-memory storage', createMemoryMonitorHarness);
+runMonitorCancelSuite('postgres storage double', createPostgresMonitorHarness);
 
 runManualVerifySuite('in-memory storage', createMemoryStorage);
 runManualVerifySuite('postgres storage double', createPostgresStorage);

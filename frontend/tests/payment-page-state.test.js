@@ -131,7 +131,7 @@ test('stateForStatus only forces a state for settled invoices', () => {
   assert.equal(stateForStatus('PAID'), PAY_STATES.PAID);
   assert.equal(stateForStatus('EXPIRED'), PAY_STATES.EXPIRED);
   assert.equal(stateForStatus('PENDING'), null);
-  assert.equal(stateForStatus('CANCELLED'), null);
+  assert.equal(stateForStatus('CANCELLED'), PAY_STATES.CANCELLED);
 });
 
 // ------------------------------------------------------------- happy paths

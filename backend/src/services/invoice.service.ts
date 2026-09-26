@@ -8,6 +8,8 @@ import { calculateInvoiceExpiry } from '../domain/invoice-expiry';
 import { PaymentClaimError } from '../domain/payment-attribution';
 import {
   SettlementTimeUnavailableError,
+  IllegalStatusTransitionError,
+  assertLegalStatusTransition,
   type LatePaymentWarningCode,
   type SettlementContext,
 } from '../domain/invoice-settlement';
@@ -193,8 +195,6 @@ export class InvoiceService {
             payer_email = $5,
             settled_at = $6::timestamptz,
             settlement_context = CASE
-              WHEN status = 'CANCELLED' AND $6::timestamptz >= cancelled_at THEN 'AFTER_CANCEL'
-              WHEN status = 'CANCELLED' THEN 'ON_TIME'
               WHEN COALESCE($6::timestamptz >= expires_at, status = 'EXPIRED') THEN 'AFTER_EXPIRY'
               ELSE 'ON_TIME'
             END,
@@ -203,16 +203,12 @@ export class InvoiceService {
               ELSE NULL
             END,
             late_payment_warning_code = CASE
-              WHEN status = 'CANCELLED' AND $6::timestamptz >= cancelled_at THEN 'PAYMENT_RECEIVED_AFTER_CANCEL'
-              WHEN status <> 'CANCELLED' AND COALESCE($6::timestamptz >= expires_at, status = 'EXPIRED') THEN 'PAYMENT_RECEIVED_AFTER_EXPIRY'
+              WHEN COALESCE($6::timestamptz >= expires_at, status = 'EXPIRED') THEN 'PAYMENT_RECEIVED_AFTER_EXPIRY'
               ELSE NULL
             END
         WHERE id = $1
           AND $6::timestamptz IS NOT NULL
-          AND (
-            status IN ('PENDING', 'EXPIRED')
-            OR (status = 'CANCELLED' AND cancelled_at IS NOT NULL)
-          )
+          AND status IN ('PENDING', 'EXPIRED')
         RETURNING *
       ),
       payment_event AS (
@@ -251,6 +247,9 @@ export class InvoiceService {
         if (existing.rows.length > 0 && !settledAt) {
           throw new SettlementTimeUnavailableError();
         }
+        if (existing.rows.length > 0 && existing.rows[0].status === 'CANCELLED') {
+          assertLegalStatusTransition(existing.rows[0].status, 'PAID');
+        }
         throw new Error('Invoice not found, expired, or already processed');
       }
 
@@ -258,12 +257,12 @@ export class InvoiceService {
 
       return this.mapRowToInvoice(result.rows[0]);
     } catch (error: any) {
-      if (error instanceof SettlementTimeUnavailableError) {
+      if (
+        error instanceof SettlementTimeUnavailableError ||
+        error instanceof IllegalStatusTransitionError
+      ) {
         throw error;
       }
-      // Durable form of the payment claim lock (issue #501): the partial
-      // unique index on payment_tx_hash rejects a second settle with 23505,
-      // which maps to the same typed rejection the memory claim index raises.
       if (error?.code === '23505' && error?.constraint === 'uq_invoices_payment_tx_hash') {
         let holderId = 'unknown';
         try {

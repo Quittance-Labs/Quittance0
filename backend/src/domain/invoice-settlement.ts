@@ -32,6 +32,43 @@ export class SettlementTimeUnavailableError extends Error {
   }
 }
 
+export class IllegalStatusTransitionError extends Error {
+  readonly code = 'ILLEGAL_STATUS_TRANSITION';
+  readonly fromStatus: InvoiceStatus;
+  readonly toStatus: InvoiceStatus;
+
+  constructor(fromStatus: InvoiceStatus, toStatus: InvoiceStatus) {
+    super(`Cannot transition invoice from ${fromStatus} to ${toStatus}`);
+    this.name = 'IllegalStatusTransitionError';
+    this.fromStatus = fromStatus;
+    this.toStatus = toStatus;
+  }
+}
+
+export const LEGAL_STATUS_TRANSITIONS: Readonly<Record<InvoiceStatus, readonly InvoiceStatus[]>> = Object.freeze({
+  PENDING: Object.freeze(['PAID', 'EXPIRED', 'CANCELLED'] as const),
+  EXPIRED: Object.freeze(['PAID'] as const),
+  PAID: Object.freeze([] as const),
+  CANCELLED: Object.freeze([] as const),
+});
+
+/**
+ * Validates whether a transition from one status to another is legal.
+ */
+export function isLegalStatusTransition(from: InvoiceStatus, to: InvoiceStatus): boolean {
+  const allowed = LEGAL_STATUS_TRANSITIONS[from];
+  return allowed ? allowed.includes(to) : false;
+}
+
+/**
+ * Asserts that a transition from one status to another is legal, throwing IllegalStatusTransitionError if not.
+ */
+export function assertLegalStatusTransition(from: InvoiceStatus, to: InvoiceStatus): void {
+  if (!isLegalStatusTransition(from, to)) {
+    throw new IllegalStatusTransitionError(from, to);
+  }
+}
+
 export function parseSettlementTime(value: unknown): Date | null {
   if (value instanceof Date) {
     return Number.isFinite(value.getTime()) ? value : null;
@@ -48,34 +85,20 @@ export function warningForLatePayment(code: LatePaymentWarningCode): string {
   return LATE_PAYMENT_WARNINGS[code];
 }
 
+/**
+ * Computes settlement fields for settling an invoice, enforcing legal status transitions.
+ */
 export function settlementFieldsForInvoice(
   invoice: SettlementInvoiceState,
   settledAtInput: unknown
 ): SettlementFields {
+  assertLegalStatusTransition(invoice.status, 'PAID');
+
   const settledAt = parseSettlementTime(settledAtInput);
   if (!settledAt) {
     throw new SettlementTimeUnavailableError();
   }
 
-  if (invoice.status === 'CANCELLED') {
-    const cancelledAt = parseSettlementTime(invoice.cancelledAt);
-    if (!cancelledAt) {
-      throw new SettlementTimeUnavailableError(
-        'Invoice cancellation time is unavailable; try verification again later'
-      );
-    }
-
-    const afterCancel = settledAt.getTime() >= cancelledAt.getTime();
-    return {
-      settledAt,
-      settlementContext: afterCancel ? 'AFTER_CANCEL' : 'ON_TIME',
-      priorStatus: 'CANCELLED',
-      latePaymentWarningCode: afterCancel ? 'PAYMENT_RECEIVED_AFTER_CANCEL' : undefined,
-    };
-  }
-
-  // PENDING or EXPIRED: the ledger close time, not the detection time, decides
-  // whether the payment landed inside the invoice's lifetime.
   const expiresAt = parseSettlementTime(invoice.expiresAt);
   const afterExpiry = expiresAt
     ? settledAt.getTime() >= expiresAt.getTime()
@@ -89,3 +112,4 @@ export function settlementFieldsForInvoice(
     latePaymentWarningCode: afterExpiry ? 'PAYMENT_RECEIVED_AFTER_EXPIRY' : undefined,
   };
 }
+

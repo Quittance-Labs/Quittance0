@@ -156,6 +156,7 @@ export default function InvoiceDetailPage() {
       const message = apiErrorMessage(error, 'Failed to cancel invoice');
       if (isApiUnavailableError(error)) setLoadError(message);
       toast.error(message);
+      await loadInvoice().catch(() => undefined);
     }
   };
 

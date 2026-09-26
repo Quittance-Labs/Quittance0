@@ -9,6 +9,7 @@ import { PaymentClaimError } from '../domain/payment-attribution';
 import {
   parseSettlementTime,
   SettlementTimeUnavailableError,
+  IllegalStatusTransitionError,
 } from '../domain/invoice-settlement';
 import { monitorBackoffMs } from '../utils/monitor-retry-backoff';
 import {
@@ -501,7 +502,18 @@ export class PaymentMonitorService {
     }
 
     const payable = checkInvoiceIsPayable(invoice.status);
-    if (!payable.ok && invoice.status !== 'CANCELLED' && invoice.status !== 'EXPIRED') return;
+    if (!payable.ok && invoice.status !== 'EXPIRED') {
+      await this.invoices.logPaymentEvent(
+        invoice.id,
+        'PAYMENT_REJECTED',
+        {
+          code: payable.code,
+          txHash: payment.txHash,
+          status: invoice.status,
+        }
+      );
+      return;
+    }
 
     const isNative = payment.assetCode === 'XLM' && !payment.assetIssuer;
     const verification = verifyHorizonPayment({
@@ -562,12 +574,26 @@ export class PaymentMonitorService {
       this.unregisterWatch(invoice.id);
     } catch (error) {
       if (error instanceof PaymentClaimError) {
-        // A transaction that already settled another invoice must not settle this one
         await this.invoices.logPaymentEvent(
           invoice.id,
           'PAYMENT_REJECTED',
           {
             code: 'TX_HASH_ALREADY_USED',
+            txHash: payment.txHash,
+            error: error.message,
+          }
+        );
+        return;
+      }
+      if (
+        error instanceof IllegalStatusTransitionError ||
+        (error instanceof Error && error.message.includes('already processed'))
+      ) {
+        await this.invoices.logPaymentEvent(
+          invoice.id,
+          'PAYMENT_REJECTED',
+          {
+            code: 'INVOICE_NOT_PENDING',
             txHash: payment.txHash,
             error: error.message,
           }

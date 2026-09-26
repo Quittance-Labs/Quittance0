@@ -44,7 +44,7 @@ stateDiagram-v2
 | `PENDING` | `CANCELLED` | `POST /invoices/:id/cancel` | seller is the invoice owner | handler |
 | `PAID` | - | terminal | | |
 | `EXPIRED` | `PAID` | exact payment settles; ledger close time decides `ON_TIME` vs `AFTER_EXPIRY` | `settledAt >= expiresAt` flags `PAYMENT_RECEIVED_AFTER_EXPIRY` | handler / monitor |
-| `CANCELLED` | `PAID` | exact payment settles; ledger close time decides `ON_TIME` vs `AFTER_CANCEL` | `settledAt >= cancelledAt` flags `PAYMENT_RECEIVED_AFTER_CANCEL` | handler / monitor |
+| `CANCELLED` | - | terminal | | |
 
 ## The late-payment edge case
 
