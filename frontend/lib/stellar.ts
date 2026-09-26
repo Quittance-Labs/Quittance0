@@ -26,6 +26,7 @@ import {
   walletNetworkMatches,
 } from '@shared/network';
 import { canonicalAmount } from './stroop-amount.js';
+import { sellerReadMessage } from '@shared/seller-read-proof';
 import {
   accountHasTrustline,
   classifyTrustlinePreflight,
@@ -541,6 +542,30 @@ export const signInvoiceCancelMessage = async (
     throw new Error('Freighter did not return a cancel signature');
   }
   return { publicKey: session.publicKey!, signature };
+};
+
+/**
+ * Prove the connected seller controls a wallet for one read scope. The
+ * timestamp limits reuse and the signed scope prevents another endpoint from
+ * accepting this proof.
+ */
+export const signSellerReadMessage = async (
+  scope: string,
+  sellerPublicKey: string
+): Promise<{ publicKey: string; signedAt: string; signature: string }> => {
+  const session = await assertFreighterReady();
+  if (session.publicKey !== sellerPublicKey) {
+    throw new Error('Connect the invoice seller wallet to view workspace details');
+  }
+  const signedAt = String(Date.now());
+  const message = sellerReadMessage(scope, sellerPublicKey, signedAt);
+  const signed = await signBlob(btoa(message), { accountToSign: sellerPublicKey });
+  const signature = readResultString(signed as any, ['signedBlob', 'signature']) ||
+    (typeof signed === 'string' ? signed : null);
+  if (!signature) {
+    throw new Error('Freighter did not return a seller read signature');
+  }
+  return { publicKey: sellerPublicKey, signedAt, signature };
 };
 
 /**

@@ -7,6 +7,8 @@ import {
 } from './api-runtime.js';
 import { resolveVerificationError } from './verification.js';
 import { resolveStellarNetwork } from '@shared/network';
+import { SELLER_READ_MAX_AGE_MS } from '@shared/seller-read-proof';
+import { assertFreighterReady, signSellerReadMessage } from './stellar';
 
 /**
  * The API origin, resolved once per build.
@@ -44,6 +46,43 @@ api.interceptors.response.use(
   }
 );
 
+type SellerReadProof = { publicKey: string; signedAt: string; signature: string };
+const sellerReadProofs = new Map<string, SellerReadProof>();
+const pendingSellerReadProofs = new Map<string, Promise<SellerReadProof>>();
+
+/** A proof is short-lived, scoped to one route, and never put in a URL. */
+async function sellerReadHeaders(scope: string, sellerPublicKey: string) {
+  const session = await assertFreighterReady();
+  if (session.publicKey !== sellerPublicKey) {
+    throw new Error('Connect the invoice seller wallet to view workspace details');
+  }
+  const cacheKey = `${scope}:${sellerPublicKey}`;
+  const cached = sellerReadProofs.get(cacheKey);
+  if (cached && Date.now() - Number(cached.signedAt) < SELLER_READ_MAX_AGE_MS - 15_000) {
+    return {
+      'X-Seller-Signed-At': cached.signedAt,
+      'X-Seller-Signature': cached.signature,
+    };
+  }
+  let pending = pendingSellerReadProofs.get(cacheKey);
+  if (!pending) {
+    pending = signSellerReadMessage(scope, sellerPublicKey);
+    pendingSellerReadProofs.set(cacheKey, pending);
+  }
+  try {
+    const proof = await pending;
+    sellerReadProofs.set(cacheKey, proof);
+    return {
+      'X-Seller-Signed-At': proof.signedAt,
+      'X-Seller-Signature': proof.signature,
+    };
+  } finally {
+    if (pendingSellerReadProofs.get(cacheKey) === pending) {
+      pendingSellerReadProofs.delete(cacheKey);
+    }
+  }
+}
+
 export const invoiceApi = {
   create: async (data: {
     amount: number;
@@ -68,24 +107,26 @@ export const invoiceApi = {
   },
 
   getById: async (id: string, sellerPublicKey?: string | null) => {
-    // Workspace fields (client contact, payer identity) are only returned when
-    // the caller presents the invoice's own seller key — issue #503. The pay
-    // page calls this without a key and receives the public pay DTO.
+    // The pay page calls this without seller proof and receives the public DTO.
+    const headers = sellerPublicKey
+      ? await sellerReadHeaders(`invoice:${id}`, sellerPublicKey)
+      : undefined;
     const response = await api.get(`/invoices/${id}`, {
       params: sellerPublicKey ? { sellerPublicKey } : undefined,
+      headers,
     });
     return response.data;
   },
 
-  // Invoice history is scoped to the connected Freighter wallet, so the seller
-  // key is required for list and stats calls.
+  // Invoice history requires signed proof from the connected seller wallet.
   getAll: async (params: {
     sellerPublicKey: string;
     status?: string;
     limit?: number;
     offset?: number;
   }) => {
-    const response = await api.get('/invoices', { params });
+    const headers = await sellerReadHeaders('invoices', params.sellerPublicKey);
+    const response = await api.get('/invoices', { params, headers });
     return response.data;
   },
 
@@ -94,11 +135,12 @@ export const invoiceApi = {
     return response.data;
   },
 
-  // Seller-only audit feed (issue #515): rejected verifies and monitor
-  // rejections for this invoice. Requires the invoice's own seller key.
+  // Seller-only audit feed (issue #515) requires the invoice wallet's proof.
   getPaymentEvents: async (id: string, sellerPublicKey: string) => {
+    const headers = await sellerReadHeaders(`events:${id}`, sellerPublicKey);
     const response = await api.get(`/invoices/${id}/events`, {
       params: { sellerPublicKey },
+      headers,
     });
     return response.data;
   },
@@ -123,8 +165,10 @@ export const invoiceApi = {
   },
 
   getStats: async (sellerPublicKey: string) => {
+    const headers = await sellerReadHeaders('stats', sellerPublicKey);
     const response = await api.get('/invoices/stats', {
       params: { sellerPublicKey },
+      headers,
     });
     return response.data;
   },
