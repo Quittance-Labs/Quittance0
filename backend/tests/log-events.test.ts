@@ -6,6 +6,7 @@ import {
   logReference,
   requiredLogFields,
 } from '../src/observability/log-events';
+import { SELLER_ONLY_INVOICE_FIELDS } from '../../shared/invoice.ts';
 
 describe('structured log event contract', () => {
   it('keeps the invoice loop taxonomy stable', () => {
@@ -80,4 +81,28 @@ describe('structured log event contract', () => {
       }
     }
   });
+
+  it('drops every seller-only identity key even when stuffed into fields (#559)', () => {
+    const stuffed: Record<string, unknown> = {
+      invoiceRef: 'inv-a1',
+      txRef: 'tx-b2',
+      errorCode: 'MEMO_MISMATCH',
+      network: 'TESTNET',
+      durationMs: 17,
+    };
+    for (const key of SELLER_ONLY_INVOICE_FIELDS) {
+      stuffed[key] = `leak-${key}`;
+    }
+    const record = buildLogRecord(
+      'warn',
+      'payment.verify.rejected',
+      { requestId: 'req-559', service: 'api', environment: 'test' },
+      stuffed,
+      new Date('2026-09-13T10:00:00.000Z')
+    );
+    for (const key of SELLER_ONLY_INVOICE_FIELDS) {
+      assert.equal(record[key], undefined, `log record leaked ${key}`);
+    }
+  });
+
 });

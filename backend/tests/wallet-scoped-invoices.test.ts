@@ -130,7 +130,7 @@ async function call(
 describe('wallet-scoped invoice endpoints', () => {
   const makeApi = () => {
     const storage = new MemoryInvoiceStorage(new InvoiceMemoryService(new MemoryStorage()));
-    return { handlers: createInvoiceHandlers({ storage }), storage };
+    return { handlers: createInvoiceHandlers({ storage, requireSellerReadSignature: false }), storage };
   };
 
   /** Seed through the real create handler, so the endpoint reads real rows. */

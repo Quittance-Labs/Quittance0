@@ -143,12 +143,6 @@ function buildProofMailto(invoice, baseUrl) {
   if (invoice.payerPublicKey) {
     lines.push(`Payer Address: ${invoice.payerPublicKey}`);
   }
-  if (invoice.customerName) {
-    lines.push(`Client Name: ${invoice.customerName}`);
-  }
-  if (invoice.payerName) {
-    lines.push(`Payer Name: ${invoice.payerName}`);
-  }
   if (invoice.memo) {
     lines.push(`Memo: ${invoice.memo}`);
   }

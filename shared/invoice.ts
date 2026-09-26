@@ -128,3 +128,56 @@ export function toPublicInvoiceDto(invoice: {
     expiresAt: iso(invoice.expiresAt) as IsoTimestamp,
   };
 }
+
+
+/**
+ * Keys that must never appear on a public pay / verify / payment-info /
+ * proof / mailto / log surface (issue #559). Seller workspace reads gated by
+ * the invoice's Freighter wallet remain the only path that returns them.
+ *
+ * `PUBLIC_INVOICE_FIELDS` is the allowlist; this is the denylist of
+ * identity-shaped keys the contract tests name so dropping one from the
+ * allowlist (or adding one here without covering a surface) fails loudly.
+ */
+export const SELLER_ONLY_INVOICE_FIELDS = [
+  'customerName',
+  'customerEmail',
+  'sellerName',
+  'sellerEmail',
+  'payerPublicKey',
+  'payerName',
+  'payerEmail',
+  'description',
+  'metadata',
+  'userId',
+] as const;
+
+export type SellerOnlyInvoiceField = (typeof SELLER_ONLY_INVOICE_FIELDS)[number];
+
+/** Identity-shaped key names redacted from events, proof bodies, and logs. */
+export const IDENTITY_INVOICE_KEY_PATTERN =
+  /memo|email|customername|payername|sellername|description|metadata|userid/i;
+
+export function isSellerOnlyInvoiceField(key: string): boolean {
+  return (SELLER_ONLY_INVOICE_FIELDS as readonly string[]).includes(key);
+}
+
+export function isPublicInvoiceField(key: string): boolean {
+  return (PUBLIC_INVOICE_FIELDS as readonly string[]).includes(key);
+}
+
+/**
+ * Drop seller-only / identity-shaped keys from an arbitrary payload.
+ * Used by proof HTML, mailto bodies, and any surface that might be handed a
+ * full workspace invoice by mistake.
+ */
+export function omitSellerOnlyFields<T extends Record<string, unknown>>(
+  input: T
+): Omit<T, SellerOnlyInvoiceField> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (isSellerOnlyInvoiceField(key)) continue;
+    out[key] = value;
+  }
+  return out as Omit<T, SellerOnlyInvoiceField>;
+}

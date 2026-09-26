@@ -48,6 +48,7 @@ import {
   type CachedVerificationBody,
 } from '../middleware/verify-cache';
 import { verifySellerSignature } from '../utils/signature-verification';
+import { sellerReadMessage, SELLER_READ_CLOCK_SKEW_MS, SELLER_READ_MAX_AGE_MS } from '../../../shared/seller-read-proof';
 import { isHorizonUnavailable } from '../utils/horizon-client';
 import { redactPaymentEventData } from '../utils/payment-event-redaction';
 
@@ -72,6 +73,8 @@ export interface InvoiceHandlerOptions {
   allowSimulate?: boolean;
   stellar?: TransactionLookup;
   requireCancelSignature?: boolean;
+  /** Test-only bypass; production always requires a signed seller read. */
+  requireSellerReadSignature?: boolean;
   paymentMonitor?: PaymentMonitorWatchRegistry;
   /** Shared with the route's cache middleware; tests inject a controllable one. */
   verifyCache?: VerificationCache;
@@ -105,11 +108,33 @@ function toPositiveInt(value: unknown, fallback: number): number {
 }
 
 /**
+ * A seller public key is visible on every payment link. Only a recent signature
+ * from that key may unlock workspace data; the signature stays in headers,
+ * never a URL that can land in browser history or access logs.
+ */
+function hasSellerReadProof(req: Request, scope: string, sellerPublicKey: string): boolean {
+  const signature = req.headers?.['x-seller-signature'];
+  const signedAt = req.headers?.['x-seller-signed-at'];
+  if (typeof signature !== 'string' || typeof signedAt !== 'string' ||
+      !/^\d{13}$/.test(signedAt)) return false;
+  const timestamp = Number(signedAt);
+  const age = Date.now() - timestamp;
+  if (!Number.isSafeInteger(timestamp) ||
+      age < -SELLER_READ_CLOCK_SKEW_MS || age > SELLER_READ_MAX_AGE_MS) return false;
+  return verifySellerSignature(sellerPublicKey, signature, [
+    sellerReadMessage(scope, sellerPublicKey, signedAt),
+  ]);
+}
+
+/**
  * Invoice route handlers shared by the MVP (in-memory) and Postgres servers.
  * The only difference between the two entrypoints is the storage adapter.
  */
 export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHandlers {
   const { storage } = options;
+  const sellerReadAllowed = (req: Request, scope: string, sellerPublicKey: string) =>
+    (options.requireSellerReadSignature === false && process.env.NODE_ENV !== 'production') ||
+    hasSellerReadProof(req, scope, sellerPublicKey);
   const stellar: TransactionLookup = options.stellar || stellarService;
   const verifyCache = options.verifyCache ?? verificationCache;
   const cacheResult = (
@@ -232,11 +257,8 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           return sendFailure(res, 404, 'Invoice not found');
         }
 
-        // #503: two shapes from one record. The workspace (seller) fields —
-        // customer contact, seller profile, payer identity, settlement
-        // internals — only leave the server when the caller proves ownership
-        // by presenting the invoice's own seller key. Everyone else gets the
-        // public pay DTO.
+        // The public key is visible on the pay page; a matching key alone
+        // cannot unlock the seller workspace. Anonymous callers get the DTO.
         const sellerKey = req.query.sellerPublicKey;
         if (sellerKey !== undefined) {
           const parsed = stellarPublicKeySchema.safeParse(sellerKey);
@@ -244,6 +266,9 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
             return sendFailure(res, 400, 'sellerPublicKey must be a valid Stellar public key');
           }
           if (parsed.data === invoice.sellerPublicKey) {
+            if (!sellerReadAllowed(req, `invoice:${invoice.id}`, parsed.data)) {
+              return sendFailure(res, 401, 'A recent Freighter seller signature is required');
+            }
             return sendSuccess(res, 200, invoice);
           }
         }
@@ -265,6 +290,10 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         const sellerCheck = stellarPublicKeySchema.safeParse(sellerPublicKey);
         if (!sellerCheck.success) {
           return sendFailure(res, 400, 'sellerPublicKey must be a valid Stellar public key');
+        }
+
+        if (!sellerReadAllowed(req, 'invoices', sellerCheck.data)) {
+          return sendFailure(res, 401, 'A recent Freighter seller signature is required');
         }
 
         const limit = toPositiveInt(req.query.limit, 50);
@@ -290,8 +319,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
      * Seller-only audit feed for one invoice (issue #515). The workspace
      * timeline otherwise shows status timestamps only — a rejected
      * underpayment or foreign transaction never appears. The seller key
-     * scopes the read the same way the cancel proof does: present the
-     * invoice's own key or get nothing.
+     * requires proof from the invoice's seller wallet, not its public key alone.
      */
     async getPaymentEvents(req: Request, res: Response) {
       try {
@@ -306,6 +334,9 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         }
         if (sellerCheck.data !== invoice.sellerPublicKey) {
           return sendFailure(res, 403, 'Forbidden: not the seller of this invoice');
+        }
+        if (!sellerReadAllowed(req, `events:${invoice.id}`, sellerCheck.data)) {
+          return sendFailure(res, 401, 'A recent Freighter seller signature is required');
         }
 
         const events = (await storage.getPaymentEvents?.(invoice.id)) ?? [];
@@ -649,6 +680,10 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         const sellerCheck = stellarPublicKeySchema.safeParse(sellerPublicKey);
         if (!sellerCheck.success) {
           return sendFailure(res, 400, 'sellerPublicKey must be a valid Stellar public key');
+        }
+
+        if (!sellerReadAllowed(req, 'stats', sellerCheck.data)) {
+          return sendFailure(res, 401, 'A recent Freighter seller signature is required');
         }
 
         const stats = await storage.getInvoiceStats(sellerCheck.data);
