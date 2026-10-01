@@ -85,12 +85,14 @@ export interface InvoiceStorage {
 
   createInvoice(input: CreateInvoiceInput): Promise<StoredInvoice>;
   getInvoiceById(id: string): Promise<StoredInvoice | null>;
+  getInvoiceByMemo(memo: string): Promise<StoredInvoice | null>;
   getInvoicesBySeller(
     sellerPublicKey: string,
     status?: string,
     limit?: number,
     offset?: number
   ): Promise<StoredInvoice[]>;
+  listPendingInvoices(sellerPublicKey?: string, limit?: number): Promise<StoredInvoice[]>;
   cancelInvoice(id: string, sellerPublicKey?: string): Promise<StoredInvoice>;
   markAsPaid(
     id: string,
@@ -103,14 +105,14 @@ export interface InvoiceStorage {
   /** Explicit maintenance hook; reads also apply this transition lazily. */
   markExpiredInvoices(now?: Date): Promise<number>;
   /** Returns total count of invoices currently stored. */
-  countInvoices?(): Promise<number>;
+  countInvoices(): Promise<number>;
   /**
    * Audit feed for one invoice (issue #515). Callers must authorize before
    * exposing rows — events are seller-workspace data, not public.
    */
-  getPaymentEvents?(invoiceId: string): Promise<PaymentEventRecord[]>;
+  getPaymentEvents(invoiceId: string): Promise<PaymentEventRecord[]>;
   /** Append one lifecycle/audit event row for an invoice. */
-  logPaymentEvent?(
+  logPaymentEvent(
     invoiceId: string,
     eventType: string,
     eventData?: Record<string, unknown> | null
