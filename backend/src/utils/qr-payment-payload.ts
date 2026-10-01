@@ -8,6 +8,11 @@
 import { Keypair } from '@stellar/stellar-sdk';
 import { formatStroops, parseStroops, STROOP_DECIMALS } from './safe-amount-compare';
 import { fitsStellarTextMemo } from '../../../shared/memo';
+import {
+  passphraseFor,
+  PUBLIC_PASSPHRASE,
+  type StellarNetwork,
+} from '../../../shared/network';
 
 /**
  * Asset description used inside a QR payment payload.
@@ -37,6 +42,18 @@ export interface QrPaymentPayloadInput {
    * When a non-native asset is supplied, issuer must be provided.
    */
   asset?: QrPaymentAsset;
+  /**
+   * Invoice network from the same TESTNET/PUBLIC resolver explorer links use.
+   * TESTNET URIs include `network_passphrase`; PUBLIC omits it (SEP-0007
+   * default). When absent the formatter does not emit a passphrase — callers
+   * that need one pin the network explicitly.
+   */
+  network?: StellarNetwork;
+  /**
+   * Optional passphrase hint. When supplied it must equal the passphrase the
+   * network resolver returns; a conflict is refused before the URI is built.
+   */
+  networkPassphrase?: string;
 }
 
 /**
@@ -75,17 +92,20 @@ const isValidPublicKey = (publicKey: string): boolean => {
  *   3. asset_code (only when asset is non-native)
  *   4. asset_issuer (only when asset is non-native)
  *   5. memo + memo_type (only when memo is provided)
+ *   6. network_passphrase (only when network is TESTNET)
  *
  * @param input - Payment details.
  * @returns Object containing the full URI and an ordered parameter map.
  * @throws When destination is missing or not a valid Stellar public key.
  * @throws When amount is missing or not a positive numeric string.
  * @throws When a non-native asset is supplied without an issuer.
+ * @throws When a memo exceeds the 28-byte Stellar text memo limit.
+ * @throws When a networkPassphrase hint conflicts with the resolved network.
  */
 export const formatQrPaymentPayload = (
   input: QrPaymentPayloadInput,
 ): QrPaymentPayload => {
-  const { destination, amount, memo, asset } = input;
+  const { destination, amount, memo, asset, network, networkPassphrase } = input;
 
   if (!destination || typeof destination !== 'string') {
     throw new Error('destination is required');
@@ -145,6 +165,33 @@ export const formatQrPaymentPayload = (
     }
     params.memo = memo;
     params.memo_type = 'MEMO_TEXT';
+  }
+
+  if (network) {
+    const resolved = passphraseFor(network);
+    if (
+      networkPassphrase !== undefined &&
+      networkPassphrase !== null &&
+      networkPassphrase !== '' &&
+      networkPassphrase !== resolved
+    ) {
+      throw new Error('network passphrase does not match the invoice network');
+    }
+    // SEP-0007 assumes the public network when network_passphrase is absent.
+    // Only emit it away from PUBLIC so Testnet invoices cannot be paid on
+    // mainnet by accident.
+    if (resolved !== PUBLIC_PASSPHRASE) {
+      params.network_passphrase = resolved;
+    }
+  } else if (
+    networkPassphrase !== undefined &&
+    networkPassphrase !== null &&
+    networkPassphrase !== ''
+  ) {
+    // A bare passphrase without a network enum is refused — the formatter
+    // must resolve the passphrase from the same table explorer links use,
+    // never from an arbitrary caller string.
+    throw new Error('network is required when a network passphrase hint is supplied');
   }
 
   const query = Object.entries(params)
