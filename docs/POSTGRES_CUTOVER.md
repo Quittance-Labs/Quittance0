@@ -238,6 +238,16 @@ Wallet routes require sellerPublicKey and include it in the database predicate:
 | Public pay or proof read | id = opaque public id |
 | Verify payment | id = public id; chain destination must equal row seller |
 
+Dashboard search uses the same literal, case-insensitive substring contract on
+both adapters. The trimmed `q` searches public ID, memo, description, customer
+name, and customer email, joined in that order with spaces after omitting
+missing or empty fields. A term may span adjacent fields; `%`, `_`, and
+backslashes are ordinary search characters. Seller and optional status filters
+apply before the existing newest-first ordering, limit, and offset. Before
+cutover, run the wallet-scoped tests and the corresponding search cases in
+`invoice-postgres.integration.test.ts` against the target `DATABASE_URL`,
+including email-only and literal-character queries.
+
 The parity suite must run the same handler cases against both adapters. Add a
 negative fixture in which seller A requests seller B's list, stats, and cancel
 operation before cutover.

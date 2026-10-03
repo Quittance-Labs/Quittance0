@@ -306,11 +306,17 @@ export class InvoiceService {
       query += ` AND status = $${params.length}`;
     }
 
-    // Search is AND-ed under the seller key so a q never widens the scope.
+    // Match the memory adapter's literal, case-insensitive search over the
+    // same nonempty fields. A substring search keeps %, _ and backslashes
+    // literal and preserves terms spanning adjacent fields. The seller and
+    // status predicates remain outside this search expression.
     if (q && q.trim()) {
-      params.push(`%${q.trim()}%`);
+      params.push(q.trim().toLowerCase());
       const searchParamIndex = params.length;
-      query += ` AND (memo ILIKE $${searchParamIndex} OR id::text ILIKE $${searchParamIndex} OR customer_name ILIKE $${searchParamIndex} OR description ILIKE $${searchParamIndex})`;
+      query += ` AND strpos(lower(concat_ws(' ',
+        id::text, memo, NULLIF(description, ''),
+        NULLIF(customer_name, ''), NULLIF(customer_email, '')
+      )), $${searchParamIndex}) > 0`;
     }
 
     query += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);

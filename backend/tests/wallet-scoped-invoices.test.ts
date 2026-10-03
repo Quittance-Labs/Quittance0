@@ -123,6 +123,69 @@ describe('wallet-scoped invoice reads', () => {
     const byClient = await storage.getInvoicesBySeller(ALICE, undefined, 50, 0, 'Secret Client');
     assert.equal(byClient.length, 0);
   });
+
+  it('uses literal search across customer email and joined invoice fields', async (t) => {
+    const raw = new MemoryStorage();
+    const storage = new MemoryInvoiceStorage(new InvoiceMemoryService(raw));
+    const matching = await storage.createInvoice(input(ALICE, {
+      description: 'Monthly support',
+      customerName: 'Ada Lovelace',
+      customerEmail: 'billing+search@example.test',
+    }));
+    const percent = await storage.createInvoice(input(ALICE, { description: 'Discount 50%' }));
+    const underscore = await storage.createInvoice(input(ALICE, { description: 'ACME_ops' }));
+    const backslash = await storage.createInvoice(input(ALICE, { description: String.raw`C:\north` }));
+    await storage.createInvoice(input(ALICE, { description: 'Discount 500; ACME-ops; C:north' }));
+    const emptyFields = await storage.createInvoice(input(ALICE, {
+      description: '', customerEmail: 'bridge@example.test',
+    }));
+
+    const cases: [string, string, string[]][] = [
+      ['trimmed case-insensitive email', '  BILLING+SEARCH@EXAMPLE.TEST  ', [matching.id]],
+      ['percent is literal', '50%', [percent.id]],
+      ['underscore is literal', 'ACME_ops', [underscore.id]],
+      ['backslash is literal', String.raw`C:\north`, [backslash.id]],
+      ['phrase spans adjacent fields', 'support Ada', [matching.id]],
+      ['empty and absent fields add no extra spaces', `${emptyFields.memo} bridge@example.test`, [emptyFields.id]],
+      ['description', 'monthly', [matching.id]],
+      ['public id', matching.id, [matching.id]],
+      ['memo', matching.memo, [matching.id]],
+      ['no match', 'absent-search-needle', []],
+    ];
+    for (const [name, q, expectedIds] of cases) {
+      await t.test(name, async () => {
+        const rows = await storage.getInvoicesBySeller(ALICE, undefined, 50, 0, q);
+        assert.deepEqual(rows.map(row => row.id), expectedIds);
+      });
+    }
+  });
+
+  it('applies literal search before seller-scoped status filtering and pagination', async () => {
+    const raw = new MemoryStorage();
+    const storage = new MemoryInvoiceStorage(new InvoiceMemoryService(raw));
+    let createdAt = Date.now() - 10_000;
+    const add = async (seller: string, description: string) => {
+      const invoice = await storage.createInvoice(input(seller, { description }));
+      raw.updateInvoice(invoice.id, { createdAt: new Date(createdAt += 1_000) });
+      return invoice;
+    };
+    const older = await add(ALICE, 'Older 50% invoice');
+    const cancelled = await add(ALICE, 'Cancelled 50% invoice');
+    await storage.cancelInvoice(cancelled.id, ALICE);
+    const foreign = await add(BOB, 'Foreign 50% invoice');
+    const newer = await add(ALICE, 'Newer 50% invoice');
+    const decoy = await add(ALICE, 'Newest 500 invoice');
+
+    const ids = async (seller: string, status?: string, limit = 50, offset = 0, q = '50%') =>
+      (await storage.getInvoicesBySeller(seller, status, limit, offset, q)).map(row => row.id);
+    assert.deepEqual(await ids(ALICE, 'PENDING', 1, 0), [newer.id]);
+    assert.deepEqual(await ids(ALICE, 'PENDING', 1, 1), [older.id]);
+    assert.deepEqual(await ids(ALICE, 'PENDING', 1, 2), []);
+    assert.deepEqual(await ids(ALICE, 'CANCELLED'), [cancelled.id]);
+    assert.deepEqual(await ids(ALICE), [newer.id, cancelled.id, older.id]);
+    assert.deepEqual(await ids(BOB, 'PENDING'), [foreign.id]);
+    assert.deepEqual(await ids(ALICE, 'PENDING', 50, 0, '  '), [decoy.id, newer.id, older.id]);
+  });
 });
 
 /**
