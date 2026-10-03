@@ -1,6 +1,6 @@
 # Abuse Controls Implementation Summary
 
-**Status**: ✅ Implemented (addresses issue #383)
+**Status**: ✅ Implemented (addresses issues #383 / #450)
 
 This document describes the abuse controls implemented to protect public pay and verify endpoints from enumeration, spam, and Horizon quota exhaustion.
 
@@ -13,6 +13,23 @@ All 8 ranked scenarios from `ABUSE-CONTROLS.md` have been addressed through a co
 - **Verification result caching** to prevent Horizon amplification
 - **Global invoice ceiling** for MVP in-memory mode
 - **Environment-based guardrails** for dev-only routes
+
+
+## Edge configuration and frontend mapping (issue #450)
+
+Limits, body size, ceiling, and concurrency retry-after are env-driven via
+`backend/src/middleware/edge-config.ts` (`resolveEdgeControlConfig`). Demo-safe
+defaults match the tables above; both env examples list every variable.
+
+Middleware order is documented in `edge-config.ts` and `invoice.routes.ts`.
+Tests in `backend/tests/abuse-controls.test.ts` and
+`backend/tests/edge-config.test.ts` assert stable trip codes and that a single
+legitimate verify still succeeds.
+
+The pay page classifies `429` / `413` (and the edge codes
+`RATE_LIMIT_EXCEEDED`, `VERIFY_RATE_LIMIT_EXCEEDED`, `VERIFY_IN_PROGRESS`,
+`PAYLOAD_TOO_LARGE`, `INVOICE_STORE_FULL`) through `frontend/lib/edge-limit.js`
+as retryable `VERIFY_UNAVAILABLE` messaging — never as memo/amount rejection.
 
 ## Critical Security Fixes
 
@@ -98,12 +115,13 @@ All 8 ranked scenarios from `ABUSE-CONTROLS.md` have been addressed through a co
 **Problem**: No explicit JSON limit. Framework default (100 KB) could be exploited for memory pressure.
 
 **Fix**:
-- Hard cap at **16 KB** per request
-- Enforced before JSON parsing via `bodyLimitMiddleware`
-- Express parser configured with explicit `limit: '16kb'`
+- Default cap of **16 KiB** per request; configurable with `MAX_BODY_BYTES` or
+  the optional `MAX_BODY_STRING` override described in `ABUSE-CONTROLS.md`
+- All three server entrypoints resolve the cap after environment loading at startup
+- JSON and URL-encoded parsers enforce the same exact byte cap before decoding
 - Oversized requests return 413 with structured error
 
-**Why 16 KB**: 
+**Why the 16 KiB default**:
 - Invoice creation payload: ~500 bytes (seller info, amount, asset, memo, description, customer)
 - Verification payload: ~200 bytes (txHash, payer info)
 - 16 KB provides 30x headroom while blocking abuse

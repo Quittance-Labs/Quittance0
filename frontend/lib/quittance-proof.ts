@@ -27,6 +27,47 @@ export const QUITTANCE_PROOF_FIELDS = [
 
 export type QuittanceProofField = (typeof QUITTANCE_PROOF_FIELDS)[number];
 
+interface ProofObjectRule {
+  path: readonly string[];
+  required: readonly string[];
+  optional?: readonly string[];
+}
+
+// Object boundaries in quittance-proof.schema.json. Tests walk the schema's
+// required/properties declarations so nested fields cannot silently drift.
+const PROOF_OBJECT_RULES: readonly ProofObjectRule[] = [
+  { path: [], required: QUITTANCE_PROOF_FIELDS },
+  { path: ['payment'], required: ['txHash', 'memo', 'amount', 'asset', 'explorerUrl'] },
+  { path: ['payment', 'asset'], required: ['code', 'issuer'] },
+  { path: ['verification'], required: ['status', 'method', 'checkedAt'], optional: ['settlementContext', 'latePaymentWarningCode'] },
+  { path: ['document'], required: ['generatedAtUtc', 'generatedBy'] },
+];
+
+function proofObjectAt(doc: Record<string, unknown>, path: readonly string[]): Record<string, unknown> | undefined {
+  let value: unknown = doc;
+  for (const key of path) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    value = (value as Record<string, unknown>)[key];
+  }
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function missingProofFields(doc: Record<string, unknown>): string[] {
+  const missing: string[] = [];
+  for (const rule of PROOF_OBJECT_RULES) {
+    const object = proofObjectAt(doc, rule.path);
+    if (!object) continue; // The parent field/type check reports absent objects.
+    for (const key of rule.required) {
+      if (!Object.prototype.hasOwnProperty.call(object, key) || object[key] === undefined) {
+        missing.push([...rule.path, key].join('.'));
+      }
+    }
+  }
+  return missing;
+}
+
 export interface QuittanceProofAsset {
   code: string;
   issuer: string | null;
@@ -81,6 +122,8 @@ export interface QuittanceProofInput {
   settledAt?: string | Date | null;
   settlementContext?: string | null;
   latePaymentWarningCode?: string | null;
+  /** Optional per-invoice network; options.network still wins when set. */
+  network?: string | null;
 }
 
 export interface QuittanceProofOptions {
@@ -193,7 +236,7 @@ export function buildQuittanceProof(
   }
 
   const status = typeof input.status === 'string' ? input.status : 'PENDING';
-  const network = normalizeNetwork(options.network ?? process.env.NEXT_PUBLIC_STELLAR_NETWORK);
+  const network = normalizeNetwork(options.network ?? input.network ?? process.env.NEXT_PUBLIC_STELLAR_NETWORK);
   const settled = isSettled(status);
 
   let txHash: string | null = null;
@@ -296,11 +339,164 @@ export function serializeQuittanceProof(proof: QuittanceProof): string {
  * @param json - Serialized JSON string.
  * @returns Parsed QuittanceProof or null.
  */
+
+export interface SchemaValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+/**
+ * Validate a candidate proof document against the canonical schema rules.
+ *
+ * @param doc - Document to validate against the schema.
+ * @returns SchemaValidationResult with a valid flag and error messages.
+ */
+export function validateQuittanceProofSchema(doc: unknown): SchemaValidationResult {
+  const errors: string[] = [];
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+    return { valid: false, errors: ['Document must be an object'] };
+  }
+
+  const obj = doc as Record<string, unknown>;
+
+  for (const field of missingProofFields(obj)) {
+    errors.push(`Missing required schema field: ${field}`);
+  }
+
+  for (const rule of PROOF_OBJECT_RULES) {
+    const object = proofObjectAt(obj, rule.path);
+    if (!object) continue;
+    const allowed = [...rule.required, ...(rule.optional ?? [])];
+    for (const key of Object.keys(object)) {
+      if (!allowed.includes(key)) {
+        errors.push(`Unexpected extra field: ${[...rule.path, key].join('.')}`);
+      }
+    }
+  }
+
+  if (obj.schemaVersion !== QUITTANCE_PROOF_VERSION) {
+    errors.push(`Invalid schemaVersion: expected ${QUITTANCE_PROOF_VERSION}`);
+  }
+
+  if (typeof obj.invoiceId !== 'string' || obj.invoiceId.length === 0) {
+    errors.push('invoiceId must be a non-empty string');
+  }
+
+  if (obj.network !== 'testnet' && obj.network !== 'public') {
+    errors.push('network must be "testnet" or "public"');
+  }
+
+  if (!['PAID', 'PENDING', 'EXPIRED', 'CANCELLED'].includes(obj.status as string)) {
+    errors.push('status must be one of PAID, PENDING, EXPIRED, CANCELLED');
+  }
+
+  const dateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
+  if (typeof obj.issuedAt !== 'string' || !dateRegex.test(obj.issuedAt)) {
+    errors.push('issuedAt must be an ISO 8601 UTC date string ending in Z');
+  }
+
+  if (typeof obj.dueAt !== 'string' || !dateRegex.test(obj.dueAt)) {
+    errors.push('dueAt must be an ISO 8601 UTC date string ending in Z');
+  }
+
+  if (obj.settledAt !== null && (typeof obj.settledAt !== 'string' || !dateRegex.test(obj.settledAt))) {
+    errors.push('settledAt must be null or an ISO 8601 UTC date string ending in Z');
+  }
+
+  const stellarPublicKeyRegex = /^G[A-Z2-7]{55}$/;
+  if (typeof obj.seller !== 'string' || !stellarPublicKeyRegex.test(obj.seller)) {
+    errors.push('seller must be a valid Stellar public key (56 characters starting with G)');
+  }
+
+  if (obj.payer !== null && (typeof obj.payer !== 'string' || !stellarPublicKeyRegex.test(obj.payer))) {
+    errors.push('payer must be null or a valid Stellar public key');
+  }
+
+  const payment = obj.payment as Record<string, unknown> | undefined;
+  if (!payment || typeof payment !== 'object' || Array.isArray(payment)) {
+    errors.push('payment must be an object');
+  } else {
+    if (typeof payment.txHash !== 'string') {
+      errors.push('payment.txHash must be a string');
+    }
+    if (payment.memo !== null && typeof payment.memo !== 'string') {
+      errors.push('payment.memo must be null or a string');
+    }
+    if (typeof payment.amount !== 'string' || !/^\d+(?:\.\d{1,7})?$/.test(payment.amount)) {
+      errors.push('payment.amount must be a decimal string with up to 7 places');
+    }
+    const asset = payment.asset as Record<string, unknown> | undefined;
+    if (!asset || typeof asset !== 'object' || Array.isArray(asset)) {
+      errors.push('payment.asset must be an object');
+    } else {
+      if (typeof asset.code !== 'string' || asset.code.length === 0) {
+        errors.push('payment.asset.code must be a non-empty string');
+      }
+      if (asset.issuer !== null && typeof asset.issuer !== 'string') {
+        errors.push('payment.asset.issuer must be null or a string');
+      }
+    }
+    if (payment.explorerUrl !== null && typeof payment.explorerUrl !== 'string') {
+      errors.push('payment.explorerUrl must be null or a string');
+    }
+  }
+
+  const verification = obj.verification as Record<string, unknown> | undefined;
+  if (!verification || typeof verification !== 'object' || Array.isArray(verification)) {
+    errors.push('verification must be an object');
+  } else {
+    if (verification.status !== 'verified' && verification.status !== 'unverified') {
+      errors.push('verification.status must be "verified" or "unverified"');
+    }
+    if (verification.method !== 'memo-and-amount' && verification.method !== 'none') {
+      errors.push('verification.method must be "memo-and-amount" or "none"');
+    }
+    if (
+      verification.checkedAt !== null &&
+      (typeof verification.checkedAt !== 'string' || !dateRegex.test(verification.checkedAt))
+    ) {
+      errors.push('verification.checkedAt must be null or an ISO 8601 UTC date string ending in Z');
+    }
+    if (
+      verification.settlementContext !== undefined &&
+      verification.settlementContext !== null &&
+      !['ON_TIME', 'AFTER_EXPIRY', 'AFTER_CANCEL'].includes(verification.settlementContext as string)
+    ) {
+      errors.push('verification.settlementContext must be ON_TIME, AFTER_EXPIRY, AFTER_CANCEL, or null');
+    }
+    if (
+      verification.latePaymentWarningCode !== undefined &&
+      verification.latePaymentWarningCode !== null &&
+      typeof verification.latePaymentWarningCode !== 'string'
+    ) {
+      errors.push('verification.latePaymentWarningCode must be null or a string');
+    }
+  }
+
+  const document = obj.document as Record<string, unknown> | undefined;
+  if (!document || typeof document !== 'object' || Array.isArray(document)) {
+    errors.push('document must be an object');
+  } else {
+    if (typeof document.generatedAtUtc !== 'string' || !dateRegex.test(document.generatedAtUtc)) {
+      errors.push('document.generatedAtUtc must be an ISO 8601 UTC date string ending in Z');
+    }
+    if (document.generatedBy !== 'quittance-web') {
+      errors.push('document.generatedBy must be "quittance-web"');
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+}
+
 export function parseQuittanceProof(json: string): QuittanceProof | null {
   try {
     const parsed = JSON.parse(json) as QuittanceProof;
     if (!parsed || typeof parsed !== 'object') return null;
-    if (parsed.schemaVersion !== QUITTANCE_PROOF_VERSION) return null;
+    const result = validateQuittanceProofSchema(parsed);
+    if (!result.valid) return null;
     return parsed;
   } catch {
     return null;
@@ -322,6 +518,11 @@ export function checkQuittanceProofInvariants(serialized: string): string[] {
     return ['NOT_JSON'];
   }
   if (!parsed) return ['NOT_JSON'];
+  if (typeof parsed !== 'object' || Array.isArray(parsed)) return ['NOT_OBJECT'];
+
+  for (const field of missingProofFields(parsed)) {
+    violated.push(`REQUIRED_FIELD_${field}`);
+  }
 
   if (parsed.schemaVersion !== QUITTANCE_PROOF_VERSION) violated.push('VERSIONED');
 
@@ -530,9 +731,9 @@ export function renderQuittanceProofHtml(proof: QuittanceProof): string {
       color: #9ca3af;
     }
     .print-control {
-      position: fixed;
-      top: 16px;
-      right: 16px;
+      position: static;
+      width: fit-content;
+      margin: 0 auto 16px;
       background: #0284c7;
       color: #ffffff;
       padding: 12px 16px;
@@ -735,30 +936,57 @@ export function createQuittanceProofPdf(
 
   doc.setFontSize(10);
   doc.setTextColor(75, 85, 99);
-  doc.text(`Seller: ${proof.seller}`, 14, 72);
-  doc.text(`Payer: ${proof.payer || 'Not recorded'}`, 14, 79);
+  let y = 72;
+  const contentWidth = doc.internal.pageSize.getWidth() - 28;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const writeField = (value: string) => {
+    for (const line of doc.splitTextToSize(value, contentWidth)) {
+      if (y > pageHeight - 20) {
+        doc.addPage();
+        y = 20;
+      }
+      doc.text(line, 14, y);
+      y += 5;
+    }
+    y += 2;
+  };
 
-  doc.text(`Memo: ${proof.payment.memo || 'None'}`, 14, 89);
-  doc.text(`Transaction Hash: ${proof.payment.txHash || 'None'}`, 14, 96);
+  if (proof.payment.asset.issuer) {
+    writeField(`Issuer: ${proof.payment.asset.issuer}`);
+  }
+  writeField(`Seller: ${proof.seller}`);
+  writeField(`Payer: ${proof.payer || 'Not recorded'}`);
+
+  y += 3;
+  writeField(`Memo: ${proof.payment.memo || 'None'}`);
+  writeField(`Transaction Hash: ${proof.payment.txHash || 'None'}`);
   if (proof.payment.explorerUrl) {
-    doc.text(`Explorer: ${proof.payment.explorerUrl}`, 14, 103);
+    writeField(`Explorer: ${proof.payment.explorerUrl}`);
   }
 
-  doc.text(`Verification: ${proof.verification.status} (${proof.verification.method})`, 14, 113);
-  doc.text(`Settlement Context: ${proof.verification.settlementContext || 'N/A'}`, 14, 120);
+  y += 3;
+  writeField(`Verification: ${proof.verification.status} (${proof.verification.method})`);
+  writeField(`Verified At (UTC): ${proof.verification.checkedAt || 'N/A'}`);
+  writeField(`Settlement Context: ${proof.verification.settlementContext || 'N/A'}`);
   if (proof.verification.latePaymentWarningCode) {
-    doc.text(`Warning: ${proof.verification.latePaymentWarningCode}`, 14, 127);
+    writeField(`Warning: ${proof.verification.latePaymentWarningCode}`);
   }
-  doc.text(`Issued At (UTC): ${proof.issuedAt}`, 14, 134);
-  doc.text(`Due At (UTC): ${proof.dueAt}`, 14, 141);
-  doc.text(`Settled At (UTC): ${proof.settledAt || 'Not settled'}`, 14, 148);
+  y += 3;
+  writeField(`Issued At (UTC): ${proof.issuedAt}`);
+  writeField(`Due At (UTC): ${proof.dueAt}`);
+  writeField(`Settled At (UTC): ${proof.settledAt || 'Not settled'}`);
 
-  doc.line(14, 156, 196, 156);
+  if (y > pageHeight - 35) {
+    doc.addPage();
+    y = 20;
+  }
+  doc.line(14, y, 196, y);
+  y += 6;
   doc.setFontSize(8);
   doc.setTextColor(156, 163, 175);
-  doc.text(`Generated At (UTC): ${proof.document.generatedAtUtc}`, 14, 162);
-  doc.text(`Generated By: ${proof.document.generatedBy}`, 14, 167);
-  doc.text('Anchor: Stellar Horizon consensus verification', 14, 172);
+  writeField(`Generated At (UTC): ${proof.document.generatedAtUtc}`);
+  writeField(`Generated By: ${proof.document.generatedBy}`);
+  writeField('Anchor: Stellar Horizon consensus verification');
 
   return doc;
 }
@@ -768,6 +996,7 @@ const quittanceProof = {
   serializeQuittanceProof,
   parseQuittanceProof,
   checkQuittanceProofInvariants,
+  validateQuittanceProofSchema,
   isQuittanceProof,
   renderQuittanceProofHtml,
   createQuittanceProofPdf,

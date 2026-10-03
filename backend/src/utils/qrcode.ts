@@ -1,4 +1,6 @@
+import { emitOperationalFailure } from '../observability/log-events';
 import QRCode from 'qrcode';
+import type { StellarNetwork } from '../../../shared/network';
 import { formatQrPaymentPayload } from './qr-payment-payload';
 import { fitsSep7QrBudget } from './qr-budget';
 
@@ -19,7 +21,7 @@ export const generatePaymentQR = async (paymentUrl: string): Promise<string> => 
     });
     return qrDataUrl;
   } catch (error) {
-    console.error('QR code generation error:', error);
+    emitOperationalFailure('qr.generate');
     throw new Error('Failed to generate QR code');
   }
 };
@@ -38,7 +40,10 @@ export interface StellarPaymentQR {
 }
 
 /**
- * Generate Stellar payment QR (SEP-0007 format)
+ * Generate Stellar payment QR (SEP-0007 format).
+ *
+ * `network` pins the passphrase from the same resolver explorer links use so
+ * a Testnet URI cannot be paid on public by accident (issue #557).
  */
 export const generateStellarPaymentQR = async (
   destination: string,
@@ -46,12 +51,14 @@ export const generateStellarPaymentQR = async (
   assetCode: string = 'XLM',
   memo?: string,
   assetIssuer?: string,
-  fallbackContent?: string
+  fallbackContent?: string,
+  network?: StellarNetwork,
 ): Promise<StellarPaymentQR> => {
   const { uri: stellarUri } = formatQrPaymentPayload({
     destination,
     amount,
     memo,
+    network,
     asset:
       assetCode !== 'XLM' && assetIssuer
         ? { code: assetCode, issuer: assetIssuer }

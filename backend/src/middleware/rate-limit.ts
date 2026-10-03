@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
+import { getEdgeControlConfig } from './edge-config';
 
 export interface RateLimitOptions {
   windowMs: number;
@@ -82,14 +83,9 @@ export class MemoryRateLimiterStore {
 export const defaultLimiterStore = new MemoryRateLimiterStore();
 
 export function getClientIp(req: Request): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string') {
-    const first = forwarded.split(',')[0].trim();
-    if (first) return first;
-  }
-  if (Array.isArray(forwarded) && forwarded[0]) {
-    return forwarded[0].trim();
-  }
+  // Express resolves the address using the application's trusted proxy chain.
+  // Reading X-Forwarded-For directly would let an untrusted client choose a
+  // fresh rate-limit identity on every request.
   return req.ip || req.socket?.remoteAddress || '127.0.0.1';
 }
 
@@ -140,24 +136,25 @@ export function createRateLimiter(
 export function createInvoiceRateLimiters(
   store: MemoryRateLimiterStore = defaultLimiterStore
 ): RequestHandler[] {
+  const cfg = getEdgeControlConfig();
   const shortLimiter = createRateLimiter(
     {
-      windowMs: 60_000,
-      max: 5,
+      windowMs: cfg.rateLimitWindowMs,
+      max: cfg.createPerMinute,
       keyGenerator: (req) => `create_invoice:short:${getClientIp(req)}`,
       code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Rate limit exceeded for invoice creation. Max 5 invoices per minute.',
+      message: `Rate limit exceeded for invoice creation. Max ${cfg.createPerMinute} invoices per minute.`,
     },
     store
   );
 
   const longLimiter = createRateLimiter(
     {
-      windowMs: 600_000,
-      max: 10,
+      windowMs: cfg.createLongWindowMs,
+      max: cfg.createPerLongWindow,
       keyGenerator: (req) => `create_invoice:long:${getClientIp(req)}`,
       code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Rate limit exceeded for invoice creation. Max 10 invoices per 10 minutes.',
+      message: `Rate limit exceeded for invoice creation. Max ${cfg.createPerLongWindow} invoices per 10 minutes.`,
     },
     store
   );
@@ -172,24 +169,25 @@ export function createInvoiceRateLimiters(
 export function createVerifyRateLimiters(
   store: MemoryRateLimiterStore = defaultLimiterStore
 ): RequestHandler[] {
+  const cfg = getEdgeControlConfig();
   const ipLimiter = createRateLimiter(
     {
-      windowMs: 60_000,
-      max: 30,
+      windowMs: cfg.rateLimitWindowMs,
+      max: cfg.verifyPerIp,
       keyGenerator: (req) => `verify_invoice:ip:${getClientIp(req)}`,
       code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Rate limit exceeded for verification. Max 30 requests per minute per IP.',
+      message: `Rate limit exceeded for verification. Max ${cfg.verifyPerIp} requests per minute per IP.`,
     },
     store
   );
 
   const invoiceLimiter = createRateLimiter(
     {
-      windowMs: 60_000,
-      max: 10,
+      windowMs: cfg.rateLimitWindowMs,
+      max: cfg.verifyPerInvoice,
       keyGenerator: (req) => `verify_invoice:target:${req.params.id || 'unknown'}`,
       code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Rate limit exceeded for this invoice. Max 10 verification requests per minute per invoice.',
+      message: `Rate limit exceeded for this invoice. Max ${cfg.verifyPerInvoice} verification requests per minute per invoice.`,
     },
     store
   );
@@ -206,17 +204,28 @@ export function createVerifyRateLimiters(
  * (VERIFY_RATE_LIMIT_EXCEEDED) rather than the router's generic one. It keeps
  * its own key space so the two counters cannot charge one request twice.
  */
+export function getVerifyPerInvoiceLimit(): number {
+  return getEdgeControlConfig().verifyPerInvoice;
+}
+
+export function getVerifyPerInvoiceWindowMs(): number {
+  return getEdgeControlConfig().rateLimitWindowMs;
+}
+
+/** @deprecated Prefer getVerifyPerInvoiceLimit() — kept for existing imports. */
 export const VERIFY_PER_INVOICE_LIMIT = 10;
+/** @deprecated Prefer getVerifyPerInvoiceWindowMs() — kept for existing imports. */
 export const VERIFY_PER_INVOICE_WINDOW_MS = 60_000;
 
 export function checkInvoiceVerifyLimit(
   invoiceId: string,
   store: MemoryRateLimiterStore = defaultLimiterStore
 ): { allowed: boolean; retryAfter: number; remaining: number } {
+  const cfg = getEdgeControlConfig();
   const result = store.consume(
     'verify_handler:target:' + (invoiceId || 'unknown'),
-    VERIFY_PER_INVOICE_LIMIT,
-    VERIFY_PER_INVOICE_WINDOW_MS
+    cfg.verifyPerInvoice,
+    cfg.rateLimitWindowMs
   );
   return {
     allowed: result.allowed,
@@ -232,13 +241,14 @@ export function checkInvoiceVerifyLimit(
 export function createGetInvoicesRateLimiter(
   store: MemoryRateLimiterStore = defaultLimiterStore
 ): RequestHandler {
+  const cfg = getEdgeControlConfig();
   return createRateLimiter(
     {
-      windowMs: 60_000,
-      max: 60,
+      windowMs: cfg.rateLimitWindowMs,
+      max: cfg.listPerMinute,
       keyGenerator: (req) => `list_invoices:${getClientIp(req)}`,
       code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Rate limit exceeded for invoice listing. Max 60 requests per minute.',
+      message: `Rate limit exceeded for invoice listing. Max ${cfg.listPerMinute} requests per minute.`,
     },
     store
   );
@@ -251,13 +261,14 @@ export function createGetInvoicesRateLimiter(
 export function createCancelInvoiceRateLimiter(
   store: MemoryRateLimiterStore = defaultLimiterStore
 ): RequestHandler {
+  const cfg = getEdgeControlConfig();
   return createRateLimiter(
     {
-      windowMs: 60_000,
-      max: 10,
+      windowMs: cfg.rateLimitWindowMs,
+      max: cfg.cancelPerMinute,
       keyGenerator: (req) => `cancel_invoice:${getClientIp(req)}`,
       code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Rate limit exceeded for invoice cancellation. Max 10 requests per minute.',
+      message: `Rate limit exceeded for invoice cancellation. Max ${cfg.cancelPerMinute} requests per minute.`,
     },
     store
   );
@@ -277,12 +288,13 @@ export function verifyConcurrencyLock(): RequestHandler {
     }
 
     if (inFlightVerifications.has(invoiceId)) {
-      res.setHeader('Retry-After', '5');
+      const retryAfter = getEdgeControlConfig().verifyConcurrencyRetryAfterSeconds;
+      res.setHeader('Retry-After', String(retryAfter));
       return res.status(429).json({
         success: false,
         code: 'VERIFY_IN_PROGRESS',
         error: 'Verification already in progress for this invoice',
-        retryAfter: 5,
+        retryAfter,
       });
     }
 
