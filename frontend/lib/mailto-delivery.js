@@ -120,9 +120,9 @@ function buildProofMailto(invoiceOrProof, baseUrl, recipientOverride) {
   const invoice = isProof ? null : invoiceOrProof;
   let proof = isProof ? invoiceOrProof : null;
 
-  if (invoice) {
-    assertPaymentProofAvailable(invoice);
-  }
+  // A canonical document may describe an unpaid invoice too. The same paid
+  // state requirement applies before either input can claim payment by email.
+  assertPaymentProofAvailable(invoiceOrProof);
 
   const recipient =
     typeof recipientOverride === 'string' && recipientOverride.trim()

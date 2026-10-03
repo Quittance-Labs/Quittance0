@@ -11,6 +11,21 @@ The canonical proof model defines a deterministic, auditable record of settlemen
 
 The formal schema definition resides at `frontend/lib/quittance-proof.schema.json`.
 
+`validateQuittanceProofSchema` and `parseQuittanceProof` enforce required own
+fields and `additionalProperties: false` at every object boundary: the root,
+payment, asset, verification, and document metadata. Optional verification
+fields remain optional, but supplied settlement contexts and warning values
+must use the schema's declared enum and types. The invariant checker reports
+missing nested fields with their full path, such as
+`REQUIRED_FIELD_payment.txHash`, and reports invalid document shapes instead
+of throwing on primitive JSON values.
+
+An unpaid canonical document remains valid for invoice/export display.
+Payment-proof email requires `PAID` for both invoice and canonical-document
+inputs, so passing a prebuilt document cannot label an unpaid invoice as
+verified. Recipient email remains delivery metadata and is not required to
+build a proof document or pay an invoice.
+
 ### Top-Level Document Structure
 | Field | Type | Description |
 |---|---|---|
@@ -92,3 +107,12 @@ The test suite enforces stability via golden file comparisons and assertion suit
 4. **Automated Test Coverage:**
    - `frontend/tests/quittance-proof.test.js`: Verifies invariant enforcement, golden JSON match, golden HTML match, byte-for-byte golden PDF match, and type guards.
    - `tests/export.test.mjs`: Verifies `generateInvoicePDF` and `generateQuittanceProofPDF` handle `QuittanceProof` without drift against legacy invoice exports.
+   - `frontend/tests/proof-contract-boundaries.test.js`: Walks the actual schema
+     for paid/unpaid required-field deletion and nested extra-field rejection,
+     then checks optional verification values, malformed document shapes,
+     and paid-only proof email eligibility. Run without PDF/browser dependencies:
+
+```sh
+cd frontend
+node --test tests/proof-contract-boundaries.test.js tests/mailto-delivery.test.js tests/mailto-delivery-explorer.test.js
+```
