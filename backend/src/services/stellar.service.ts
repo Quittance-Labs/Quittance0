@@ -13,6 +13,7 @@ import type {
   VerifiedPayment,
 } from './payment-verification';
 import {
+  classifyHorizonFailure,
   horizonCall,
   isHorizonUnavailable,
 } from '../utils/horizon-client';
@@ -89,7 +90,8 @@ class StellarService {
       txDetails = await this.getTransaction(hashCheck.value);
     } catch (error: any) {
       emitOperationalFailure('stellar.verify');
-      if (isHorizonUnavailable(error)) {
+      // Classify before any memo/destination/amount compare (issue #556).
+      if (classifyHorizonFailure(error)) {
         // An overloaded or unreachable Horizon is not a missing transaction —
         // report the outage so the payer retries instead of a 404 that caches.
         return failure('VERIFY_UNAVAILABLE');

@@ -10,6 +10,7 @@ import {
   HORIZON_OUTAGE_MESSAGE,
   isHorizonOutageError,
 } from './horizon-outage';
+import { isEdgeLimitError, edgeLimitMessage } from './edge-limit.js';
 import {
   PAY_STATES,
   initialPaymentState,
@@ -170,12 +171,21 @@ export function usePaymentPage(id: string) {
       const latestKey = latest.connected ? latest.publicKey : null;
       if (sessionKey !== null && latestKey !== sessionKey) return;
 
-      // A Horizon or transport failure is not a rejection: keep the session,
-      // say it is retryable, and leave the verify control in place.
+      // Edge limits (429 / 413) are retryable and must never look like a
+      // memo/amount/destination rejection on the pay page (issue #450).
+      if (isEdgeLimitError(error)) {
+        const message = edgeLimitMessage(error);
+        setLoadError(message);
+        dispatch({ type: 'VERIFY_UNAVAILABLE' });
+        return;
+      }
+
+      // A Horizon or transport failure is not a rejection: keep the session
+      // and show one retryable alert (ApiErrorState via loadError). Do not
+      // toast a second copy of the same string (issue #556).
       if (isHorizonOutageError(error)) {
         setLoadError(HORIZON_OUTAGE_MESSAGE);
         dispatch({ type: 'VERIFY_UNAVAILABLE' });
-        toast.error(HORIZON_OUTAGE_MESSAGE);
         return;
       }
 

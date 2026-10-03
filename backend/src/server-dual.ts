@@ -36,6 +36,8 @@ import { pool } from './config/database';
 import { SELLER_PUBLIC_KEY, validateStellarConfig } from './config/stellar';
 import { configuredFrontendOrigins, configuredStorageMode, corsOptions } from './config/runtime';
 import { healthHandler, readinessHandler } from './health';
+import { bodyLimitErrorHandler } from './middleware/body-limit';
+import { getEdgeControlConfig } from './middleware/edge-config';
 import type { InvoiceStorage } from './storage/invoice-storage';
 
 dotenv.config();
@@ -71,12 +73,13 @@ paymentMonitorService.configure({
 
 const app: Application = express();
 const PORT = process.env.PORT || 3001;
+const maxBodyBytes = getEdgeControlConfig().maxBodyBytes;
 
 app.use(cors(corsOptions()));
 app.use(requestCorrelationMiddleware);
 app.use(requestLoggingMiddleware);
-app.use(express.json({ limit: '16kb' }));
-app.use(express.urlencoded({ extended: true, limit: '16kb' }));
+app.use(express.json({ limit: maxBodyBytes }));
+app.use(express.urlencoded({ extended: true, limit: maxBodyBytes }));
 
 
 // Root endpoint
@@ -106,15 +109,11 @@ app.get('/readyz', readinessHandler(storage.mode));
 app.use('/api', createInvoiceRouter({ storage, paymentMonitor: paymentMonitorService }));
 app.use('/api', createPaymentMonitorRouter(paymentMonitorService));
 
+// Body-limit (413) then generic error handling
+app.use(bodyLimitErrorHandler);
+
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  if ((err as any).type === 'entity.too.large' || (err as any).status === 413 || (err as any).statusCode === 413) {
-    return res.status(413).json({
-      success: false,
-      code: 'PAYLOAD_TOO_LARGE',
-      error: 'Payload too large: request body exceeds 16 kB limit',
-    });
-  }
   emitOperationalFailure('http.request');
   const code = (err as Error & { code?: string }).code;
   res.status(code === 'CORS_ORIGIN_DENIED' ? 403 : 500).json({

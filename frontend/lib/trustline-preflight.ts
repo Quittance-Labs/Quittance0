@@ -122,3 +122,20 @@ export function classifyTrustlinePreflight(input: {
 
   return { ok: true, code: 'OK' };
 }
+
+/** Verify-rejection codes the trustline UI must never recycle (issue #506). */
+export const VERIFY_REJECTION_MARKERS = [
+  'MEMO_MISMATCH',
+  'AMOUNT_MISMATCH',
+  'DESTINATION_MISMATCH',
+  'VERIFY_REJECTED',
+  'memo does not match',
+  'amount does not match',
+] as const;
+
+/** True when copy looks like a verify rejection rather than a trustline message. */
+export function looksLikeVerifyRejection(message: string | undefined): boolean {
+  if (!message) return false;
+  const lower = message.toLowerCase();
+  return VERIFY_REJECTION_MARKERS.some((marker) => lower.includes(marker.toLowerCase()));
+}

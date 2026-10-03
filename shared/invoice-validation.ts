@@ -51,6 +51,7 @@ export const CREATE_INVOICE_MESSAGES = {
   amountNotFinite: 'Amount must be a finite number',
   amountPositive: 'Amount must be greater than zero',
   amountTooLarge: 'Amount is too large for a single invoice',
+  amountPrecision: 'Amount must have at most 7 decimal places',
   assetIssuerRequired:
     'assetIssuer is required for issued assets; only XLM may omit it. An asset is identified by its code and issuer together.',
   assetIssuerNotAllowed:
@@ -104,6 +105,18 @@ export function isValidEmail(value: unknown): boolean {
   return typeof value === 'string' && EMAIL_PATTERN.test(value);
 }
 
+/**
+ * Check the received number's decimal representation without rounding it.
+ * Scaling by 1e7 can introduce floating-point error or exceed safe integer
+ * precision for amounts that are otherwise within the invoice ceiling.
+ */
+export function hasStellarAmountPrecision(amount: number): boolean {
+  if (!Number.isFinite(amount)) return false;
+  const [mantissa, exponent = '0'] = String(amount).split('e');
+  const fractionalDigits = mantissa.split('.')[1]?.length ?? 0;
+  return fractionalDigits - Number(exponent) <= 7;
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -150,6 +163,8 @@ export function collectCreateInvoiceFieldErrors(
     errors.amount = CREATE_INVOICE_MESSAGES.amountPositive;
   } else if (amount > MAX_INVOICE_AMOUNT) {
     errors.amount = CREATE_INVOICE_MESSAGES.amountTooLarge;
+  } else if (!hasStellarAmountPrecision(amount)) {
+    errors.amount = CREATE_INVOICE_MESSAGES.amountPrecision;
   }
 
   const assetCode = optionalString(payload.assetCode);
