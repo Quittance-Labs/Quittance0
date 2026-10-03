@@ -12,7 +12,7 @@ import { Request, Response } from 'express';
 import { buildQuittanceProof, serializeQuittanceProof, checkQuittanceProofInvariants } from '../services/quittance-proof.service';
 import { sendSuccess, sendFailure } from '../types/api';
 import { createRequestId, getRequestId } from '../utils/request-correlation-id';
-import { emitEvent, logReference } from '../observability/log-events';
+import { emitEvent, logReference, emitOperationalFailure } from '../observability/log-events';
 import { STELLAR_NETWORK } from '../config/stellar';
 
 /**
@@ -86,7 +86,7 @@ export async function getQuittanceProof(req: Request, res: Response): Promise<vo
     const violations = checkQuittanceProofInvariants(serialized);
 
     if (violations.length > 0) {
-      console.error(`[quittance-proof] Invariant violations detected: ${violations.join(', ')}`);
+      emitOperationalFailure('proof.invariants', 'error', requestId);
       return sendFailure(res, 500, 'Proof generation failed: invariant violation');
     }
 
@@ -101,7 +101,7 @@ export async function getQuittanceProof(req: Request, res: Response): Promise<vo
       ...proof,
     });
   } catch (error: any) {
-    console.error(`[${requestId}] Quittance proof error:`, error);
+    emitOperationalFailure('proof.json', 'error', requestId);
     sendFailure(res, 500, error.message || 'Failed to generate proof');
   }
 }
@@ -180,7 +180,7 @@ export async function getQuittanceProofPDF(req: Request, res: Response): Promise
     res.set('Content-Disposition', `inline; filename="quittance-${invoice.id}.html"`);
     res.send(html);
   } catch (error: any) {
-    console.error(`[${requestId}] Quittance PDF error:`, error);
+    emitOperationalFailure('proof.pdf', 'error', requestId);
     sendFailure(res, 500, error.message || 'Failed to generate PDF');
   }
 }

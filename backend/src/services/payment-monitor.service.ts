@@ -19,6 +19,7 @@ import {
 import { createRequestId } from '../utils/request-correlation-id';
 import {
   emitEvent,
+  emitOperationalFailure,
   logReference,
   type LogContext,
 } from '../observability/log-events';
@@ -307,14 +308,14 @@ export class PaymentMonitorService {
     this.expirationTimer = setInterval(() => {
       this.pruneExpiredWatches();
       void this.invoices.markExpiredInvoices().catch((error) => {
-        console.error('Error checking expired invoices:', error);
+        emitOperationalFailure('monitor.expire');
       });
     }, 60_000);
     // Hydrate before the first poll: a payment that landed during downtime
     // must find its watch already registered.
     void this.hydrateWatches()
       .catch((error) => {
-        console.error('[payment-monitor] Watch hydration failed:', error);
+        emitOperationalFailure('monitor.hydrate');
       })
       .finally(() => {
         if (this.isRunning) this.schedule(0);
@@ -414,7 +415,6 @@ export class PaymentMonitorService {
         processedTotal: this.processedTotal,
         lastPollAt: this.lastPollAt,
       };
-      console.error(`Payment monitor failed; retrying in ${retryMs}ms`, error);
       this.schedule(retryMs);
     } finally {
       this.syncInFlight = false;
@@ -656,7 +656,7 @@ export class PaymentMonitorService {
         ]
       );
     } catch (error) {
-      console.warn('Could not persist transaction record:', error);
+      emitOperationalFailure('monitor.persist', 'warn');
     }
   }
 

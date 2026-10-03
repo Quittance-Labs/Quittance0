@@ -7,9 +7,18 @@ operator-facing guide; do not add a parallel logging guide.
 
 ## Contract
 
-Every operational record is one JSON object on stdout or stderr. The builder
+Request, invoice/payment, cache replay, and failure records are JSON objects on
+stdout or stderr. Fixed startup banners and aggregate maintenance counts can
+also appear; they are not lifecycle events or inputs to the metrics below. The builder
 copies only the allow-listed fields for that event; it never serializes a
 request body, response body, invoice, Horizon response, or Error object.
+
+The same rule applies to lower-level storage, Redis, Stellar, and controller
+diagnostics. A structured event does not make a parallel plaintext dump safe.
+Request completion records use the registered route template (for example,
+`/invoices/:id/verify`) or `unmatched`, never `req.path`, query strings, or a
+concrete pay link. Failure diagnostics use the closed operation catalog and a
+derived stable code; caught exceptions are not passed to the logger.
 
 Base fields on every event:
 
@@ -54,11 +63,27 @@ operation because it has no HTTP request.
 | invoice.paid | info | invoiceRef, sellerRef, txRef, assetCode, network, storage, durationMs | committed PENDING→PAID |
 | proof.downloaded | info | invoiceRef, txRef, proofFormat | PDF, text, or JSON proof action |
 | horizon.request.failed | warn or error | operation, errorCode, network, attempt, durationMs | failed Horizon boundary |
+| http.request.completed | info | method, route, statusCode, durationMs | response finishes, including parser failures and unmatched routes |
+| operation.failed | warn or error | operation, errorCode | failed API, storage, cache, QR, monitor, or Stellar boundary |
+| payment.verify.cached | info | invoiceRef, txRef, httpStatus | a previously recorded verification response is replayed |
 
 Started and terminal events share `requestId`. A request emits exactly one
 succeeded or rejected terminal event for create/verify. Reject paths
 (`payment.verify.rejected`) stay distinct from outage paths
 (`horizon.request.failed`).
+
+Cache replays are counted separately: they do not emit another `invoice.paid`
+or imply a second settlement. The request completion and replay events reuse
+the response correlation id. Identifier fingerprints still fail closed to
+`redacted` when the deployment key is absent.
+
+### Proof coverage boundary
+
+The legacy backend proof controller emits `proof.downloaded`, but the current
+server routers do not mount that controller. Current receipt exports run in
+the browser and do not emit this event. The runtime privacy checks below cover
+create, read, pay-info, verify, replay, and failures; they are not evidence of
+an instrumented browser proof download or a complete create-to-proof trace.
 
 `errorCode` is a bounded stable code such as `MEMO_MISMATCH`, `HORIZON_UNAVAILABLE`,
 or `VALIDATION_FAILED`. Error messages and stack traces go to a restricted debug
@@ -106,6 +131,20 @@ the operation; never dump an account payments page to logs.
 - Do not export production logs into demo evidence.
 - Verify rejection logs contain a stable code without expected/received memo values.
 - Review new event fields against the allow-list test before merge.
+
+The regression suite captures all console channels around actual Express HTTP
+requests and service callbacks, in addition to the structured sink assertions:
+
+```sh
+cd backend
+node --import tsx --test tests/observability.test.ts tests/runtime-log-privacy.test.ts
+npm run typecheck
+```
+
+It uses local Horizon fixtures for success, memo rejection, service outage,
+account errors, and a payment stream. No live wallet or provider activity is
+required. It also exercises cached verification, parser failures through all
+three entrypoints, and database/cache exception boundaries.
 
 ## Metrics without Redis
 

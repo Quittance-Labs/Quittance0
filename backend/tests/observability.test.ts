@@ -3,6 +3,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import type { Request, Response, NextFunction } from 'express';
 import {
   emitEvent,
+  emitOperationalFailure,
   setLogSink,
   requiredLogFields,
   LOG_EVENTS,
@@ -99,7 +100,25 @@ describe('MVP observability (#449)', () => {
       'invoice.paid',
       'proof.downloaded',
       'horizon.request.failed',
+      'http.request.completed',
+      'operation.failed',
+      'payment.verify.cached',
     ]);
+  });
+
+  it('keeps operational diagnostics bounded and rejects untrusted operation or request identifiers', () => {
+    const marker = 'private@example.invalid';
+    runWithRequestId('req-abcdef0123456789', () => {
+      const record = emitOperationalFailure('cache.set', 'warn');
+      assert.equal(record.requestId, 'req-abcdef0123456789');
+      assert.equal(record.operation, 'cache.set');
+      assert.equal(record.errorCode, 'CACHE_SET_FAILED');
+    });
+    const unsafe = emitOperationalFailure(marker as any, 'error', marker);
+    assert.equal(unsafe.operation, 'unknown');
+    assert.equal(unsafe.errorCode, 'UNKNOWN_FAILED');
+    assert.match(unsafe.requestId, /^req-[0-9a-f]{16}$/);
+    assert.doesNotMatch(JSON.stringify(records), new RegExp(marker));
   });
 
   it('accepts only req-<16 hex> inbound correlation ids', () => {

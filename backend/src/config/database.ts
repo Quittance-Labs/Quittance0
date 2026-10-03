@@ -1,3 +1,4 @@
+import { emitOperationalFailure } from '../observability/log-events';
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
 
@@ -18,15 +19,12 @@ export const pool = new Pool({
 });
 
 pool.on('error', (err) => {
-  console.error('Unexpected database error:', err);
+  emitOperationalFailure('database.pool');
   process.exit(-1);
 });
 
 export const query = async (text: string, params?: any[]) => {
-  const start = Date.now();
   const res = await pool.query(text, params);
-  const duration = Date.now() - start;
-  console.log('Executed query', { text, duration, rows: res.rowCount });
   return res;
 };
 

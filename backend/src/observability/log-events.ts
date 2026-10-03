@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { createRequestId, getRequestId, parseRequestIdHeader } from '../utils/request-correlation-id';
 
 export const LOG_EVENTS = [
   'invoice.create.started',
@@ -12,6 +13,9 @@ export const LOG_EVENTS = [
   'invoice.paid',
   'proof.downloaded',
   'horizon.request.failed',
+  'http.request.completed',
+  'operation.failed',
+  'payment.verify.cached',
 ] as const;
 
 export type LogEventName = typeof LOG_EVENTS[number];
@@ -29,7 +33,25 @@ const EVENT_FIELDS: Record<LogEventName, readonly string[]> = {
   'invoice.paid': ['invoiceRef', 'sellerRef', 'txRef', 'assetCode', 'network', 'storage', 'durationMs'],
   'proof.downloaded': ['invoiceRef', 'txRef', 'proofFormat'],
   'horizon.request.failed': ['operation', 'errorCode', 'network', 'attempt', 'durationMs'],
+  'http.request.completed': ['method', 'route', 'statusCode', 'durationMs'],
+  'operation.failed': ['operation', 'errorCode'],
+  'payment.verify.cached': ['invoiceRef', 'txRef', 'httpStatus'],
 };
+
+const FAILURE_OPERATIONS = [
+  'http.request', 'server.initialize', 'database.connect', 'database.pool',
+  'redis.connection', 'invoice.create', 'invoice.get', 'invoice.list',
+  'invoice.events', 'invoice.paymentInfo', 'invoice.cancel', 'invoice.verify',
+  'invoice.stats', 'invoice.simulate', 'invoice.markPaid', 'qr.generate',
+  'monitor.start', 'monitor.expire', 'monitor.hydrate', 'monitor.persist',
+  'stellar.account', 'stellar.verify', 'stellar.transaction', 'stellar.stream',
+  'stellar.streamPayment', 'stellar.payments', 'stellar.submit',
+  'cache.connect', 'cache.get', 'cache.set', 'cache.clear', 'cache.verify',
+  'proof.invariants', 'proof.json', 'proof.pdf',
+] as const;
+
+type FailureOperation = typeof FAILURE_OPERATIONS[number];
+const failureOperations: ReadonlySet<string> = new Set(FAILURE_OPERATIONS);
 
 export interface LogContext {
   requestId: string;
@@ -45,6 +67,32 @@ export interface StructuredLogRecord {
   service: 'api' | 'web';
   environment?: string;
   [field: string]: string | number | boolean | undefined;
+}
+
+/** Resolve only validated correlation IDs, including outside an HTTP handler. */
+export function operationalLogContext(requestId?: string): LogContext {
+  return {
+    requestId: parseRequestIdHeader(requestId) ?? parseRequestIdHeader(getRequestId()) ?? createRequestId(),
+    service: 'api',
+    environment: process.env.NODE_ENV || 'development',
+  };
+}
+
+/**
+ * Report the failing boundary, never the caught Error. SDK and database errors
+ * can contain wallets, queries, credentials, and complete request/response data.
+ * Both operation and code come from this closed catalog, not exception content.
+ */
+export function emitOperationalFailure(
+  operation: FailureOperation,
+  level: 'warn' | 'error' = 'error',
+  requestId?: string
+): StructuredLogRecord {
+  const safeOperation = failureOperations.has(operation) ? operation : 'unknown';
+  return emitEvent(level, 'operation.failed', operationalLogContext(requestId), {
+    operation: safeOperation,
+    errorCode: `${safeOperation.replaceAll('.', '_').toUpperCase()}_FAILED`,
+  });
 }
 
 /**

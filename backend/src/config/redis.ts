@@ -1,3 +1,4 @@
+import { emitOperationalFailure } from '../observability/log-events';
 import Redis from 'ioredis';
 import dotenv from 'dotenv';
 
@@ -21,7 +22,7 @@ function buildRedisClient(): Redis {
   });
 
   client.on('error', (err) => {
-    console.error('❌ Redis error:', err);
+    emitOperationalFailure('redis.connection');
   });
 
   return client;

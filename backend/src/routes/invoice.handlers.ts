@@ -43,6 +43,7 @@ import { idempotencyKeyForCreate } from '../utils/idempotency';
 import { createRequestId, getRequestId } from '../utils/request-correlation-id';
 import {
   emitEvent,
+  emitOperationalFailure,
   logReference,
   type LogContext,
 } from '../observability/log-events';
@@ -94,16 +95,6 @@ export interface InvoiceHandlers {
   simulatePayment(req: Request, res: Response): Promise<void>;
 }
 
-/**
- * Log the stack/message rather than the error object: some validation errors
- * (zod) cannot be inspected by `console` on newer Node versions, and the throw
- * would escape the catch block and leave the request hanging.
- */
-function logError(label: string, error: any, requestId?: string): void {
-  const prefix = requestId ? `[${requestId}] ` : '';
-  console.error(`${prefix}${label}`, error?.stack || error?.message || error);
-}
-
 function resolveLogContext(req?: Request): LogContext {
   const fromReq = req ? (req as Request & { requestId?: string }).requestId : undefined;
   return {
@@ -141,7 +132,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
   ): Promise<void> =>
     verifyCache
       .set(invoiceId, txHash, httpStatus, body)
-      .catch(error => console.error('[VerifyCache] Failed to cache result:', error));
+      .catch(() => { emitOperationalFailure('cache.set'); });
 
   const frontendUrl = () =>
     options.frontendUrl || process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -293,7 +284,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           storage: storageMode,
           durationMs: Date.now() - startedAt,
         });
-        logError('Create invoice error:', error, requestId);
+        emitOperationalFailure('invoice.create', 'error', requestId);
         sendFailure(res, 400, error.message || 'Failed to create invoice');
       }
     },
@@ -324,7 +315,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
         sendSuccess(res, 200, toPublicInvoiceDto(invoice));
       } catch (error: any) {
-        logError('Get invoice error:', error);
+        emitOperationalFailure('invoice.get');
         sendFailure(res, 500, error.message || 'Failed to get invoice');
       }
     },
@@ -355,7 +346,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           pagination: { limit, offset, total: invoices.length },
         });
       } catch (error: any) {
-        logError('Get invoices error:', error);
+        emitOperationalFailure('invoice.list');
         sendFailure(res, 500, error.message || 'Failed to get invoices');
       }
     },
@@ -395,7 +386,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           }))
         );
       } catch (error: any) {
-        logError('Get payment events error:', error);
+        emitOperationalFailure('invoice.events');
         sendFailure(res, 500, error.message || 'Failed to get payment events');
       }
     },
@@ -412,7 +403,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
         sendSuccess(res, 200, { ...payment, invoice: toPublicInvoiceDto(invoice) });
       } catch (error: any) {
-        logError('Get payment info error:', error);
+        emitOperationalFailure('invoice.paymentInfo');
         sendFailure(res, 500, error.message || 'Failed to get payment info');
       }
     },
@@ -517,7 +508,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         options.paymentMonitor?.unregisterWatch(req.params.id);
         sendSuccess(res, 200, invoice);
       } catch (error: any) {
-        logError('Cancel invoice error:', error);
+        emitOperationalFailure('invoice.cancel');
         const message = error.message || 'Failed to cancel invoice';
         const lowerMessage = message.toLowerCase();
         const isSellerMismatch = lowerMessage.includes('only the seller can cancel');
@@ -615,7 +606,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         try {
           txDetails = await stellar.getTransaction(hashCheck.value);
         } catch (error: any) {
-          logError('Verify payment lookup error:', error);
+          emitOperationalFailure('invoice.verify');
           if (isHorizonUnavailable(error)) {
             // Horizon is overloaded or unreachable. A 503 invites the payer to
             // retry; it is never cached — caching an outage as a rejection
@@ -812,7 +803,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           network: STELLAR_NETWORK,
           durationMs: Date.now() - startedAt,
         });
-        logError('Verify payment error:', error, requestId);
+        emitOperationalFailure('invoice.verify', 'error', requestId);
         sendFailure(res, 500, error.message || 'Failed to verify payment');
       }
     },
@@ -832,7 +823,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         const stats = await storage.getInvoiceStats(sellerCheck.data);
         sendSuccess(res, 200, stats);
       } catch (error: any) {
-        logError('Get stats error:', error);
+        emitOperationalFailure('invoice.stats');
         sendFailure(res, 500, error.message || 'Failed to get statistics');
       }
     },
@@ -876,7 +867,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
         sendSuccess(res, 200, toPublicInvoiceDto(updatedInvoice), { message: 'Payment simulated successfully' });
       } catch (error: any) {
-        logError('Simulate payment error:', error);
+        emitOperationalFailure('invoice.simulate');
         sendFailure(res, 500, error.message || 'Failed to simulate payment');
       }
     },

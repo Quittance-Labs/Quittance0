@@ -20,6 +20,8 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { requestCorrelationMiddleware } from './utils/request-correlation-id';
+import { requestLoggingMiddleware } from './observability/request-logging';
+import { emitOperationalFailure } from './observability/log-events';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createInvoiceRouter } from './routes/invoice.routes';
@@ -72,13 +74,10 @@ const PORT = process.env.PORT || 3001;
 
 app.use(cors(corsOptions()));
 app.use(requestCorrelationMiddleware);
+app.use(requestLoggingMiddleware);
 app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
 
-app.use((req: Request, res: Response, next: NextFunction) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
 
 // Root endpoint
 app.get('/', (req: Request, res: Response) => {
@@ -116,7 +115,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
       error: 'Payload too large: request body exceeds 16 kB limit',
     });
   }
-  console.error('Unhandled error:', err);
+  emitOperationalFailure('http.request');
   const code = (err as Error & { code?: string }).code;
   res.status(code === 'CORS_ORIGIN_DENIED' ? 403 : 500).json({
     success: false,
@@ -141,7 +140,7 @@ async function initialize(): Promise<void> {
       await pool.query('SELECT NOW()');
       console.log('✅ Database connected');
     } catch (error) {
-      console.error('Failed to connect to database:', error);
+      emitOperationalFailure('database.connect');
       process.exit(1);
     }
   }
@@ -153,7 +152,7 @@ async function initialize(): Promise<void> {
       }
       paymentMonitorService.start();
     } catch (error) {
-      console.warn('Payment monitor not started:', error);
+      emitOperationalFailure('monitor.start', 'warn');
     }
   } else {
     console.log('Wallet-scoped mode: no SELLER_PUBLIC_KEY, payment monitor disabled');

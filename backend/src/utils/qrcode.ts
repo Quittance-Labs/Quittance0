@@ -1,3 +1,4 @@
+import { emitOperationalFailure } from '../observability/log-events';
 import QRCode from 'qrcode';
 import { formatQrPaymentPayload } from './qr-payment-payload';
 import { fitsSep7QrBudget } from './qr-budget';
@@ -19,7 +20,7 @@ export const generatePaymentQR = async (paymentUrl: string): Promise<string> => 
     });
     return qrDataUrl;
   } catch (error) {
-    console.error('QR code generation error:', error);
+    emitOperationalFailure('qr.generate');
     throw new Error('Failed to generate QR code');
   }
 };

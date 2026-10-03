@@ -6,6 +6,8 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { requestCorrelationMiddleware } from './utils/request-correlation-id';
+import { requestLoggingMiddleware } from './observability/request-logging';
+import { emitOperationalFailure } from './observability/log-events';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createInvoiceRouter } from './routes/invoice.routes';
@@ -36,15 +38,10 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(cors(corsOptions()));
 app.use(requestCorrelationMiddleware);
+app.use(requestLoggingMiddleware);
 
 app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
-
-// Request logging
-app.use((req: Request, res: Response, next: NextFunction) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
 
 // Root endpoint
 app.get('/', (req: Request, res: Response) => {
@@ -97,7 +94,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
       error: 'Payload too large: request body exceeds 16 kB limit',
     });
   }
-  console.error('Unhandled error:', err);
+  emitOperationalFailure('http.request');
   const code = (err as Error & { code?: string }).code;
   // Keep the shared failure envelope: `success:false` with an optional stable
   // `code`, the same shape every route and the verify path already use.
@@ -127,7 +124,7 @@ export function startServer(port: number | string = PORT) {
     try {
       paymentMonitorService.start();
     } catch (error) {
-      console.warn('Payment monitor not started:', error);
+      emitOperationalFailure('monitor.start', 'warn');
     }
   }
 
