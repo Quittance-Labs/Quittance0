@@ -41,6 +41,42 @@ describe('Invoice persistence on Postgres', { skip: DATABASE_URL ? false : 'DATA
     await adminPool.end();
   });
 
+  it('reapplies schema.sql without changing invoices or weakening payment hash uniqueness', async () => {
+    const service = new InvoiceService(adminPool);
+    const paid = await service.createInvoice(createInput(SELLER_A, {
+      amount: 37.5,
+      description: 'Preserved across schema migration',
+      customerEmail: 'migration@example.com',
+    }));
+    const pending = await service.createInvoice(createInput(SELLER_A, { amount: 12 }));
+    const otherPending = await service.createInvoice(createInput(SELLER_A, { amount: 18 }));
+    const paymentHash = 'e'.repeat(64);
+    await service.markAsPaid(paid.id, paymentHash, PAYER, undefined, { settledAt: new Date() });
+    await service.logPaymentEvent(paid.id, 'MIGRATION_FIXTURE', { retained: true });
+
+    const ids = [paid.id, pending.id, otherPending.id];
+    const readRows = async () => (await adminPool.query(
+      'SELECT * FROM invoices WHERE id = ANY($1) ORDER BY id', [ids]
+    )).rows;
+    const originalRows = await readRows();
+    const originalEvents = await service.getPaymentEvents(paid.id);
+    const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8');
+
+    await adminPool.query(schema);
+    await adminPool.query(schema);
+
+    assert.deepEqual(await readRows(), originalRows, 'reapplication must preserve every invoice column');
+    assert.deepEqual(await service.getPaymentEvents(paid.id), originalEvents);
+    assert.equal(originalRows.filter(row => row.payment_tx_hash === null).length, 2,
+      'multiple unpaid invoices may keep NULL payment hashes');
+    await assert.rejects(
+      () => adminPool.query('UPDATE invoices SET payment_tx_hash = $1 WHERE id = $2', [paymentHash, pending.id]),
+      (error: any) => error.code === '23505',
+      'a payment hash must still settle at most one invoice after reapplication'
+    );
+    assert.equal((await service.getInvoiceById(pending.id))?.paymentTxHash, null);
+  });
+
   it('keeps seller A invoices for a new connection and hides them from seller B', async () => {
     const writePool = new Pool({ connectionString: DATABASE_URL });
     const created = await new InvoiceService(writePool).createInvoice(createInput(SELLER_A, {
