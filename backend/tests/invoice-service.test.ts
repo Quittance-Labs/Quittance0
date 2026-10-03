@@ -387,8 +387,13 @@ describe('InvoiceService (Postgres) seller scoping', () => {
 
     await assert.rejects(
       () => service.cancelInvoice(pending.id),
-      /Invoice not found or already processed/
+      {
+        name: 'InvoiceTerminalConflictError',
+        code: 'INVOICE_ALREADY_CANCELLED',
+        currentStatus: 'CANCELLED',
+      }
     );
+    assert.equal((await service.getInvoiceById(pending.id))?.status, 'CANCELLED');
   });
 
   it('cancelInvoice permits cancellation when sellerPublicKey matches and rejects when mismatched', async () => {
