@@ -9,16 +9,25 @@ and `tests/fixtures/payment-uri-cases.fixture.ts`.
 
 ## Where the URI comes from
 
-`POST /api/invoices` returns two QR codes and they are not the same kind of thing:
+`POST /api/invoices` (and `GET .../payment-info`) returns one **pay-link artifact**
+(issue #557). Create, the pay page, and the seller invoice page all render that
+same artifact — they never rebuild the URI.
 
 | Response field | Content | Who reads it |
 | --- | --- | --- |
-| `qrCode` | the pay page URL, `{frontendUrl}/pay/{id}` | any camera app |
-| `stellarQrCode` | the SEP-0007 URI below | a Stellar wallet |
+| `paymentUrl` | the pay page URL, `{frontendUrl}/pay/{id}` | any camera app / share sheet |
+| `stellarUri` | the SEP-0007 URI below | a Stellar wallet (copy / open) |
+| `stellarQrCode` | PNG of whatever the QR decided to encode | phone camera |
+| `stellarQrEncodesUri` | `true` when the image is the SEP-0007 URI; `false` when it fell back to `paymentUrl` | UI copy |
+| `copyValue` | the string the QR encoded — same value create / pay / seller copy use | clipboard |
+| `networkPassphrase` | from the same resolver explorer links use | wallets / UI |
+| `qrCode` | a second PNG that always encodes `paymentUrl` | any camera app |
 
-`buildPaymentPayload` → `generateStellarPaymentQR(sellerPublicKey, amount, assetCode, memo, assetIssuer)`
-→ `formatQrPaymentPayload` → `QRCode.toDataURL`. The formatter is pure and does
-no QR work; `generateStellarPaymentQR` encodes with error correction level H.
+`buildPayLinkArtifact` → `generateStellarPaymentQR` → `formatQrPaymentPayload`
+→ `QRCode.toDataURL`. The formatter is pure and does no QR work;
+`generateStellarPaymentQR` encodes with error correction level H. Amount goes
+through the stroop helper before the URI is built, so `0.0000001` never becomes
+`1e-7`.
 
 ## Field-by-field mapping
 
@@ -31,19 +40,20 @@ no QR work; `generateStellarPaymentQR` encodes with error correction level H.
 | `asset_issuer` | with `asset_code` | optional, same rule | conformant |
 | `memo` | the invoice memo, `INV-<ms>-<8>`, 21 chars | optional; `MEMO_TEXT` must be URL-encoded (`MEMO_HASH`/`MEMO_RETURN` are base64 **then** URL-encoded) | conformant — the formatter refuses memos over 28 UTF-8 bytes |
 | `memo_type` | `MEMO_TEXT` | one of `MEMO_TEXT`, `MEMO_ID`, `MEMO_HASH`, `MEMO_RETURN` | conformant |
+| `network_passphrase` | Testnet passphrase when `network=TESTNET`; omitted on PUBLIC | optional; required away from public | conformant — resolved via `shared/network.ts` |
 | `msg` | not emitted | optional, shown to the payer for context | not required; the pay page carries the context instead |
 | encoding | `encodeURIComponent` per value | URL-encoded | conformant |
 
-**Not in the table because SEP-0007 has no such parameter: the network.** The
-scheme cannot say "this invoice is testnet". A payer whose wallet is on mainnet
-scans a testnet invoice, sees a destination and an amount that are structurally
-fine, and builds a mainnet payment to an account that holds no such invoice.
-Today's mitigations are that the pay page is the intended entry point, and that
-`createInvoice` rejects a client whose `network` does not match the server's.
-Inventing a `network` param would be ignored by the wallets we care about, so
-the honest options are to label the QR with its network in the UI, or to move the
-wallet path to a `tx` op URI with a pre-built envelope — a much larger change
-than this issue.
+**`network_passphrase`.** SEP-0007 assumes the public network when the param is
+absent, and requires it away from public. The formatter takes the invoice
+`network` enum (`TESTNET` | `PUBLIC`) and resolves the passphrase through
+`shared/network.ts` — the same table explorer links use (issue #511). TESTNET
+URIs append the URL-encoded Testnet passphrase; PUBLIC omits the param. A
+caller-supplied passphrase hint that disagrees with the resolved network is
+refused before the URI is built. Adding ~70 bytes for the Testnet passphrase
+pushes a typical XLM+memo URI over the QR budget, so the image falls back to
+the HTTPS pay link while `stellarUri` and `copyValue` still carry the full
+string (or the HTTPS link, respectively).
 
 ## Memo types and limits
 
@@ -122,5 +132,7 @@ Record wallet, version and outcome in the follow-up PR.
 | --- | --- |
 | `backend/tests/fixtures/payment-uri-cases.fixture.ts` | the 12 cases: input, emitted output, status, follow-up |
 | `backend/tests/payment-uri-conformance.test.ts` | pins the emitted output; proves each gap with the SDK; keeps the gap list deliberate |
-| `backend/src/utils/qr-payment-payload.ts` | the formatter; enforces the 28-byte memo cap |
+| `backend/src/utils/qr-payment-payload.ts` | the formatter; enforces the 28-byte memo cap and network passphrase |
+| `backend/src/utils/pay-link-artifact.ts` | one artifact: pay URL, SEP-0007 URI, QR data URL, copy value, fallback flag |
+| `backend/tests/pay-link-artifact.test.ts` | pins the artifact strings and the one-stroop / memo / budget rules |
 

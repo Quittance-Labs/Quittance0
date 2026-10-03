@@ -13,7 +13,10 @@ import {
 } from '../utils/validation';
 import { firstCreateInvoiceMessage } from '../../../shared/invoice-validation';
 import { toPublicInvoiceDto } from '../../../shared/invoice';
-import { generatePaymentQR, generateStellarPaymentQR } from '../utils/qrcode';
+import {
+  buildHttpsPayQr,
+  buildPayLinkArtifact,
+} from '../utils/pay-link-artifact';
 import {
   apiSuccess,
   sendFailure,
@@ -38,7 +41,6 @@ import {
   warningForLatePayment,
 } from '../domain/invoice-settlement';
 import { cutoverDrainMode, simulationAllowed } from '../config/runtime';
-import { canonicalAmount } from '../utils/safe-amount-compare';
 import { idempotencyKeyForCreate } from '../utils/idempotency';
 import { createRequestId } from '../utils/request-correlation-id';
 import { checkInvoiceVerifyLimit } from '../middleware/rate-limit';
@@ -141,31 +143,36 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         paymentUrl,
         qrCode: null,
         stellarQrCode: null,
+        stellarUri: null,
+        stellarQrEncodesUri: null,
+        copyValue: null,
+        networkPassphrase: null,
       };
     }
 
-    const stellarPayment = await generateStellarPaymentQR(
-      invoice.sellerPublicKey,
-      // The QR embeds the same stroop string the verifier compares —
-      // `toString()` would emit `1e-7` for small amounts and fail the URI.
-      canonicalAmount(invoice.amount) ?? invoice.amount.toString(),
-      invoice.assetCode || 'XLM',
-      invoice.memo,
-      invoice.assetIssuer,
-      paymentUrl
-    );
+    // One artifact for create, the pay page, and the seller copy action
+    // (issue #557). Amount, memo, network, and the QR fallback decision are
+    // decided here once so the three surfaces cannot disagree.
+    const artifact = await buildPayLinkArtifact({
+      invoiceId: invoice.id,
+      frontendUrl: frontendUrl(),
+      destination: invoice.sellerPublicKey,
+      amount: invoice.amount,
+      assetCode: invoice.assetCode || 'XLM',
+      assetIssuer: invoice.assetIssuer,
+      memo: invoice.memo,
+    });
 
     return {
       paymentAvailable: true,
-      paymentUrl,
+      paymentUrl: artifact.paymentUrl,
       statusPollingIntervalMs: PAYMENT_STATUS_POLL_INTERVAL_MS,
-      qrCode: await generatePaymentQR(paymentUrl),
-      stellarQrCode: stellarPayment.qrDataUrl,
-      stellarUri: stellarPayment.uri,
-      // False when the SEP-0007 URI outgrew the QR budget and the image
-      // encodes the HTTPS pay link instead — the payer still gets the full
-      // URI as copyable text.
-      stellarQrEncodesUri: stellarPayment.encodesSep7Uri,
+      qrCode: await buildHttpsPayQr(artifact.paymentUrl),
+      stellarQrCode: artifact.qrDataUrl,
+      stellarUri: artifact.stellarUri,
+      stellarQrEncodesUri: artifact.encodesSep7Uri,
+      copyValue: artifact.copyValue,
+      networkPassphrase: artifact.networkPassphrase,
     };
   };
 
@@ -217,6 +224,8 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           stellarQrCode: payment.stellarQrCode,
           stellarUri: payment.stellarUri,
           stellarQrEncodesUri: payment.stellarQrEncodesUri,
+          copyValue: payment.copyValue,
+          networkPassphrase: payment.networkPassphrase,
         });
       } catch (error: any) {
         logError('Create invoice error:', error, requestId);
