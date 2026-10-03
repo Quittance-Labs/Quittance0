@@ -592,7 +592,9 @@ export default function PaymentButton({
                 {trustlineBusy ? 'Waiting for Freighter…' : `Add ${assetCode} trustline`}
               </button>
             )}
-            {(preflight.retryable || preflight.code === 'MISSING_TRUSTLINE') && (
+            {(preflight.retryable ||
+              preflight.code === 'MISSING_TRUSTLINE' ||
+              preflight.code === 'ACCOUNT_NOT_FOUND') && (
               <button
                 type="button"
                 onClick={handlePayment}
