@@ -83,14 +83,9 @@ export class MemoryRateLimiterStore {
 export const defaultLimiterStore = new MemoryRateLimiterStore();
 
 export function getClientIp(req: Request): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string') {
-    const first = forwarded.split(',')[0].trim();
-    if (first) return first;
-  }
-  if (Array.isArray(forwarded) && forwarded[0]) {
-    return forwarded[0].trim();
-  }
+  // Express resolves the address using the application's trusted proxy chain.
+  // Reading X-Forwarded-For directly would let an untrusted client choose a
+  // fresh rate-limit identity on every request.
   return req.ip || req.socket?.remoteAddress || '127.0.0.1';
 }
 

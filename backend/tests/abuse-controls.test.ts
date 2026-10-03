@@ -8,7 +8,12 @@ import { createInvoiceRouter } from '../src/routes/invoice.routes';
 import { MemoryInvoiceStorage } from '../src/storage/memory-invoice-storage';
 import { InvoiceMemoryService } from '../src/services/invoice-memory.service';
 import { MemoryStorage } from '../src/storage/memory-storage';
-import { resetRateLimiters } from '../src/middleware/rate-limit';
+import {
+  createRateLimiter,
+  getClientIp,
+  MemoryRateLimiterStore,
+  resetRateLimiters,
+} from '../src/middleware/rate-limit';
 
 interface HttpResponse {
   status: number;
@@ -276,6 +281,33 @@ describe('Abuse Controls Suite', () => {
 
       assert.equal(excessive.status, 429);
       assert.equal(excessive.body.success, false);
+      assert.equal(excessive.body.code, 'RATE_LIMIT_EXCEEDED');
+      assert.ok(excessive.headers['retry-after']);
+    });
+
+    it('keeps one create budget when an untrusted client rotates forwarding headers', async () => {
+      for (let i = 0; i < 5; i++) {
+        const res = await request(port, 'POST', '/api/invoices', {
+          sellerPublicKey,
+          amount: 10,
+          assetCode: 'XLM',
+        }, {
+          'x-forwarded-for': `198.51.100.${i + 1}`,
+          'idempotency-key': `untrusted-proxy-create-${i}`,
+        });
+        assert.equal(res.status, 201, `Request ${i + 1} should succeed`);
+      }
+
+      const excessive = await request(port, 'POST', '/api/invoices', {
+        sellerPublicKey,
+        amount: 10,
+        assetCode: 'XLM',
+      }, {
+        'x-forwarded-for': '203.0.113.100, 198.51.100.100',
+        'idempotency-key': 'untrusted-proxy-create-over-budget',
+      });
+
+      assert.equal(excessive.status, 429);
       assert.equal(excessive.body.code, 'RATE_LIMIT_EXCEEDED');
       assert.ok(excessive.headers['retry-after']);
     });
@@ -704,4 +736,42 @@ describe('Abuse Controls Suite', () => {
     });
   });
 
+});
+
+describe('Rate-limit client identity behind a trusted proxy', () => {
+  it('uses the first untrusted hop and keeps distinct clients isolated', async () => {
+    const store = new MemoryRateLimiterStore();
+    const app = express();
+    app.set('trust proxy', 'loopback');
+    app.get('/limited', createRateLimiter({ windowMs: 60_000, max: 2 }, store), (req, res) => {
+      res.json({ ip: getClientIp(req) });
+    });
+
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as AddressInfo).port;
+    const asClient = (client: string, prefix: string) => request(
+      port, 'GET', '/limited', undefined,
+      { 'x-forwarded-for': `${prefix}, ${client}` }
+    );
+
+    try {
+      const first = await asClient('203.0.113.10', '198.51.100.1');
+      const second = await asClient('203.0.113.10', '198.51.100.2');
+      const excessive = await asClient('203.0.113.10', '198.51.100.3');
+      assert.equal(first.status, 200);
+      assert.equal(second.status, 200);
+      assert.equal(excessive.status, 429);
+      assert.equal(excessive.body.code, 'RATE_LIMIT_EXCEEDED');
+      assert.ok(excessive.headers['retry-after']);
+      assert.equal(first.body.ip, '203.0.113.10');
+
+      const other = await asClient('203.0.113.20', '198.51.100.1');
+      assert.equal(other.status, 200);
+      assert.equal(other.body.ip, '203.0.113.20');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      store.destroy();
+    }
+  });
 });

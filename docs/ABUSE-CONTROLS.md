@@ -65,6 +65,14 @@ Limits are per client IP, with the invoice id as a second key where it applies.
 Numbers are sized for a demo, not a product: the MVP runs a single instance on a
 free-tier host and its only real downstream is Horizon.
 
+Client identity comes from Express `req.ip`, which applies the application's
+`trust proxy` policy. The supplied servers retain Express's default of no
+trusted proxies, so a direct client's `X-Forwarded-For` header cannot change
+its budget. Deployments behind a reverse proxy must configure the specific
+trusted proxy addresses or hops on the Express app. With that explicit trust,
+the first untrusted address in the chain identifies the client; caller-supplied
+addresses further left do not create fresh budgets.
+
 | Endpoint | Limit | Response when exceeded |
 |---|---|---|
 | `POST /invoices` | 10 / 10 min / IP, 5 / min / IP | 429 + `Retry-After` |
