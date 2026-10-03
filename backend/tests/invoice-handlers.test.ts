@@ -258,9 +258,10 @@ function paymentTransaction(overrides: {
   to: string;
   assetType?: string;
   assetCode?: string;
+  createdAt?: string;
 }) {
   return {
-    transaction: { memo: overrides.memo, created_at: new Date().toISOString() },
+    transaction: { memo: overrides.memo, created_at: overrides.createdAt ?? new Date().toISOString() },
     operations: [
       {
         type: 'payment',
@@ -682,18 +683,12 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       it('keeps the verify response on the public shape', async () => {
         const created = await createInvoice({ customerEmail: 'pay@client.example' });
         const closeTime = '2026-09-13T14:32:00Z';
-        transaction = {
-          transaction: { memo: created.memo, created_at: closeTime },
-          operations: [
-            {
-              type: 'payment',
-              from: PAYER,
-              to: SELLER_A,
-              amount: '42.5000000',
-              asset_type: 'native',
-            },
-          ],
-        };
+        transaction = paymentTransaction({
+          memo: created.memo,
+          amount: '42.5000000',
+          to: SELLER_A,
+          createdAt: closeTime,
+        });
 
         const res = await call(
           handlers().verifyPayment,
