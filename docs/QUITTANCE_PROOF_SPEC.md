@@ -26,6 +26,23 @@ inputs, so passing a prebuilt document cannot label an unpaid invoice as
 verified. Recipient email remains delivery metadata and is not required to
 build a proof document or pay an invoice.
 
+All browser print actions use `openInvoicePDF`. Raw invoice inputs retain
+their existing paid-only guard, then pass through `buildQuittanceProof` with
+the same invoice/configured network resolver as the receipt. Invalid paid
+inputs fail before a window opens. Prebuilt documents preserve their network,
+generation time, and existing unpaid-document display support. The separate
+`generateInvoicePDF(rawInvoice)` utility retains its legacy invoice HTML
+contract and golden fixtures.
+
+The direct jsPDF renderer includes the asset issuer when recorded and the
+verification timestamp alongside the settlement timestamp. Long fields,
+including explorer URLs, wrap within the A4 margins; subsequent fields flow
+below them and continue on another page when needed. Its PDF golden reflects
+this layout. The HTML print toolbar stays in normal screen flow so the
+default-width window does not cover the status or network, and remains hidden
+in print media. Its HTML golden includes only that screen-layout change; the
+canonical JSON and legacy invoice HTML fixtures remain unchanged.
+
 ### Top-Level Document Structure
 | Field | Type | Description |
 |---|---|---|
@@ -107,6 +124,10 @@ The test suite enforces stability via golden file comparisons and assertion suit
 4. **Automated Test Coverage:**
    - `frontend/tests/quittance-proof.test.js`: Verifies invariant enforcement, golden JSON match, golden HTML match, byte-for-byte golden PDF match, and type guards.
    - `tests/export.test.mjs`: Verifies `generateInvoicePDF` and `generateQuittanceProofPDF` handle `QuittanceProof` without drift against legacy invoice exports.
+     Captures the actual `openInvoicePDF` window document to check raw/canonical
+     parity, network precedence, prebuilt metadata, and rejection before a
+     window opens. The jsPDF suite measures rendered text using real font
+     metrics to catch clipped explorer records and missing canonical fields.
    - `frontend/tests/proof-contract-boundaries.test.js`: Walks the actual schema
      for paid/unpaid required-field deletion and nested extra-field rejection,
      then checks optional verification values, malformed document shapes,

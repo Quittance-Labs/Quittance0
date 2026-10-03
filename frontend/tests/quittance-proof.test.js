@@ -379,3 +379,57 @@ test('receipt, PDF, and mailto share the same document builder', () => {
   assert.ok(html.includes(proof.payment.explorerUrl));
   assert.ok(html.includes(proof.seller));
 });
+
+function observePdfText(proof) {
+  const writes = [];
+  function RecordingPdf(options) {
+    const doc = new jsPDF(options);
+    const originalText = doc.text.bind(doc);
+    doc.text = (text, x, y, ...args) => {
+      const lines = Array.isArray(text) ? text : [text];
+      const lineHeight = doc.getLineHeight() / doc.internal.scaleFactor;
+      for (const [index, line] of lines.entries()) {
+        writes.push({
+          text: line,
+          x,
+          y: y + index * lineHeight,
+          width: doc.getTextWidth(line),
+          pageWidth: doc.internal.pageSize.getWidth(),
+          pageHeight: doc.internal.pageSize.getHeight(),
+        });
+      }
+      return originalText(text, x, y, ...args);
+    };
+    return doc;
+  }
+  const doc = createQuittanceProofPdf(proof, RecordingPdf);
+  return { doc, writes };
+}
+
+test('the direct PDF preserves issuer and the distinct verification timestamp', () => {
+  const proof = build({
+    ...paidInvoice,
+    paidAt: '2026-09-13T09:21:50.000Z',
+    settledAt: '2026-09-13T09:21:44.000Z',
+  });
+  const { writes } = observePdfText(proof);
+  const content = writes.map(({ text }) => text).join('\n');
+  assert.ok(content.includes(`Issuer: ${proof.payment.asset.issuer}`));
+  assert.ok(content.includes(`Verified At (UTC): ${proof.verification.checkedAt}`));
+  assert.ok(content.includes(`Settled At (UTC): ${proof.settledAt}`));
+});
+
+for (const network of ['testnet', 'public']) {
+  test(`the direct ${network} PDF keeps the complete explorer record inside A4 margins`, () => {
+    const proof = build(paidInvoice, { network });
+    const { doc, writes } = observePdfText(proof);
+    const content = writes.map(({ text }) => text).join('').replace(/\s/g, '');
+    assert.ok(content.includes(proof.payment.explorerUrl));
+    assert.equal(doc.getNumberOfPages(), 1);
+    for (const line of writes) {
+      assert.ok(line.x >= 14, `left edge clipped: ${line.text}`);
+      assert.ok(line.x + line.width <= line.pageWidth - 14 + 0.01, `right edge clipped: ${line.text}`);
+      assert.ok(line.y > 14 && line.y < line.pageHeight - 14, `vertical edge clipped: ${line.text}`);
+    }
+  });
+}

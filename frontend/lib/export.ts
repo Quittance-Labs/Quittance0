@@ -463,7 +463,18 @@ export function generateQuittanceProofPDF(proof: QuittanceProof): string {
  * @param invoiceOrProof - Invoice record or canonical QuittanceProof model.
  */
 export function openInvoicePDF(invoiceOrProof: Invoice | QuittanceProof) {
-  const pdfContent = generateInvoicePDF(invoiceOrProof);
+  let proof: QuittanceProof;
+  if (isQuittanceProof(invoiceOrProof)) {
+    proof = invoiceOrProof;
+  } else {
+    assertPaymentProofAvailable(invoiceOrProof);
+    const result = buildQuittanceProof(invoiceOrProof, {
+      network: resolveExplorerNetwork(invoiceOrProof),
+    });
+    if (!result.ok) throw new Error(result.message);
+    proof = result.proof;
+  }
+  const pdfContent = renderQuittanceProofHtml(proof);
   const printWindow = window.open('', '_blank', 'width=800,height=600');
   if (printWindow) {
     printWindow.document.write(pdfContent);
