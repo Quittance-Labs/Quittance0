@@ -31,6 +31,13 @@ export interface InvoiceRouterOptions extends InvoiceHandlerOptions {
  *   POST   /invoices/:id/cancel (seller authorized)
  *   POST   /invoices/:id/verify
  *   POST   /invoices/:id/simulate-payment
+ *
+ * Edge middleware order (issue #450) — see also middleware/edge-config.ts:
+ *   App:     body size → 413 PAYLOAD_TOO_LARGE
+ *   create:  ceiling → create rate limits → handler
+ *   list:    list rate limit → handler
+ *   cancel:  auth pre-check → cancel rate limit → handler
+ *   verify:  concurrency lock → verify rate limits → replay cache → handler
  */
 export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
   const handlers = createInvoiceHandlers(options);
@@ -50,6 +57,7 @@ export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
       process.env.NODE_ENV === 'production' ||
       options.invoiceCeiling !== undefined);
 
+  // create order: ceiling (503) → short/long rate limits (429) → handler
   const createMiddlewares: RequestHandler[] = [];
   if (enableCeilingCheck && options.storage.countInvoices) {
     createMiddlewares.push(
@@ -109,6 +117,8 @@ export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
   const enableVerifyCache =
     options.enableVerifyCache ?? (process.env.DISABLE_VERIFY_CACHE !== 'true');
 
+  // verify order: concurrency (429 VERIFY_IN_PROGRESS) → IP/invoice rate
+  // (429 RATE_LIMIT_EXCEEDED) → replay cache → handler (own VERIFY_RATE_LIMIT)
   const verifyMiddlewares: RequestHandler[] = [];
   if (enableConcurrencyLock) {
     verifyMiddlewares.push(verifyConcurrencyLock());
@@ -116,10 +126,9 @@ export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
   if (enableRateLimiting) {
     verifyMiddlewares.push(...createVerifyRateLimiters());
   }
-  // Last in the chain: rate limiters still 429 a flood first, and a cache hit
-  // then replays the recorded verdict without another Horizon round trip. The
-  // middleware and the handler share one cache instance so a test override is
-  // honoured by both.
+  // Cache is last before the handler: rate limiters still 429 a flood first,
+  // and a hit then replays the recorded verdict without another Horizon call.
+  // Middleware and handler share one cache instance so test overrides apply.
   if (enableVerifyCache) {
     verifyMiddlewares.push(
       createVerifyCacheMiddleware(options.verifyCache ?? verificationCache)

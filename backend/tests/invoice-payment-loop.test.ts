@@ -6,7 +6,8 @@
  * Horizon is not called for real. `STELLAR_HORIZON_URL` is pointed at a local
  * stub that answers the two endpoints the verify path uses, so the whole
  * server — routing, validation, the Stellar service and the in-memory store —
- * runs exactly as it does in production, with only the network replaced.
+ * runs its production HTTP stack with the loopback client configured as a
+ * trusted proxy and the Horizon network replaced.
  *
  * The stub must exist before the app is imported, because
  * `config/stellar.ts` builds its Horizon client at module load.
@@ -200,6 +201,9 @@ describe('invoice payment loop', () => {
     process.env.STELLAR_NETWORK = 'TESTNET';
 
     ({ default: app } = await import('../src/server-mvp'));
+    // This fixture's loopback client simulates a trusted reverse proxy and
+    // supplies a distinct client address for each create intent below.
+    app.set('trust proxy', 'loopback');
 
     api = await new Promise<http.Server>((resolve, reject) => {
       const listener = app.listen(0, '127.0.0.1', () => resolve(listener));

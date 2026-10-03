@@ -1,20 +1,21 @@
 # Abuse controls for the public pay and verify endpoints
 
-Status: proposal (issue #383). Written against the code as it is today; the
-ranking below is based on what is reachable, not on what is theoretically
-possible.
+Status: implemented for the public edge (issues #383 / #450). The ranking
+below is historical context for *why* the controls exist; the live wiring is
+documented under "Middleware order" and driven by env (see edge-control
+variables in `backend/env.mvp.example` and `backend/env.example.txt`).
 
 ## What the surface looks like today
 
 | Fact | Evidence |
 |---|---|
-| No rate limiting anywhere in the backend | no `rate-limit` / `throttle` dependency or middleware matches anywhere under `backend/src` |
-| Request bodies are parsed with the framework default (100 kB) | `express.json()` with no `limit` option in `backend/src/server-mvp.ts` and `server.ts` |
+| Rate limiting on create / list / cancel / verify | `backend/src/middleware/rate-limit.ts` + `invoice.routes.ts` |
+| Request bodies capped at 16 KiB by default (env-overridable) | JSON and form parsers capture the resolved numeric byte limit + `bodyLimitErrorHandler` → 413 `PAYLOAD_TOO_LARGE` |
 | The invoice surface is public | `backend/src/routes/invoice.routes.ts` mounts create, list, payment-info, cancel, verify and the dev-only simulate route |
-| Cancellation accepts an optional claimed key | `cancelInvoice(id, sellerPublicKey?)` in `backend/src/storage/memory-storage.ts` skips the ownership check entirely when the key is absent (`if (sellerPublicKey && ...)`) |
+| Cancellation requires seller proof | auth pre-check + signature verification (401 / 403) before the cancel rate limit |
 | The seller key is not a secret | `GET /invoices/:id/payment-info` returns the destination the payer must pay, which is the seller's public key |
-| Verification spends a Horizon round trip per call | `docs/VERIFY.md` step 1 note: the hash is validated *before* the round trip, so a malformed hash is cheap and a well-formed one is not |
-| MVP storage is in-memory | `EVIDENCE.md`: a restart clears invoices |
+| Verification caches outcomes to spare Horizon | `backend/src/middleware/verify-cache.ts` (replay with `cached: true`) |
+| MVP storage is in-memory with a global ceiling | `INVOICE_CEILING` (default 5000) → 503 `INVOICE_STORE_FULL` |
 
 ## Ranked scenarios
 
@@ -33,11 +34,76 @@ does not fix either, which is the single most important point in this document.
 | 7 | **Dev-only route exposure** | `POST /invoices/:id/simulate-payment` already refuses to run when `NODE_ENV=production` | A misconfigured deployment could mark invoices PAID without a payment | Keep the guard and assert it in a test that fails if the default flips |
 | 8 | **Faucet abuse** | The evidence flow funds testnet accounts | Not a service risk, but a reviewability one | Document the one-account-per-run assumption in the evidence automation design |
 
+
+## Middleware order (issue #450)
+
+Composed in code (`middleware/edge-config.ts`, `routes/invoice.routes.ts`) so a
+reordering cannot silently turn a 429 into a 413 (or vice versa):
+
+1. **Body size** (app-level) → `413 PAYLOAD_TOO_LARGE`
+2. **POST /invoices**: ceiling → create rate limits → handler  
+   (`503 INVOICE_STORE_FULL`, then `429 RATE_LIMIT_EXCEEDED`)
+3. **GET /invoices**: list rate limit → handler
+4. **POST /invoices/:id/cancel**: auth pre-check → cancel rate limit → handler  
+   (`401` before `429`)
+5. **POST /invoices/:id/verify**: concurrency lock → verify rate limits → replay cache → handler  
+   (`429 VERIFY_IN_PROGRESS`, `429 RATE_LIMIT_EXCEEDED`, cache hit, then handler
+   `429 VERIFY_RATE_LIMIT_EXCEEDED`)
+
+Frontend pay/verify UX maps `429` and `413` through `frontend/lib/edge-limit.js`
+as retryable copy and never as memo/amount rejection.
+
+## Edge-control environment variables
+
+Every variable is listed in `backend/env.mvp.example` and `backend/env.example.txt`
+and resolved by `resolveEdgeControlConfig()` with the safe demo defaults in the
+table below.
+
+### Request body cap
+
+All three entrypoints (`server.ts`, `server-mvp.ts`, and `server-dual.ts`) resolve
+the body cap after loading the environment, then pass the same numeric byte
+limit to `express.json` and `express.urlencoded`. The default is 16,384 bytes
+(16 KiB). Requests exactly at the cap are accepted by the parser; an additional
+byte produces `413 PAYLOAD_TOO_LARGE` before the route handler runs.
+
+- `MAX_BODY_BYTES` accepts a positive safe integer byte count. A value such as
+  `1234` is enforced as exactly 1,234 bytes, without rounding up to a KiB.
+- A valid `MAX_BODY_STRING` takes precedence when both variables are set. It
+  accepts a positive size with an optional case-insensitive `b`, `kb`, `mb`,
+  `gb`, `tb`, or `pb` suffix (powers of 1,024); for example, `1.5kb` is 1,536
+  bytes. Fractional byte results round down to a whole byte.
+- An empty, malformed, nonpositive, or unsafe string size falls back to a
+  valid `MAX_BODY_BYTES`, then to the 16 KiB default. Invalid byte counts also
+  fall back to that default. No invalid setting removes the limit.
+- Both env examples leave the optional `MAX_BODY_STRING` override commented
+  out, so editing `MAX_BODY_BYTES` changes the cap. In existing deployments,
+  remove or empty a previously configured `MAX_BODY_STRING` to use only the
+  numeric cap; an explicit valid string remains authoritative.
+
+The parser cap is captured at application construction, so changing the
+process environment requires restarting the app to change enforcement. The
+413 response reports the cap attached to the parser error, even if the process
+environment has subsequently changed. A non-parser 413 with no known cap keeps
+the same JSON envelope and uses the generic phrase `configured limit`.
+
+The API retains `success: false`, `code: PAYLOAD_TOO_LARGE`, and its `error`
+message. Whole-KiB caps retain the existing `kB` message label; other caps use
+their exact byte count.
+
 ## Proposed limits and HTTP behaviour
 
 Limits are per client IP, with the invoice id as a second key where it applies.
 Numbers are sized for a demo, not a product: the MVP runs a single instance on a
 free-tier host and its only real downstream is Horizon.
+
+Client identity comes from Express `req.ip`, which applies the application's
+`trust proxy` policy. The supplied servers retain Express's default of no
+trusted proxies, so a direct client's `X-Forwarded-For` header cannot change
+its budget. Deployments behind a reverse proxy must configure the specific
+trusted proxy addresses or hops on the Express app. With that explicit trust,
+the first untrusted address in the chain identifies the client; caller-supplied
+addresses further left do not create fresh budgets.
 
 | Endpoint | Limit | Response when exceeded |
 |---|---|---|
@@ -45,7 +111,7 @@ free-tier host and its only real downstream is Horizon.
 | `POST /invoices/:id/verify` | 30 / min / IP, 10 / min / invoice | 429 + `Retry-After` |
 | `GET /invoices` | 60 / min / IP | 429 + `Retry-After` |
 | `POST /invoices/:id/cancel` | 10 / min / IP; and 401 when no proof of ownership is supplied | 401 (auth) before 429 (volume) |
-| any body over 16 kB | hard cap | 413 with a JSON error envelope |
+| JSON/form body over the configured cap (16 KiB by default) | hard byte cap, captured at app startup | 413 with a JSON error envelope |
 | global invoice ceiling (in-memory MVP) | e.g. 5,000 invoices | 503 `INVOICE_STORE_FULL` with a `Retry-After` |
 | Horizon-dependent paths under load | 1 in-flight verify per invoice; all Horizon calls share a 4-concurrent budget with timeout + bounded retry (`utils/horizon-client.ts`); `classifyHorizonFailure` maps timeout/429/connection to 503 `VERIFY_UNAVAILABLE` before memo/amount compare; outage results are never cached | 429 `VERIFY_IN_PROGRESS` / `VERIFY_RATE_LIMIT_EXCEEDED` when the payer floods; upstream Horizon 429s surface as 503 `VERIFY_UNAVAILABLE`, never a memo/amount rejection |
 

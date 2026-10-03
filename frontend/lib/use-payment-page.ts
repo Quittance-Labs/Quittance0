@@ -10,6 +10,7 @@ import {
   HORIZON_OUTAGE_MESSAGE,
   isHorizonOutageError,
 } from './horizon-outage';
+import { isEdgeLimitError, edgeLimitMessage } from './edge-limit.js';
 import {
   PAY_STATES,
   initialPaymentState,
@@ -169,6 +170,15 @@ export function usePaymentPage(id: string) {
       const latest = useWalletStore.getState();
       const latestKey = latest.connected ? latest.publicKey : null;
       if (sessionKey !== null && latestKey !== sessionKey) return;
+
+      // Edge limits (429 / 413) are retryable and must never look like a
+      // memo/amount/destination rejection on the pay page (issue #450).
+      if (isEdgeLimitError(error)) {
+        const message = edgeLimitMessage(error);
+        setLoadError(message);
+        dispatch({ type: 'VERIFY_UNAVAILABLE' });
+        return;
+      }
 
       // A Horizon or transport failure is not a rejection: keep the session
       // and show one retryable alert (ApiErrorState via loadError). Do not

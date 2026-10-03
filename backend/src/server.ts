@@ -8,16 +8,19 @@ import paymentMonitorService from './services/payment-monitor.service';
 import { configuredFrontendOrigins, corsOptions } from './config/runtime';
 import postgresInvoiceStorage from './storage/postgres-invoice-storage';
 import { healthHandler, readinessHandler } from './health';
+import { bodyLimitErrorHandler } from './middleware/body-limit';
+import { getEdgeControlConfig } from './middleware/edge-config';
 
 dotenv.config();
 
 const app: Application = express();
 const PORT = process.env.PORT || 3001;
+const maxBodyBytes = getEdgeControlConfig().maxBodyBytes;
 
 app.use(cors(corsOptions()));
 
-app.use(express.json({ limit: '16kb' }));
-app.use(express.urlencoded({ extended: true, limit: '16kb' }));
+app.use(express.json({ limit: maxBodyBytes }));
+app.use(express.urlencoded({ extended: true, limit: maxBodyBytes }));
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
@@ -44,14 +47,9 @@ app.get('/', (req: Request, res: Response) => {
   });
 });
 
+app.use(bodyLimitErrorHandler);
+
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  if ((err as any).type === 'entity.too.large' || (err as any).status === 413 || (err as any).statusCode === 413) {
-    return res.status(413).json({
-      success: false,
-      code: 'PAYLOAD_TOO_LARGE',
-      error: 'Payload too large: request body exceeds 16 kB limit',
-    });
-  }
   console.error('Unhandled error:', err);
   const code = (err as Error & { code?: string }).code;
   res.status(code === 'CORS_ORIGIN_DENIED' ? 403 : 500).json({
