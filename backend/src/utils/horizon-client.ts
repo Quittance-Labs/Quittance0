@@ -102,10 +102,14 @@ export function classifyHorizonFailure(error: unknown): HorizonFailureClass | nu
 
   const err = error as any;
   if (!(error instanceof Error)) return null;
-  if (err?.name === 'HorizonTimeout' || err?.code === 'ETIMEDOUT' || err?.code === 'ECONNABORTED') {
+  // The Stellar SDK rethrows transport failures as Error(error.message),
+  // discarding code/request metadata. Recognize the transport spellings it
+  // preserves so a reset/refusal cannot become a cached transaction 404.
+  const code = err.code ?? /^(?:connect|read|write|getaddrinfo) ([A-Z_]+)\b/.exec(err.message)?.[1];
+  if (err.name === 'HorizonTimeout' || code === 'ETIMEDOUT' || code === 'ECONNABORTED') {
     return 'timeout';
   }
-  if (NETWORK_ERROR_CODES.has(err?.code)) return 'connection';
+  if (NETWORK_ERROR_CODES.has(code) || err.message === 'socket hang up') return 'connection';
   if (err?.request !== undefined && err?.response === undefined) return 'connection';
   if (error instanceof TypeError) return 'connection';
   return null;

@@ -32,7 +32,7 @@ function request(
 ): Promise<HttpResponse> {
   return new Promise((resolve, reject) => {
     let payload: Buffer | undefined;
-    const headers: Record<string, string | number> = {};
+    const headers: Record<string, string | number> = { connection: 'close' };
     if (body !== undefined) {
       payload = Buffer.from(JSON.stringify(body));
       headers['content-type'] = 'application/json';
@@ -264,6 +264,7 @@ describe('verify cache end to end', () => {
   });
 
   after(async () => {
+    (server as any)?.closeAllConnections?.();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
@@ -388,6 +389,7 @@ describe('verify cache end to end', () => {
       assert.equal(saw429, true);
       assert.equal(horizonCalls.length, 1);
     } finally {
+      (floodServer as any)?.closeAllConnections?.();
       await new Promise<void>((resolve) => floodServer.close(() => resolve()));
     }
   });
