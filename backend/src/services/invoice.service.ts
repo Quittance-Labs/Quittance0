@@ -1,3 +1,4 @@
+import { emitOperationalFailure } from '../observability/log-events';
 import { v4 as uuidv4 } from 'uuid';
 import { InvoiceIdCollisionError, MemoCollisionError } from '../domain/payment-attribution';
 import { pool } from '../config/database';
@@ -124,7 +125,6 @@ export class InvoiceService {
           }
           return this.mapRowToInvoice(existing.rows[0]);
         }
-        console.log('✅ Invoice created:', result.rows[0].id);
         return this.mapRowToInvoice(result.rows[0]);
       } catch (error: any) {
         if (error?.code === '23505') {
@@ -133,7 +133,7 @@ export class InvoiceService {
           if (attempt === 0) continue;
           throw new InvoiceIdCollisionError(id);
         }
-        console.error('Error creating invoice:', error);
+        emitOperationalFailure('invoice.create');
         throw new Error(`Failed to create invoice: ${error.message}`);
       }
     }
@@ -254,7 +254,6 @@ export class InvoiceService {
         throw new Error('Invoice not found, expired, or already processed');
       }
 
-      console.log('✅ Invoice marked as paid:', invoiceId);
 
       return this.mapRowToInvoice(result.rows[0]);
     } catch (error: any) {
@@ -277,7 +276,7 @@ export class InvoiceService {
         }
         throw new PaymentClaimError(txHash, invoiceId, holderId);
       }
-      console.error('Error marking invoice as paid:', error);
+      emitOperationalFailure('invoice.markPaid');
       throw new Error(`Failed to update invoice: ${error.message}`);
     }
   }

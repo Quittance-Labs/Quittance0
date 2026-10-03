@@ -7,6 +7,7 @@ import {
 } from './api-runtime.js';
 import { resolveVerificationError } from './verification.js';
 import { resolveStellarNetwork } from '@shared/network';
+import { createBrowserRequestId } from './request-correlation-id.ts';
 
 /**
  * The API origin, resolved once per build.
@@ -33,6 +34,22 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+});
+
+api.interceptors.request.use((config) => {
+  const headers = config.headers ?? {};
+  const existing =
+    headers['X-Request-Id'] ||
+    headers['x-request-id'] ||
+    headers['X-Correlation-Id'] ||
+    headers['x-correlation-id'];
+  if (!existing) {
+    const id = createBrowserRequestId();
+    headers['X-Request-Id'] = id;
+    headers['X-Correlation-Id'] = id;
+  }
+  config.headers = headers;
+  return config;
 });
 
 api.interceptors.response.use(

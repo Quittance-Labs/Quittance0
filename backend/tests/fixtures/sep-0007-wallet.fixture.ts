@@ -2,6 +2,11 @@ import {
   VALID_ASSET_ISSUER,
   VALID_DESTINATION,
 } from './qr-payment-payload.fixture';
+import type { StellarNetwork } from '../../../shared/network';
+import {
+  PUBLIC_PASSPHRASE,
+  TESTNET_PASSPHRASE,
+} from '../../../shared/network';
 
 export interface Sep7ResearchVector {
   name: string;
@@ -10,6 +15,7 @@ export interface Sep7ResearchVector {
     amount: string;
     memo?: string;
     asset?: { code: string; issuer?: string };
+    network?: StellarNetwork;
     networkPassphrase?: string;
   };
   recommendation: 'accept' | 'reject';
@@ -19,18 +25,20 @@ export interface Sep7ResearchVector {
   walletNote: string;
 }
 
-const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
-const PUBLIC_PASSPHRASE = 'Public Global Stellar Network ; September 2015';
-
 export const SEP7_RESEARCH_VECTORS: Sep7ResearchVector[] = [
   {
     name: 'native public-network invoice',
-    input: { destination: VALID_DESTINATION, amount: '12.3400000', memo: 'Q-382-1' },
+    input: {
+      destination: VALID_DESTINATION,
+      amount: '12.3400000',
+      memo: 'Q-382-1',
+      network: 'PUBLIC',
+    },
     recommendation: 'accept',
     current: 'accept',
     expectedUri:
       `web+stellar:pay?destination=${VALID_DESTINATION}&amount=12.3400000&memo=Q-382-1&memo_type=MEMO_TEXT`,
-    walletNote: 'XLM is implied when asset_code and asset_issuer are absent.',
+    walletNote: 'XLM is implied when asset_code and asset_issuer are absent. Public omits network_passphrase.',
   },
   {
     name: 'issued asset pins code and issuer',
@@ -39,6 +47,7 @@ export const SEP7_RESEARCH_VECTORS: Sep7ResearchVector[] = [
       amount: '5.25',
       memo: 'Q-382-2',
       asset: { code: 'USDC', issuer: VALID_ASSET_ISSUER },
+      network: 'PUBLIC',
     },
     recommendation: 'accept',
     current: 'accept',
@@ -48,7 +57,12 @@ export const SEP7_RESEARCH_VECTORS: Sep7ResearchVector[] = [
   },
   {
     name: '28-byte ASCII text memo',
-    input: { destination: VALID_DESTINATION, amount: '1', memo: '1234567890123456789012345678' },
+    input: {
+      destination: VALID_DESTINATION,
+      amount: '1',
+      memo: '1234567890123456789012345678',
+      network: 'PUBLIC',
+    },
     recommendation: 'accept',
     current: 'accept',
     expectedUri:
@@ -85,10 +99,12 @@ export const SEP7_RESEARCH_VECTORS: Sep7ResearchVector[] = [
       destination: VALID_DESTINATION,
       amount: '2',
       memo: 'Q-382-TEST',
-      networkPassphrase: TESTNET_PASSPHRASE,
+      network: 'TESTNET',
     },
     recommendation: 'accept',
-    current: 'gap',
+    current: 'accept',
+    expectedUri:
+      `web+stellar:pay?destination=${VALID_DESTINATION}&amount=2.0000000&memo=Q-382-TEST&memo_type=MEMO_TEXT&network_passphrase=${encodeURIComponent(TESTNET_PASSPHRASE)}`,
     walletNote: 'SEP-7 defaults to public network, so Testnet must be explicit and URL-encoded.',
   },
   {
@@ -97,11 +113,13 @@ export const SEP7_RESEARCH_VECTORS: Sep7ResearchVector[] = [
       destination: VALID_DESTINATION,
       amount: '2',
       memo: 'Q-382-WRONG',
+      network: 'TESTNET',
       networkPassphrase: PUBLIC_PASSPHRASE,
     },
     recommendation: 'reject',
-    current: 'gap',
-    walletNote: 'The formatter must receive the invoice network and reject a conflicting hint.',
+    current: 'reject',
+    expectedError: 'network passphrase does not match the invoice network',
+    walletNote: 'The formatter receives the invoice network and rejects a conflicting hint.',
   },
   {
     name: 'issued asset without issuer',

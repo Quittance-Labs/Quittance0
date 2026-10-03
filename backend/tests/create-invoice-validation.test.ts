@@ -10,7 +10,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createInvoiceHandlers } from '../src/routes/invoice.handlers.ts';
+import { InvoiceMemoryService } from '../src/services/invoice-memory.service.ts';
 import { MemoryInvoiceStorage } from '../src/storage/memory-invoice-storage.ts';
+import { MemoryStorage } from '../src/storage/memory-storage.ts';
 import { createInvoiceFieldErrors, createInvoiceSchema } from '../src/utils/validation.ts';
 import { generateInvoiceMemo, hasInvoiceMemoPrefix, isValidMemo } from '../src/utils/memo.ts';
 import {
@@ -60,6 +62,9 @@ const REJECTED: Array<{ name: string; overrides: Record<string, unknown> }> = [
   { name: 'a negative amount', overrides: { amount: -12 } },
   { name: 'an amount sent as text', overrides: { amount: 'twenty-five' } },
   { name: 'an amount past the ceiling', overrides: { amount: 2_000_000_000 } },
+  { name: 'an amount below one stroop', overrides: { amount: 1e-8 } },
+  { name: 'a fractional stroop in exponent notation', overrides: { amount: 1.2e-7 } },
+  { name: 'an amount with eight decimal places', overrides: { amount: 1.23456789 } },
   { name: 'a missing seller key', overrides: { sellerPublicKey: undefined } },
   { name: 'a truncated seller key', overrides: { sellerPublicKey: SELLER.slice(0, 40) } },
   { name: 'an issued asset without its issuer', overrides: { assetCode: 'USDC' } },
@@ -115,7 +120,9 @@ describe('create-invoice rules - the form and the API agree', () => {
     const accepted = [
       payload(),
       payload({ amount: 0.0000001 }),
+      payload({ amount: 1.2345678 }),
       payload({ amount: 999_999_999.99 }),
+      payload({ amount: 1_000_000_000 }),
       payload({ assetCode: 'USDC', assetIssuer: ISSUER }),
       payload({ customerEmail: 'client@example.com', sellerEmail: 'me@example.com' }),
       payload({ description: 'x'.repeat(500), customerName: 'y'.repeat(255) }),
@@ -178,6 +185,36 @@ describe('create-invoice endpoint - the refusal names its fields', () => {
       res.body.fieldErrors.customerEmail,
       CREATE_INVOICE_MESSAGES.customerEmail
     );
+  });
+
+  for (const amount of [1e-8, 4e-8, 5e-8, 1.2e-7, 1.23456789]) {
+    it(`rejects unsupported amount precision ${amount} before storing an invoice`, async () => {
+      const storage = new MemoryInvoiceStorage(new InvoiceMemoryService(new MemoryStorage()));
+      const handlers = createInvoiceHandlers({ storage });
+      const res = await call(handlers.createInvoice as any, createReq({ body: payload({ amount }) }));
+
+      assert.equal(await storage.countInvoices(), 0, 'a rejected amount must leave no invoice behind');
+      assert.equal(res.statusCode, 400);
+      assert.equal(res.body.code, 'VALIDATION_ERROR');
+      assert.equal(res.body.error, CREATE_INVOICE_MESSAGES.amountPrecision);
+      assert.deepEqual(res.body.fieldErrors, {
+        amount: CREATE_INVOICE_MESSAGES.amountPrecision,
+      });
+    });
+  }
+
+  it('creates a one-stroop invoice without rounding the payment amount', async () => {
+    const storage = new MemoryInvoiceStorage(new InvoiceMemoryService(new MemoryStorage()));
+    const handlers = createInvoiceHandlers({ storage });
+    const res = await call(
+      handlers.createInvoice as any,
+      createReq({ body: payload({ amount: 1e-7 }) })
+    );
+
+    assert.equal(res.statusCode, 201, JSON.stringify(res.body));
+    assert.equal(res.body.data.invoice.amount, 1e-7);
+    assert.equal(await storage.countInvoices(), 1);
+    assert.equal(new URL(res.body.data.stellarUri).searchParams.get('amount'), '0.0000001');
   });
 
   it('generates the invoice memo itself and ignores one sent by the client', async () => {

@@ -2,6 +2,7 @@ import { format } from 'date-fns';
 import { canonicalAmount } from './stroop-amount.js';
 import { formatUtcDate, formatUtcDateTime } from './utc-format.js';
 import { formatProofTimestamp } from './proof-timestamp.ts';
+import { reportProofHandoff } from './proof-handoff.ts';
 import {
   assertPaymentProofAvailable,
   canExportPaymentProof,
@@ -479,6 +480,10 @@ export function openInvoicePDF(invoiceOrProof: Invoice | QuittanceProof) {
   if (printWindow) {
     printWindow.document.write(pdfContent);
     printWindow.document.close();
+    void reportProofHandoff(
+      isQuittanceProof(invoiceOrProof) ? invoiceOrProof.invoiceId : invoiceOrProof.id,
+      { proofFormat: 'pdf', handoff: 'print-window' }
+    );
     printWindow.onload = () => {
       setTimeout(() => {
         printWindow.print();
