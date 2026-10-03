@@ -610,7 +610,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
             id,
             hashCheck.value,
             200,
-            apiSuccess(updatedInvoice, {
+            apiSuccess(toPublicInvoiceDto(updatedInvoice), {
               message: 'Payment verified on Stellar',
               code: updatedInvoice.latePaymentWarningCode,
               warning: updatedInvoice.latePaymentWarningCode

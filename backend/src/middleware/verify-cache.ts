@@ -19,6 +19,7 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { Redis } from 'ioredis';
 import { createRedisClient } from '../config/redis';
+import { PUBLIC_INVOICE_FIELDS } from '../../../shared/invoice';
 
 const VERIFIED_TTL_SECONDS = 259200; // 72 hours (invoice expiry window)
 const NOT_FOUND_TTL_SECONDS = 60; // short: indexing lag must not wedge a valid hash
@@ -34,6 +35,7 @@ const NEVER_CACHE_CODES: ReadonlySet<string> = new Set([
 export interface CachedVerificationBody {
   success: boolean;
   code?: string;
+  data?: unknown;
 }
 
 interface CachedVerification {
@@ -42,6 +44,19 @@ interface CachedVerification {
   httpStatus: number;
   body: CachedVerificationBody;
   expiresAt: number;
+}
+
+/** Older cache entries may contain the full stored invoice for up to 72 hours. */
+function publicCacheEntry(entry: CachedVerification): CachedVerification {
+  const data = entry.body.data;
+  if (!entry.body.success || data === null || typeof data !== 'object') return entry;
+
+  const invoice = data as Record<string, unknown>;
+  const publicData: Record<string, unknown> = {};
+  for (const field of PUBLIC_INVOICE_FIELDS) {
+    if (Object.hasOwn(invoice, field)) publicData[field] = invoice[field];
+  }
+  return { ...entry, body: { ...entry.body, data: publicData } };
 }
 
 /**
@@ -90,7 +105,7 @@ export class VerificationCache {
           const entry: CachedVerification = JSON.parse(cached);
           // Redis expires keys natively; expiresAt still guards entries that
           // were written with a longer TTL under an older policy.
-          return entry.expiresAt > this.now() ? entry : null;
+          return entry.expiresAt > this.now() ? publicCacheEntry(entry) : null;
         }
       }
     } catch (error) {
@@ -104,7 +119,7 @@ export class VerificationCache {
       this.memoryCache.delete(key);
       return null;
     }
-    return entry;
+    return publicCacheEntry(entry);
   }
 
   async set(invoiceId: string, txHash: string, httpStatus: number, body: CachedVerificationBody): Promise<void> {
