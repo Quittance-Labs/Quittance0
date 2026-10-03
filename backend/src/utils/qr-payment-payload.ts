@@ -6,8 +6,19 @@
 // any QR generation library.
 
 import { Keypair } from '@stellar/stellar-sdk';
-import { formatStroops, parseStroops, STROOP_DECIMALS } from './safe-amount-compare';
+import {
+  formatStroops,
+  parseStroops,
+  STROOP_DECIMALS,
+  NATIVE_ASSET_CODE,
+  encodeSep0007PayUri,
+} from '../../../shared/assets';
 import { fitsStellarTextMemo } from '../../../shared/memo';
+import {
+  passphraseFor,
+  PUBLIC_PASSPHRASE,
+  type StellarNetwork,
+} from '../../../shared/network';
 
 /**
  * Asset description used inside a QR payment payload.
@@ -17,7 +28,8 @@ export interface QrPaymentAsset {
   code: string;
   /**
    * Stellar public key of the asset issuer.
-   * Required for non-native assets and ignored for XLM.
+   * Required for non-native assets. XLM with an issuer is rejected, matching
+   * invoice creation, instead of silently requesting a different asset.
    */
   issuer?: string;
 }
@@ -37,6 +49,18 @@ export interface QrPaymentPayloadInput {
    * When a non-native asset is supplied, issuer must be provided.
    */
   asset?: QrPaymentAsset;
+  /**
+   * Invoice network from the same TESTNET/PUBLIC resolver explorer links use.
+   * TESTNET URIs include `network_passphrase`; PUBLIC omits it (SEP-0007
+   * default). When absent the formatter does not emit a passphrase — callers
+   * that need one pin the network explicitly.
+   */
+  network?: StellarNetwork;
+  /**
+   * Optional passphrase hint. When supplied it must equal the passphrase the
+   * network resolver returns; a conflict is refused before the URI is built.
+   */
+  networkPassphrase?: string;
 }
 
 /**
@@ -75,17 +99,20 @@ const isValidPublicKey = (publicKey: string): boolean => {
  *   3. asset_code (only when asset is non-native)
  *   4. asset_issuer (only when asset is non-native)
  *   5. memo + memo_type (only when memo is provided)
+ *   6. network_passphrase (only when network is TESTNET)
  *
  * @param input - Payment details.
  * @returns Object containing the full URI and an ordered parameter map.
  * @throws When destination is missing or not a valid Stellar public key.
  * @throws When amount is missing or not a positive numeric string.
  * @throws When a non-native asset is supplied without an issuer.
+ * @throws When a memo exceeds the 28-byte Stellar text memo limit.
+ * @throws When a networkPassphrase hint conflicts with the resolved network.
  */
 export const formatQrPaymentPayload = (
   input: QrPaymentPayloadInput,
 ): QrPaymentPayload => {
-  const { destination, amount, memo, asset } = input;
+  const { destination, amount, memo, asset, network, networkPassphrase } = input;
 
   if (!destination || typeof destination !== 'string') {
     throw new Error('destination is required');
@@ -114,17 +141,32 @@ export const formatQrPaymentPayload = (
     throw new Error('amount must be a positive number');
   }
 
-  const assetCode = asset?.code?.trim().toUpperCase() || 'XLM';
+  const assetCode = asset?.code?.trim().toUpperCase() || NATIVE_ASSET_CODE;
   const assetIssuer = asset?.issuer?.trim();
-  const isNative = assetCode === 'XLM';
+  const isNative = assetCode === NATIVE_ASSET_CODE;
 
   if (!isNative && !assetIssuer) {
     throw new Error(`asset issuer is required for ${assetCode}`);
   }
 
-  if (!isNative && assetIssuer && !isValidPublicKey(assetIssuer)) {
-    throw new Error('asset issuer must be a valid Stellar public key');
+  if (memo !== undefined && memo !== null && memo !== '') {
+    // The URI advertises memo_type=MEMO_TEXT, so refuse to encode a memo the
+    // chain could not carry as text rather than emitting a QR that submits
+    // and fails.
+    if (!fitsStellarTextMemo(memo)) {
+      throw new Error('memo exceeds the 28-byte Stellar text memo limit');
+    }
   }
+
+  // Shared SEP-0007 encoder owns amount canon + asset_code/issuer pairing so
+  // QR payloads stay aligned with verify fixtures (issue #447).
+  const uri = encodeSep0007PayUri({
+    destination,
+    amount: formatStroops(stroops),
+    assetCode,
+    assetIssuer,
+    memo: memo !== undefined && memo !== null && memo !== '' ? memo : undefined,
+  });
 
   const params: Record<string, string> = {
     destination,
@@ -137,23 +179,44 @@ export const formatQrPaymentPayload = (
   }
 
   if (memo !== undefined && memo !== null && memo !== '') {
-    // The URI advertises memo_type=MEMO_TEXT, so refuse to encode a memo the
-    // chain could not carry as text rather than emitting a QR that submits
-    // and fails.
-    if (!fitsStellarTextMemo(memo)) {
-      throw new Error('memo exceeds the 28-byte Stellar text memo limit');
-    }
     params.memo = memo;
     params.memo_type = 'MEMO_TEXT';
   }
 
-  const query = Object.entries(params)
-    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
-    .join('&');
+  if (network) {
+    const resolved = passphraseFor(network);
+    if (
+      networkPassphrase !== undefined &&
+      networkPassphrase !== null &&
+      networkPassphrase !== '' &&
+      networkPassphrase !== resolved
+    ) {
+      throw new Error('network passphrase does not match the invoice network');
+    }
+    // SEP-0007 assumes the public network when network_passphrase is absent.
+    // Only emit it away from PUBLIC so Testnet invoices cannot be paid on
+    // mainnet by accident.
+    if (resolved !== PUBLIC_PASSPHRASE) {
+      params.network_passphrase = resolved;
+    }
+  } else if (
+    networkPassphrase !== undefined &&
+    networkPassphrase !== null &&
+    networkPassphrase !== ''
+  ) {
+    // A bare passphrase without a network enum is refused — the formatter
+    // must resolve the passphrase from the same table explorer links use,
+    // never from an arbitrary caller string.
+    throw new Error('network is required when a network passphrase hint is supplied');
+  }
 
-  const uri = `web+stellar:pay?${query}`;
+  // The shared encoder emits the asset/memo params; the network passphrase
+  // comes from the resolver above and always goes last (issue #557).
+  const payUri = params.network_passphrase
+    ? `${uri}&network_passphrase=${encodeURIComponent(params.network_passphrase)}`
+    : uri;
 
-  return { uri, params };
+  return { uri: payUri, params };
 };
 
 export default {

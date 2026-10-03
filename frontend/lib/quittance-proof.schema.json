@@ -30,11 +30,19 @@
     },
     "network": {
       "type": "string",
-      "enum": ["testnet", "public"]
+      "enum": [
+        "testnet",
+        "public"
+      ]
     },
     "status": {
       "type": "string",
-      "enum": ["PAID", "PENDING", "EXPIRED", "CANCELLED"]
+      "enum": [
+        "PAID",
+        "PENDING",
+        "EXPIRED",
+        "CANCELLED"
+      ]
     },
     "issuedAt": {
       "type": "string",
@@ -45,7 +53,10 @@
       "format": "date-time"
     },
     "settledAt": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date-time"
     },
     "seller": {
@@ -53,19 +64,31 @@
       "pattern": "^G[A-Z2-7]{55}$"
     },
     "payer": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "pattern": "^G[A-Z2-7]{55}$"
     },
     "payment": {
       "type": "object",
-      "required": ["txHash", "memo", "amount", "asset", "explorerUrl"],
+      "required": [
+        "txHash",
+        "memo",
+        "amount",
+        "asset",
+        "explorerUrl"
+      ],
       "additionalProperties": false,
       "properties": {
         "txHash": {
           "type": "string"
         },
         "memo": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "amount": {
           "type": "string",
@@ -73,7 +96,10 @@
         },
         "asset": {
           "type": "object",
-          "required": ["code", "issuer"],
+          "required": [
+            "code",
+            "issuer"
+          ],
           "additionalProperties": false,
           "properties": {
             "code": {
@@ -81,38 +107,78 @@
               "minLength": 1
             },
             "issuer": {
-              "type": ["string", "null"]
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         },
         "explorerUrl": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "format": "uri"
         }
       }
     },
     "verification": {
       "type": "object",
-      "required": ["status", "method", "checkedAt"],
+      "required": [
+        "status",
+        "method",
+        "checkedAt"
+      ],
       "additionalProperties": false,
       "properties": {
         "status": {
           "type": "string",
-          "enum": ["verified", "unverified"]
+          "enum": [
+            "verified",
+            "unverified"
+          ]
         },
         "method": {
           "type": "string",
-          "enum": ["memo-and-amount", "none"]
+          "enum": [
+            "memo-and-amount",
+            "none"
+          ]
         },
         "checkedAt": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "format": "date-time"
+        },
+        "settlementContext": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "ON_TIME",
+            "AFTER_EXPIRY",
+            "AFTER_CANCEL",
+            null
+          ]
+        },
+        "latePaymentWarningCode": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
     "document": {
       "type": "object",
-      "required": ["generatedAtUtc", "generatedBy"],
+      "required": [
+        "generatedAtUtc",
+        "generatedBy"
+      ],
       "additionalProperties": false,
       "properties": {
         "generatedAtUtc": {

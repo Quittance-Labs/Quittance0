@@ -10,6 +10,7 @@ import {
   MAX_DESCRIPTION_LENGTH,
   MAX_INVOICE_AMOUNT,
   MAX_NAME_LENGTH,
+  hasStellarAmountPrecision,
   isStellarPublicKey,
   isValidEmail,
 } from '../../../shared/invoice-validation';
@@ -44,7 +45,8 @@ export const createInvoiceSchema = z
       })
       .positive(CREATE_INVOICE_MESSAGES.amountPositive)
       .max(MAX_INVOICE_AMOUNT, CREATE_INVOICE_MESSAGES.amountTooLarge)
-      .refine(Number.isFinite, CREATE_INVOICE_MESSAGES.amountNotFinite),
+      .refine(Number.isFinite, CREATE_INVOICE_MESSAGES.amountNotFinite)
+      .refine(hasStellarAmountPrecision, CREATE_INVOICE_MESSAGES.amountPrecision),
     assetCode: z.string().default('XLM').transform((val) => val.toUpperCase()).optional(),
     assetIssuer: stellarPublicKeySchema.optional(),
     description: z

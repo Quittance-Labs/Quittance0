@@ -74,7 +74,6 @@ class MemoryStorage {
       );
     }
 
-    console.log('✅ Invoice created in memory:', invoice.id);
     return invoice;
   }
 
@@ -119,7 +118,6 @@ class MemoryStorage {
     const updated = { ...invoice, ...updates };
     this.invoices.set(id, updated);
 
-    console.log('✅ Invoice updated:', id);
     return updated;
   }
 

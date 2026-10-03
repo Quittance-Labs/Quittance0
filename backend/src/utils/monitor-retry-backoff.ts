@@ -6,6 +6,11 @@
 // provides a single pure function that computes the delay (in milliseconds)
 // for the Nth consecutive failure using a base delay, an exponential factor,
 // and an absolute ceiling.
+//
+// The ceiling is shared with the pay page (issue #556): a Horizon outage asks
+// the payer to wait for the same window the monitor uses between retries.
+
+import { HORIZON_OUTAGE_BACKOFF_MAX_MS } from '../../../shared/horizon-retry';
 
 /**
  * Base delay applied for the first failure, in milliseconds.
@@ -20,9 +25,9 @@ export const BACKOFF_FACTOR = 2;
 
 /**
  * Absolute ceiling on the computed delay, in milliseconds.
- * No matter how many failures accumulate, the delay never exceeds 30 seconds.
+ * Shared with shared/horizon-retry.ts so pay-page copy matches monitor policy.
  */
-export const BACKOFF_MAX_MS = 30_000; // 30 seconds
+export const BACKOFF_MAX_MS = HORIZON_OUTAGE_BACKOFF_MAX_MS;
 
 /**
  * Compute the backoff delay (in milliseconds) for the Nth consecutive
@@ -43,19 +48,12 @@ export const BACKOFF_MAX_MS = 30_000; // 30 seconds
  * @returns Delay in milliseconds before the next retry.
  */
 export const monitorBackoffMs = (failureCount: number): number => {
-  // Reject non-integer or negative inputs — treat them as first attempt.
   if (!Number.isInteger(failureCount) || failureCount < 0) {
     return BACKOFF_BASE_MS;
   }
 
-  // Compute base * factor^failureCount, guarding against overflow.
-  // Math.pow(2, n) is safe for n up to 1023; our cap kicks in long before.
   const raw = BACKOFF_BASE_MS * Math.pow(BACKOFF_FACTOR, failureCount);
-
-  // Clamp to the ceiling. Use Math.min which naturally handles Infinity.
   const clamped = Math.min(raw, BACKOFF_MAX_MS);
-
-  // Round to integer milliseconds to avoid fractional delays.
   return Math.round(clamped);
 };
 

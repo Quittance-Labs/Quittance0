@@ -8,6 +8,7 @@
  */
 
 const { isHorizonOutageError, HORIZON_OUTAGE_MESSAGE } = require('./horizon-outage');
+const { isEdgeLimitError, edgeLimitMessage } = require('./edge-limit');
 const { checkTxHash, resolveVerificationError } = require('./verification');
 const { isApiUnavailableError, apiErrorMessage } = require('./api-runtime');
 const { normalizePayerDetails } = require('./payment-page-state');
@@ -28,6 +29,16 @@ function validateTxHash(txHash) {
  * Classify a verify failure using the existing outage and rejection helpers.
  */
 function classifyVerifyError(error) {
+  // Rate and body limits (429 / 413) are retryable edge responses and must
+  // never read as a memo/amount/destination rejection (issue #450).
+  if (isEdgeLimitError(error)) {
+    return {
+      isOutage: true,
+      isApiUnavailable: false,
+      message: edgeLimitMessage(error),
+    };
+  }
+
   if (isHorizonOutageError(error)) {
     return {
       isOutage: true,

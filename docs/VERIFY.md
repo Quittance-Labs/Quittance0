@@ -12,7 +12,23 @@ timeout, retries 429/5xx honoring `Retry-After`, and shares one concurrency
 budget between verify and the monitor. When Horizon stays unreachable the
 caller reports `VERIFY_UNAVAILABLE` (503) rather than
 `TRANSACTION_NOT_FOUND` — an outage must never read as a rejection, and it
-is never written to the verify cache.
+is never written to the verify cache. Timeout, HTTP 429, and connection
+failures are classified by `classifyHorizonFailure` in
+`backend/src/utils/horizon-client.ts` before verify or the monitor compare
+memo, destination, or amount. A previously cached `VERIFY_UNAVAILABLE` is
+dropped on read. The pay page shows one retryable alert using the canonical
+message (aligned with the monitor's `BACKOFF_MAX_MS` / 30s ceiling); the
+per-invoice verify rate limit still returns `VERIFY_RATE_LIMIT_EXCEEDED`
+when the payer — not Horizon — is flooding verify.
+
+The shared wrapper preserves the actual HTTP status and `Retry-After` header
+before the Stellar SDK reduces a failed response to its body. A proxy's HTML
+503, a 429 without a JSON `status`, or a contradictory body status therefore
+cannot become a cached transaction rejection. The wire status remains
+authoritative for ordinary 400/404 responses too. Error payloads and SDK error
+objects are not rewritten; metadata belongs to the individual attempt, so
+concurrent calls and a late response from an earlier timeout cannot exchange
+statuses or retry delays.
 
 ## Order of checks
 
@@ -118,9 +134,16 @@ cd backend && npm test
   rejection
 - `tests/invoice-payment-loop.test.ts` — create → pay → verify → `PAID` against
   the real Express app with a stubbed Horizon, including a concurrent
-  double-POST of one verification
+  double-POST of one verification and same-hash recovery after SDK socket
+  resets, HTTP 429 without a body status, and HTML HTTP 503 responses
 - `tests/payment-attribution.test.ts` — hash-to-invoice claims, memo
   uniqueness, and the one-transaction-one-invoice rule
+- `tests/horizon-client.test.ts` — named Horizon failure classes (429,
+  timeout, connection) and the shared retry budget, plus real SDK/HTTP status
+  and header preservation, client-error controls, overlapping requests, and
+  late responses from timed-out attempts
+- `tests/verify-cache.test.ts` — VERIFY_UNAVAILABLE is never stored and a
+  previously cached entry is dropped on get
 
 Which invoice a transaction settles, and what a second caller sees, is covered
 separately in [VERIFY-IDEMPOTENCY.md](./VERIFY-IDEMPOTENCY.md).

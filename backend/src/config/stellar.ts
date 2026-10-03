@@ -64,8 +64,6 @@ export const validateStellarConfig = () => {
   }
 
   console.log(`✅ Stellar configured for ${STELLAR_NETWORK}`);
-  console.log(`📍 Horizon URL: ${STELLAR_HORIZON_URL}`);
-  console.log(`💰 Seller Account: ${SELLER_PUBLIC_KEY}`);
 };
 
 // Helper to get seller keypair

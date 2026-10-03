@@ -142,12 +142,20 @@ export default function PayActionsSection({
               size={220}
               description={`a request to pay ${amountLabel} with memo ${invoice.memo}`}
               copyValue={
-                paymentInfo?.stellarUri || paymentInfo?.paymentUrl || undefined
+                paymentInfo?.copyValue ||
+                paymentInfo?.stellarUri ||
+                paymentInfo?.paymentUrl ||
+                undefined
               }
             />
+            {paymentInfo?.stellarQrEncodesUri === false && paymentInfo?.stellarUri && (
+              <p className="text-xs text-gray-600 font-mono break-all mt-2 px-2">
+                {paymentInfo.stellarUri}
+              </p>
+            )}
             <p className="text-sm text-gray-700 text-center mt-4">
               {paymentInfo?.stellarQrEncodesUri === false
-                ? 'Scan to open the pay link, or copy the Stellar URI above into your wallet'
+                ? 'Scan to open the pay link, or paste the Stellar URI above into your wallet'
                 : 'Scan with your Stellar wallet app to pay instantly'}
             </p>
           </section>
@@ -164,6 +172,8 @@ export default function PayActionsSection({
                   paymentInfo?.paymentUrl ||
                   (typeof window !== 'undefined' ? window.location.href : '')
                 }
+                stellarUri={paymentInfo?.stellarUri || undefined}
+                networkPassphrase={paymentInfo?.networkPassphrase || undefined}
                 onCopy={(_text, label) => {
                   dispatch({ type: 'COPIED', key: label });
                 }}

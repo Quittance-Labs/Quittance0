@@ -197,9 +197,10 @@ export function usePaymentPage(id: string): PayPageSession {
       return;
     }
 
+    // Outages and edge limits keep the session and show one retryable alert
+    // (ApiErrorState via loadError) — no second toast (issues #450, #556).
     if (result.kind === 'outage') {
       setLoadError(result.message);
-      toast.error(result.message);
       return;
     }
 
