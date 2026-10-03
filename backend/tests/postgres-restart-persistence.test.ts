@@ -21,6 +21,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { PostgresInvoiceStorage } from '../src/storage/postgres-invoice-storage.ts';
+import { MemoryInvoiceStorage } from '../src/storage/memory-invoice-storage.ts';
+import { InvoiceMemoryService } from '../src/services/invoice-memory.service.ts';
+import { MemoryStorage } from '../src/storage/memory-storage.ts';
 import { InvoiceService } from '../src/services/invoice.service.ts';
 import type { StoredInvoice } from '../src/storage/invoice-storage.ts';
 
@@ -97,6 +100,19 @@ function createSharedFakeDatabase() {
         .slice()
         .sort((a, b) => b.created_at.getTime() - a.created_at.getTime())
         .slice(offset, offset + limit);
+      return Promise.resolve({ rows: page.map(clone), rowCount: page.length });
+    }
+
+    if (sql.startsWith("SELECT * FROM invoices WHERE status = 'PENDING'")) {
+      let found = rows.filter(r => r.status === 'PENDING');
+      if (sql.includes('AND seller_public_key =')) {
+        found = found.filter(r => r.seller_public_key === params[0]);
+      }
+      const limit = params[params.length - 1];
+      const page = found
+        .slice()
+        .sort((a, b) => a.created_at.getTime() - b.created_at.getTime())
+        .slice(0, typeof limit === 'number' ? limit : undefined);
       return Promise.resolve({ rows: page.map(clone), rowCount: page.length });
     }
 
@@ -311,5 +327,63 @@ describe('Postgres restart persistence — stable public payment IDs (Issue #452
     assert.ok(ids.includes(inv1.id), 'invoice 1 must appear after restart');
     assert.ok(ids.includes(inv2.id), 'invoice 2 must appear after restart');
     assert.ok(listed.every(r => r.sellerPublicKey === SELLER_A));
+  });
+
+  it('restart on Postgres returns the same pending set the memory process loses, and the test says so', async () => {
+    const memBefore = new MemoryInvoiceStorage(new InvoiceMemoryService(new MemoryStorage()));
+    await memBefore.createInvoice({
+      sellerPublicKey: SELLER_A,
+      amount: 15,
+      assetCode: 'XLM',
+      expiresInDays: 7,
+    } as any);
+    await memBefore.createInvoice({
+      sellerPublicKey: SELLER_A,
+      amount: 25,
+      assetCode: 'XLM',
+      expiresInDays: 7,
+    } as any);
+
+    const memPendingBefore = await memBefore.listPendingInvoices(SELLER_A);
+    assert.equal(memPendingBefore.length, 2);
+
+    const memAfter = new MemoryInvoiceStorage(new InvoiceMemoryService(new MemoryStorage()));
+    const memPendingAfter = await memAfter.listPendingInvoices(SELLER_A);
+    assert.equal(
+      memPendingAfter.length,
+      0,
+      'Memory storage loses pending invoices across process restart'
+    );
+
+    const db = createSharedFakeDatabase();
+    const pgBefore = new PostgresInvoiceStorage(new InvoiceService(db));
+    const pgInv1 = await pgBefore.createInvoice({
+      sellerPublicKey: SELLER_A,
+      amount: 15,
+      assetCode: 'XLM',
+      expiresInDays: 7,
+    } as any);
+    const pgInv2 = await pgBefore.createInvoice({
+      sellerPublicKey: SELLER_A,
+      amount: 25,
+      assetCode: 'XLM',
+      expiresInDays: 7,
+    } as any);
+
+    const pgPendingBefore = await pgBefore.listPendingInvoices(SELLER_A);
+    assert.equal(pgPendingBefore.length, 2);
+
+    const pgAfter = new PostgresInvoiceStorage(new InvoiceService(db));
+    const pgPendingAfter = await pgAfter.listPendingInvoices(SELLER_A);
+    assert.equal(
+      pgPendingAfter.length,
+      2,
+      'Postgres retains the same pending set across storage restart'
+    );
+    assert.deepEqual(
+      pgPendingAfter.map((i) => i.id).sort(),
+      pgPendingBefore.map((i) => i.id).sort(),
+      'Postgres returns the exact same pending invoices that memory process lost'
+    );
   });
 });

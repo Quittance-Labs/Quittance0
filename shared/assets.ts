@@ -636,6 +636,9 @@ export function encodeSep0007PayUri(params: Sep0007PayParams): string {
     typeof params.assetIssuer === 'string' ? params.assetIssuer.trim() : '';
 
   const isNative = code === NATIVE_ASSET_CODE;
+  if (isNative && rawIssuer) {
+    throw new Error('XLM is the native asset and must not carry an issuer');
+  }
   let issuer: string | undefined;
 
   if (!isNative) {

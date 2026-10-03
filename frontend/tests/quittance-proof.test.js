@@ -87,6 +87,28 @@ test('normalizes amounts to seven decimals without floats', () => {
   assert.equal(build({ ...paidInvoice, amount: 12.5 }).payment.amount, '12.5000000');
 });
 
+test('proof exports preserve issued XLM identity across JSON, HTML, and PDF', () => {
+  const issuer = 'G' + 'A'.repeat(55);
+  const proof = build({ ...paidInvoice, assetCode: ' xlm ', assetIssuer: ` ${issuer} ` });
+  assert.deepEqual(proof.payment.asset, { code: 'XLM', issuer });
+  assert.deepEqual(parseQuittanceProof(serializeQuittanceProof(proof)).payment.asset,
+    { code: 'XLM', issuer });
+  assert.ok(renderQuittanceProofHtml(proof).includes(`Issuer: ${issuer}`));
+  assert.ok(createQuittanceProofPdf(proof, jsPDF).output().includes(`Issuer: ${issuer}`));
+});
+
+test('proof exports keep native XLM unissued and identify a foreign USDC issuer', () => {
+  const native = build({ ...paidInvoice, assetCode: 'XLM', assetIssuer: ' ' });
+  assert.deepEqual(native.payment.asset, { code: 'XLM', issuer: null });
+  assert.equal(renderQuittanceProofHtml(native).includes('Issuer:'), false);
+  assert.equal(createQuittanceProofPdf(native, jsPDF).output().includes('Issuer:'), false);
+
+  const issuer = 'G' + 'A'.repeat(55);
+  const foreign = build({ ...paidInvoice, assetCode: 'USDC', assetIssuer: issuer });
+  assert.deepEqual(foreign.payment.asset, { code: 'USDC', issuer });
+  assert.ok(createQuittanceProofPdf(foreign, jsPDF).output().includes(`Issuer: ${issuer}`));
+});
+
 test('records the explorer link for the invoice network', () => {
   const testnet = build(paidInvoice);
   assert.equal(testnet.payment.explorerUrl, 'https://stellar.expert/explorer/testnet/tx/' + TX_HASH);

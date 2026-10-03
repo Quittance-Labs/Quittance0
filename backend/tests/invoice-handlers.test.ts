@@ -681,18 +681,11 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
 
       it('keeps the verify response on the public shape', async () => {
         const created = await createInvoice({ customerEmail: 'pay@client.example' });
-        transaction = {
-          transaction: { memo: created.memo },
-          operations: [
-            {
-              type: 'payment',
-              from: PAYER,
-              to: SELLER_A,
-              amount: '42.5000000',
-              asset_type: 'native',
-            },
-          ],
-        };
+        transaction = paymentTransaction({
+          memo: created.memo,
+          amount: '42.5000000',
+          to: SELLER_A,
+        });
 
         const res = await call(
           handlers().verifyPayment,

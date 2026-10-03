@@ -23,7 +23,8 @@ export interface QrPaymentAsset {
   code: string;
   /**
    * Stellar public key of the asset issuer.
-   * Required for non-native assets and ignored for XLM.
+   * Required for non-native assets. XLM with an issuer is rejected, matching
+   * invoice creation, instead of silently requesting a different asset.
    */
   issuer?: string;
 }
@@ -143,7 +144,7 @@ export const formatQrPaymentPayload = (
     destination,
     amount: formatStroops(stroops),
     assetCode,
-    assetIssuer: isNative ? undefined : assetIssuer,
+    assetIssuer,
     memo: memo !== undefined && memo !== null && memo !== '' ? memo : undefined,
   });
 

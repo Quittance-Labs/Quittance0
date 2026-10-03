@@ -27,7 +27,7 @@ no QR work; `generateStellarPaymentQR` encodes with error correction level H.
 | scheme | `web+stellar:pay?` | `web+stellar:<operation>?<params>`, `pay` operation | conformant |
 | `destination` | the seller's `G...` key | required: "a valid account ID **or payment address**" | G-addresses only — a valid `M...` payment address is refused (gap 4) |
 | `amount` | canonical 7-decimal stroop string (`formatStroops` of the parsed input) | optional; Stellar amounts carry at most 7 decimals | conformant — 8+ decimals are refused before the URI is built |
-| `asset_code` | only for non-native assets | optional, "XLM if not present" | conformant; an XLM-labelled credit asset loses its issuer silently (gap 5) |
+| `asset_code` | only for non-native assets | optional, "XLM if not present" | conformant; XLM with an issuer is refused before encoding, matching invoice creation |
 | `asset_issuer` | with `asset_code` | optional, same rule | conformant |
 | `memo` | the invoice memo, `INV-<ms>-<8>`, 21 chars | optional; `MEMO_TEXT` must be URL-encoded (`MEMO_HASH`/`MEMO_RETURN` are base64 **then** URL-encoded) | conformant — the formatter refuses memos over 28 UTF-8 bytes |
 | `memo_type` | `MEMO_TEXT` | one of `MEMO_TEXT`, `MEMO_ID`, `MEMO_HASH`, `MEMO_RETURN` | conformant |
@@ -78,7 +78,7 @@ the end for what that leaves open.
 | 6 | Amount with 8 decimals | — | **refused by the formatter** with a message naming the 7-decimal ceiling | no — closed |
 | 7 | Memo at 32 bytes | — | **refused by the formatter**: `Memo.text` refuses past 28 bytes | no — closed |
 | 8 | Non-ASCII memo, 30 bytes | — | **refused by the formatter** on the byte count, not the character count | no — closed |
-| 9 | XLM with an issuer | `?destination=...&amount=25` — issuer dropped | pays, but as a **native** payment: the issuer the caller supplied is gone, and nothing says so | yes — gap 5 |
+| 9 | XLM with an issuer | — | **refused by the formatter** instead of silently substituting native XLM | no — closed |
 | 10 | A valid `M...` destination | — | **refused before a QR is built**, though SEP-0007 accepts payment addresses | yes — gap 4 |
 | 11 | Credit asset with no issuer | — | refused with a message naming the code | no |
 | 12 | Amount `1e3` | — | refused | no |
@@ -94,10 +94,10 @@ message.
    throws past seven decimals and emits the canonical stroop string. The same
    rule could still be applied earlier, at invoice creation, which accepts any
    number up to `1e9` — issue #378's territory.
-2. **Throw for a native code carrying an issuer** (gap 5), mirroring the
-   `createInvoiceSchema` refinement that already refuses it. Silently dropping an
-   issuer is the one gap where the URI succeeds and the money goes somewhere the
-   caller did not describe.
+2. ~~Throw for a native code carrying an issuer~~ — **done**: both the shared
+   encoder and backend QR formatter refuse XLM with an issuer, matching invoice
+   creation. Existing proof records retain any recorded issuer so JSON, HTML,
+   and PDF cannot misrepresent an issued asset as native XLM.
 3. **Resolve the destination with `StrKey`** (gap 4) so a valid muxed payment
    address can be paid by QR, as SEP-0007 allows.
 4. Optionally emit `msg` with the invoice description, so a wallet can show the
@@ -123,4 +123,3 @@ Record wallet, version and outcome in the follow-up PR.
 | `backend/tests/fixtures/payment-uri-cases.fixture.ts` | the 12 cases: input, emitted output, status, follow-up |
 | `backend/tests/payment-uri-conformance.test.ts` | pins the emitted output; proves each gap with the SDK; keeps the gap list deliberate |
 | `backend/src/utils/qr-payment-payload.ts` | the formatter; enforces the 28-byte memo cap |
-

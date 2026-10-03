@@ -269,3 +269,20 @@ test('SEP-0007 URI encoding aligns with verify asset rules', () => {
     /issuer is required/,
   );
 });
+
+test('SEP-0007 rejects issued XLM instead of requesting a different native asset', () => {
+  const invoice = { assetCode: 'XLM', assetIssuer: ROGUE_ISSUER };
+  assert.equal(assetsMatch(resolveInvoiceAsset(invoice),
+    resolvePaymentAsset({ assetType: 'native' })), false);
+  assert.throws(() => encodeSep0007PayUri({
+    destination: VALID_DESTINATION,
+    amount: '1',
+    ...invoice,
+  }), /XLM is the native asset and must not carry an issuer/);
+  assert.throws(() => encodeSep0007PayUri({
+    destination: VALID_DESTINATION,
+    amount: '1',
+    assetCode: 'XLM',
+    assetIssuer: 'invalid-issuer',
+  }), /XLM is the native asset and must not carry an issuer/);
+});
