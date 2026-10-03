@@ -81,6 +81,7 @@ export function usePaymentPage(id: string): PayPageSession {
 
   useEffect(() => {
     generation.current += 1;
+    const request = generation.current;
     setLoading(true);
     setPaymentInfo(null);
     setTxHash('');
@@ -95,7 +96,11 @@ export function usePaymentPage(id: string): PayPageSession {
     );
     if (returned.txHash) {
       setTxHash(returned.txHash);
-      void load().then(() => verify(returned.txHash ?? undefined));
+      void load().then(() => {
+        // Cleanup or a wallet change also cancels verification not yet started.
+        if (request !== generation.current) return;
+        return verify(returned.txHash ?? undefined);
+      });
       return () => {
         generation.current += 1;
       };

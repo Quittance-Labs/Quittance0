@@ -12,7 +12,7 @@
 
 const routes = new Map();
 
-/** Registers the payload `lib/api.ts` should see for a path suffix. */
+/** Registers a payload or deferred payload for `lib/api.ts` to receive. */
 function setResponse(pathSuffix, payload) {
   routes.set(pathSuffix, payload);
 }
@@ -33,7 +33,7 @@ function resolve(url) {
     return Promise.reject(error);
   }
 
-  return Promise.resolve({ data: routes.get(matches[0]) });
+  return Promise.resolve(routes.get(matches[0])).then((data) => ({ data }));
 }
 
 /** Request log so a test can assert a call happened, not just its result. */
