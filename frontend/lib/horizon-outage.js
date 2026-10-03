@@ -1,16 +1,22 @@
 /**
  * Tells a Horizon/network outage apart from a verification rejection.
  *
- * The pay page raised the same "verification failed" state for both, so a slow
- * or unreachable Horizon looked to the payer like their payment had been
- * rejected. Rejections carry a machine code (memo, amount or destination
- * mismatch); outages arrive as fetch failures, timeouts, or 5xx/429 answers.
+ * One policy from the shared Horizon client through the pay page (issue #556):
+ * timeout, 429, and connection failures surface as VERIFY_UNAVAILABLE. The pay
+ * page shows one retryable alert with that canonical message — never a second
+ * string in the button, the verify panel, or a toast alongside the alert.
  */
 
 const { isApiUnavailableError } = require('./api-runtime.js');
+const { messageForCode } = require('./verification.js');
+const {
+  HORIZON_OUTAGE_RETRY_WAIT_SECONDS,
+} = require('../../shared/horizon-retry.ts');
 
+/** Canonical payer-facing outage copy — same code the API returns as 503. */
 const HORIZON_OUTAGE_MESSAGE =
-  'Network problem reaching Stellar. Nothing was rejected - retry in a moment.';
+  messageForCode('VERIFY_UNAVAILABLE') ||
+  `Verification is temporarily unavailable; try again within ${HORIZON_OUTAGE_RETRY_WAIT_SECONDS} seconds`;
 
 const NETWORK_PATTERNS = [
   /fetch failed/i,
@@ -21,6 +27,7 @@ const NETWORK_PATTERNS = [
   /econnrefused|econnreset|etimedout|enotfound|eai_again/i,
   /timed?\s?out/i,
   /stellar horizon is temporarily unreachable/i,
+  /verification is temporarily unavailable/i,
 ];
 
 function matchesNetworkText(value) {
@@ -30,19 +37,30 @@ function matchesNetworkText(value) {
   );
 }
 
+function responseCode(error) {
+  return (
+    error?.response?.data?.code ||
+    error?.code ||
+    error?.data?.code ||
+    undefined
+  );
+}
+
 /**
  * @param {unknown} error
  * @returns {boolean} true when the failure is a transport/availability problem
- * rather than a verification rejection.
+ * rather than a verification rejection (memo/amount/destination mismatch).
  */
 function isHorizonOutageError(error) {
   if (error == null) return false;
 
+  if (responseCode(error) === 'VERIFY_UNAVAILABLE') return true;
   if (isApiUnavailableError(error)) return true;
   if (matchesNetworkText(error)) return true;
 
   const status = error.response?.status ?? error.status ?? error.statusCode;
   if (typeof status === 'number' && (status >= 500 || status === 429)) {
+    if (responseCode(error) === 'VERIFY_RATE_LIMIT_EXCEEDED') return false;
     return true;
   }
 
@@ -51,4 +69,8 @@ function isHorizonOutageError(error) {
   return matchesNetworkText(error.message);
 }
 
-module.exports = { HORIZON_OUTAGE_MESSAGE, isHorizonOutageError };
+module.exports = {
+  HORIZON_OUTAGE_MESSAGE,
+  HORIZON_OUTAGE_RETRY_WAIT_SECONDS,
+  isHorizonOutageError,
+};

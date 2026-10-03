@@ -27,13 +27,25 @@ export class PostgresInvoiceStorage implements InvoiceStorage {
     return this.service.getInvoiceById(id);
   }
 
+  async getInvoiceByMemo(memo: string): Promise<StoredInvoice | null> {
+    return this.service.getInvoiceByMemo(memo);
+  }
+
   async getInvoicesBySeller(
     sellerPublicKey: string,
     status?: string,
     limit = 50,
-    offset = 0
+    offset = 0,
+    q?: string
   ): Promise<StoredInvoice[]> {
-    return this.service.getInvoicesBySeller(sellerPublicKey, status, limit, offset);
+    return this.service.getInvoicesBySeller(sellerPublicKey, status, limit, offset, q);
+  }
+
+  async listPendingInvoices(
+    sellerPublicKey?: string,
+    limit = 500
+  ): Promise<StoredInvoice[]> {
+    return this.service.listPendingInvoices(sellerPublicKey, limit);
   }
 
   async cancelInvoice(id: string, sellerPublicKey?: string): Promise<StoredInvoice> {

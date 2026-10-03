@@ -132,13 +132,13 @@ function dashboardDataFor(data, sellerPublicKey, now) {
   }
 
   const owned = scopeInvoicesToSeller(data.invoices, sellerPublicKey);
-  const invoices = applyExpiryLifecycle(owned, now).sort(
-    (a, b) => sortKeyForInvoice(b) - sortKeyForInvoice(a)
-  );
+  const invoices = applyExpiryLifecycle(owned, now);
+  // Reconcile corresponding rows before presentation sorting changes their indices.
+  const stats = reconcileExpiryStats(data.stats, owned, invoices);
 
   return {
-    invoices,
-    stats: reconcileExpiryStats(data.stats, owned, invoices),
+    invoices: invoices.sort((a, b) => sortKeyForInvoice(b) - sortKeyForInvoice(a)),
+    stats,
   };
 }
 

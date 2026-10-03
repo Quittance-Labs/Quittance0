@@ -19,6 +19,9 @@
 
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import { requestCorrelationMiddleware } from './utils/request-correlation-id';
+import { requestLoggingMiddleware } from './observability/request-logging';
+import { emitOperationalFailure } from './observability/log-events';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createInvoiceRouter } from './routes/invoice.routes';
@@ -33,6 +36,8 @@ import { pool } from './config/database';
 import { SELLER_PUBLIC_KEY, validateStellarConfig } from './config/stellar';
 import { configuredFrontendOrigins, configuredStorageMode, corsOptions } from './config/runtime';
 import { healthHandler, readinessHandler } from './health';
+import { bodyLimitErrorHandler } from './middleware/body-limit';
+import { getEdgeControlConfig } from './middleware/edge-config';
 import type { InvoiceStorage } from './storage/invoice-storage';
 
 dotenv.config();
@@ -68,15 +73,14 @@ paymentMonitorService.configure({
 
 const app: Application = express();
 const PORT = process.env.PORT || 3001;
+const maxBodyBytes = getEdgeControlConfig().maxBodyBytes;
 
 app.use(cors(corsOptions()));
-app.use(express.json({ limit: '16kb' }));
-app.use(express.urlencoded({ extended: true, limit: '16kb' }));
+app.use(requestCorrelationMiddleware);
+app.use(requestLoggingMiddleware);
+app.use(express.json({ limit: maxBodyBytes }));
+app.use(express.urlencoded({ extended: true, limit: maxBodyBytes }));
 
-app.use((req: Request, res: Response, next: NextFunction) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
 
 // Root endpoint
 app.get('/', (req: Request, res: Response) => {
@@ -105,16 +109,12 @@ app.get('/readyz', readinessHandler(storage.mode));
 app.use('/api', createInvoiceRouter({ storage, paymentMonitor: paymentMonitorService }));
 app.use('/api', createPaymentMonitorRouter(paymentMonitorService));
 
+// Body-limit (413) then generic error handling
+app.use(bodyLimitErrorHandler);
+
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  if ((err as any).type === 'entity.too.large' || (err as any).status === 413 || (err as any).statusCode === 413) {
-    return res.status(413).json({
-      success: false,
-      code: 'PAYLOAD_TOO_LARGE',
-      error: 'Payload too large: request body exceeds 16 kB limit',
-    });
-  }
-  console.error('Unhandled error:', err);
+  emitOperationalFailure('http.request');
   const code = (err as Error & { code?: string }).code;
   res.status(code === 'CORS_ORIGIN_DENIED' ? 403 : 500).json({
     success: false,
@@ -139,7 +139,7 @@ async function initialize(): Promise<void> {
       await pool.query('SELECT NOW()');
       console.log('✅ Database connected');
     } catch (error) {
-      console.error('Failed to connect to database:', error);
+      emitOperationalFailure('database.connect');
       process.exit(1);
     }
   }
@@ -151,7 +151,7 @@ async function initialize(): Promise<void> {
       }
       paymentMonitorService.start();
     } catch (error) {
-      console.warn('Payment monitor not started:', error);
+      emitOperationalFailure('monitor.start', 'warn');
     }
   } else {
     console.log('Wallet-scoped mode: no SELLER_PUBLIC_KEY, payment monitor disabled');

@@ -77,13 +77,11 @@ describe('formatQrPaymentPayload — direct edge cases', () => {
     assert.equal('asset_issuer' in result.params, false);
   });
 
-  it('ignores issuer when asset code is native XLM', () => {
-    const result = formatQrPaymentPayload({
+  it('rejects an issuer on XLM instead of silently changing the requested asset', () => {
+    assert.throws(() => formatQrPaymentPayload({
       destination: VALID_DESTINATION,
       amount: '1',
       asset: { code: 'XLM', issuer: VALID_ASSET_ISSUER },
-    });
-    assert.equal('asset_code' in result.params, false);
-    assert.equal('asset_issuer' in result.params, false);
+    }), /XLM is the native asset and must not carry an issuer/);
   });
 });

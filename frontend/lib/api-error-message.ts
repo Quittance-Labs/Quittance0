@@ -24,6 +24,13 @@ const ERROR_MESSAGES: Record<string, string> = Object.freeze({
   INVALID_AMOUNT: 'The payment amount is invalid.',
   ASSET_NOT_SUPPORTED: 'This asset is not supported for the requested invoice.',
   WALLET_NOT_CONNECTED: 'Please connect your Freighter wallet first.',
+  // Edge controls (issue #450) — retryable, never a payment rejection
+  RATE_LIMIT_EXCEEDED: 'Too many requests. Please wait a moment and try again.',
+  VERIFY_RATE_LIMIT_EXCEEDED: 'Too many verification attempts for this invoice',
+  VERIFY_IN_PROGRESS: 'Verification is already in progress for this invoice. Please wait a moment.',
+  PAYLOAD_TOO_LARGE: 'That request was too large. Please retry with a smaller payload.',
+  INVOICE_STORE_FULL: 'The invoice store is temporarily full. Please try again later.',
+  413: 'That request was too large. Please retry with a smaller payload.',
 });
 
 function lookupMessage(key: string): string | undefined {
