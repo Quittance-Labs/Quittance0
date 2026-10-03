@@ -162,7 +162,6 @@ export class InvoiceMemoryService {
         throw new Error('Invoice not found, expired, or already processed');
       }
 
-      console.log('✅ Invoice marked as paid:', invoiceId);
       return invoice;
     } catch (error) {
       if (
