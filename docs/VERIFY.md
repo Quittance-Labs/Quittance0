@@ -21,6 +21,15 @@ message (aligned with the monitor's `BACKOFF_MAX_MS` / 30s ceiling); the
 per-invoice verify rate limit still returns `VERIFY_RATE_LIMIT_EXCEEDED`
 when the payer — not Horizon — is flooding verify.
 
+The shared wrapper preserves the actual HTTP status and `Retry-After` header
+before the Stellar SDK reduces a failed response to its body. A proxy's HTML
+503, a 429 without a JSON `status`, or a contradictory body status therefore
+cannot become a cached transaction rejection. The wire status remains
+authoritative for ordinary 400/404 responses too. Error payloads and SDK error
+objects are not rewritten; metadata belongs to the individual attempt, so
+concurrent calls and a late response from an earlier timeout cannot exchange
+statuses or retry delays.
+
 ## Order of checks
 
 Checks run in a fixed order so every caller reports the same *first* failure:
@@ -125,11 +134,14 @@ cd backend && npm test
   rejection
 - `tests/invoice-payment-loop.test.ts` — create → pay → verify → `PAID` against
   the real Express app with a stubbed Horizon, including a concurrent
-  double-POST of one verification
+  double-POST of one verification and same-hash recovery after SDK socket
+  resets, HTTP 429 without a body status, and HTML HTTP 503 responses
 - `tests/payment-attribution.test.ts` — hash-to-invoice claims, memo
   uniqueness, and the one-transaction-one-invoice rule
 - `tests/horizon-client.test.ts` — named Horizon failure classes (429,
-  timeout, connection) and the shared retry budget
+  timeout, connection) and the shared retry budget, plus real SDK/HTTP status
+  and header preservation, client-error controls, overlapping requests, and
+  late responses from timed-out attempts
 - `tests/verify-cache.test.ts` — VERIFY_UNAVAILABLE is never stored and a
   previously cached entry is dropped on get
 

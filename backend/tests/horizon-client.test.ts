@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { Horizon, NetworkError } from '@stellar/stellar-sdk';
 import {
   horizonCall,
   horizonErrorStatus,
@@ -12,6 +15,177 @@ import {
 } from '../src/utils/horizon-client.ts';
 
 const noSleep = () => Promise.resolve();
+
+async function withSdkHorizon(
+  respond: (request: http.IncomingMessage, response: http.ServerResponse) => void,
+  run: (server: Horizon.Server) => Promise<void>
+): Promise<void> {
+  const httpServer = http.createServer(respond);
+  await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+  const { port } = httpServer.address() as AddressInfo;
+  try {
+    await run(new Horizon.Server(`http://127.0.0.1:${port}`, { allowHttp: true }));
+  } finally {
+    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+  }
+}
+
+describe('horizonCall — real SDK HTTP metadata', () => {
+  const outages = [
+    { name: '429 JSON without body status', status: 429, body: { title: 'Busy' }, type: 'application/json' },
+    { name: '503 HTML proxy response', status: 503, body: '<h1>Unavailable</h1>', type: 'text/html' },
+    { name: '502 with contradictory body status', status: 502, body: { status: 404 }, type: 'application/json' },
+    { name: '429 canonical body with a misleading body header', status: 429, body: { status: 429, headers: { 'retry-after': '99' } }, type: 'application/json' },
+  ];
+
+  for (const failure of outages) {
+    it(`retains wire status and Retry-After for ${failure.name}`, async () => {
+      let requests = 0;
+      const sleeps: number[] = [];
+      await withSdkHorizon((_request, response) => {
+        requests++;
+        response.writeHead(failure.status, { 'content-type': failure.type, 'retry-after': '7' });
+        response.end(failure.type === 'text/html' ? failure.body as string : JSON.stringify(failure.body));
+      }, async (server) => {
+        await assert.rejects(
+          horizonCall(() => server.transactions().transaction('1'.repeat(64)).call(), {
+            sleepFn: async ms => { sleeps.push(ms); },
+          }),
+          (error: unknown) => error instanceof HorizonUnavailableError &&
+            error.status === failure.status && error.retryAfterMs === 7000
+        );
+      });
+      assert.equal(requests, HORIZON_MAX_ATTEMPTS);
+      assert.deepEqual(sleeps, [7000, 7000]);
+    });
+  }
+
+  for (const status of [400, 404]) {
+    it(`does not retry HTTP ${status} even when its body says 503`, async () => {
+      let requests = 0;
+      const body = { status: 503, title: 'Contradictory body' };
+      await withSdkHorizon((_request, response) => {
+        requests++;
+        response.writeHead(status, { 'content-type': 'application/json', 'retry-after': '7' });
+        response.end(JSON.stringify(body));
+      }, async (server) => {
+        await assert.rejects(
+          horizonCall(() => server.transactions().transaction('1'.repeat(64)).call(), { sleepFn: noSleep }),
+          (error: unknown) => {
+            assert.ok(error instanceof NetworkError);
+            assert.equal(horizonErrorStatus(error), status);
+            assert.equal(classifyHorizonFailure(error), null);
+            assert.deepEqual(error.getResponse(), body, 'the original SDK response must remain intact');
+            return true;
+          }
+        );
+      });
+      assert.equal(requests, 1);
+    });
+  }
+
+  it('does not invent Retry-After from response body fields', async () => {
+    const body = { status: 429, headers: { 'retry-after': '99' } };
+    await withSdkHorizon((_request, response) => {
+      response.writeHead(429, { 'content-type': 'application/json' });
+      response.end(JSON.stringify(body));
+    }, async (server) => {
+      await assert.rejects(
+        horizonCall(() => server.transactions().transaction('1'.repeat(64)).call(), {
+          maxAttempts: 1, sleepFn: noSleep,
+        }),
+        (error: unknown) => error instanceof HorizonUnavailableError &&
+          error.status === 429 && error.retryAfterMs === undefined
+      );
+    });
+  });
+
+  it('keeps HTTP metadata isolated across overlapping SDK calls', async () => {
+    const outageHash = '1'.repeat(64);
+    const missingHash = '2'.repeat(64);
+    const counts = { outage: 0, missing: 0 };
+    const sleeps: number[] = [];
+    let inFlight = 0;
+    let peak = 0;
+    await withSdkHorizon((request, response) => {
+      const outage = request.url?.endsWith(outageHash);
+      counts[outage ? 'outage' : 'missing']++;
+      peak = Math.max(peak, ++inFlight);
+      setTimeout(() => {
+        response.writeHead(outage ? 429 : 404, { 'content-type': 'text/plain', 'retry-after': outage ? '7' : '19' });
+        response.end('identical body');
+        inFlight--;
+      }, 10);
+    }, async (server) => {
+      const results = await Promise.allSettled([
+        horizonCall(() => server.transactions().transaction(outageHash).call(), {
+          maxAttempts: 2, sleepFn: async ms => { sleeps.push(ms); },
+        }),
+        horizonCall(() => server.transactions().transaction(missingHash).call(), { sleepFn: noSleep }),
+      ]);
+      const [outage, missing] = results;
+      assert.equal(outage.status, 'rejected');
+      assert.equal(missing.status, 'rejected');
+      if (outage.status === 'rejected' && missing.status === 'rejected') {
+        assert.ok(outage.reason instanceof HorizonUnavailableError);
+        assert.equal(outage.reason.status, 429);
+        assert.equal(outage.reason.retryAfterMs, 7000);
+        assert.ok(missing.reason instanceof NetworkError);
+        assert.equal(horizonErrorStatus(missing.reason), 404);
+        assert.equal(classifyHorizonFailure(missing.reason), null);
+      }
+    });
+    assert.deepEqual(counts, { outage: 2, missing: 1 });
+    assert.deepEqual(sleeps, [7000]);
+    assert.ok(peak >= 2, 'the fixture must overlap the SDK requests');
+  });
+
+  it('leaves SDK calls outside horizonCall unchanged', async () => {
+    const body = { title: 'Unwrapped SDK error' };
+    await withSdkHorizon((_request, response) => {
+      response.writeHead(429, { 'content-type': 'application/json', 'retry-after': '7' });
+      response.end(JSON.stringify(body));
+    }, async (server) => {
+      await assert.rejects(server.transactions().transaction('1'.repeat(64)).call(), (error: unknown) => {
+        assert.ok(error instanceof NetworkError);
+        assert.deepEqual(error.getResponse(), body);
+        assert.equal(horizonErrorStatus(error), undefined);
+        return true;
+      });
+    });
+  });
+
+  it('does not reuse metadata from a timed-out attempt that finishes during its retry', async () => {
+    let requests = 0;
+    let firstResponse: http.ServerResponse;
+    await withSdkHorizon((_request, response) => {
+      requests++;
+      if (requests === 1) {
+        firstResponse = response;
+        return;
+      }
+      firstResponse.writeHead(503, { 'content-type': 'text/plain', 'retry-after': '99' });
+      firstResponse.end('identical body');
+      setImmediate(() => {
+        response.writeHead(404, { 'content-type': 'text/plain' });
+        response.end('identical body');
+      });
+    }, async (server) => {
+      await assert.rejects(
+        horizonCall(() => server.transactions().transaction('1'.repeat(64)).call(), {
+          timeoutMs: 50, maxAttempts: 2, sleepFn: noSleep,
+        }),
+        (error: unknown) => {
+          assert.ok(error instanceof NetworkError);
+          assert.equal(horizonErrorStatus(error), 404);
+          assert.equal(classifyHorizonFailure(error), null);
+          return true;
+        }
+      );
+    });
+    assert.equal(requests, 2);
+  });
+});
 
 /** Error shaped like the SDK's Horizon NetworkError. */
 function httpError(status: number, headers: Record<string, string> = {}) {

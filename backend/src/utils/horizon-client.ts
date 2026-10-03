@@ -14,6 +14,38 @@
 //   distinct outage signal — never something that could be read as a
 //   transaction-level rejection (missing tx, memo mismatch, ...)
 
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { Horizon, NetworkError } from '@stellar/stellar-sdk';
+
+interface HorizonHttpMetadata {
+  status: number;
+  retryAfterMs?: number;
+}
+
+interface HorizonAttempt {
+  failure?: HorizonHttpMetadata & { body: unknown };
+}
+
+const horizonAttempts = new AsyncLocalStorage<HorizonAttempt>();
+const sdkHttpErrors = new WeakMap<Error, HorizonHttpMetadata>();
+
+// The SDK's NetworkError preserves response.data but discards the HTTP status
+// and headers. Observe its public Axios client before that wrapping occurs.
+// Each attempt owns its metadata, including when an older timed-out request
+// finishes during a retry. Calls outside horizonCall are left unchanged.
+Horizon.AxiosClient.interceptors.response.use(undefined, (error: unknown) => {
+  const attempt = horizonAttempts.getStore();
+  const response = (error as { response?: { status?: unknown; data?: unknown } } | null)?.response;
+  if (attempt && typeof response?.status === 'number') {
+    attempt.failure = {
+      status: response.status,
+      retryAfterMs: retryAfterOf(error),
+      body: response.data,
+    };
+  }
+  throw error;
+});
+
 /** Maximum Horizon calls in flight at once, shared by verify and monitor. */
 export const HORIZON_MAX_CONCURRENT = 4;
 
@@ -54,6 +86,8 @@ class HorizonTimeout extends Error {
 
 /** HTTP status carried by a thrown error, across SDK and fetch shapes. */
 export function horizonErrorStatus(error: unknown): number | undefined {
+  const observed = error instanceof Error ? sdkHttpErrors.get(error) : undefined;
+  if (observed) return observed.status;
   const err = error as any;
   return (
     err?.response?.status ??
@@ -135,6 +169,8 @@ export function parseRetryAfterMs(value: unknown, now = Date.now()): number | un
 
 /** Retry-After carried by a thrown error, if the server sent one. */
 function retryAfterOf(error: unknown): number | undefined {
+  const observed = error instanceof Error ? sdkHttpErrors.get(error) : undefined;
+  if (observed) return observed.retryAfterMs;
   const err = error as any;
   const headers = err?.response?.headers ?? err?.headers;
   if (!headers) return undefined;
@@ -202,14 +238,24 @@ export async function horizonCall<T>(
     let lastRetryAfter: number | undefined;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       let timer: ReturnType<typeof setTimeout> | undefined;
+      const context: HorizonAttempt = {};
       try {
         return await Promise.race([
-          fn(),
+          horizonAttempts.run(context, fn),
           new Promise<never>((_, reject) => {
             timer = setTimeout(() => reject(new HorizonTimeout(timeoutMs)), timeoutMs);
           }),
         ]);
       } catch (error) {
+        const response = context.failure;
+        if (response && error instanceof NetworkError && error.getResponse() === response.body) {
+          // Keep the SDK error and payload intact. Only matching SDK errors
+          // receive the observed metadata; unrelated callback bugs do not.
+          sdkHttpErrors.set(error, {
+            status: response.status,
+            retryAfterMs: response.retryAfterMs,
+          });
+        }
         lastError = error;
         if (!isHorizonUnavailable(error)) {
           throw error;

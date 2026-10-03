@@ -45,7 +45,13 @@ function nextTxHash(): string {
 }
 
 /** Whatever the current stub should answer with, swapped per test. */
-let horizonResponder: (path: string) => { status: number; body: unknown } | null;
+interface HorizonReply {
+  status: number;
+  body: unknown;
+  headers?: Record<string, string>;
+  rawBody?: string;
+}
+let horizonResponder: (path: string) => HorizonReply | null;
 
 let horizon: http.Server;
 let app: Application;
@@ -178,8 +184,8 @@ describe('invoice payment loop', () => {
         return;
       }
       const { status, body } = reply;
-      res.writeHead(status, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(body));
+      res.writeHead(status, { 'content-type': 'application/json', ...reply.headers });
+      res.end(reply.rawBody ?? JSON.stringify(body));
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -265,6 +271,49 @@ describe('invoice payment loop', () => {
     assert.notEqual(recovered.body.cached, true);
     assert.equal(recoveryRequests, 2, 'recovery must reach both Horizon lookup endpoints');
   });
+
+  const httpFailures: Array<HorizonReply & { name: string }> = [
+    { name: '429 without body status', status: 429, body: { title: 'Busy' }, headers: { 'retry-after': '0' } },
+    { name: '503 HTML proxy response', status: 503, body: null, rawBody: '<h1>Unavailable</h1>', headers: { 'retry-after': '0', 'content-type': 'text/html' } },
+  ];
+  for (const failure of httpFailures) {
+    it(`recovers from SDK ${failure.name} without caching a transaction rejection`, async () => {
+      const invoice = await createInvoice(port);
+      const txHash = nextTxHash();
+      let outageRequests = 0;
+      horizonResponder = () => {
+        outageRequests++;
+        return failure;
+      };
+      const unavailable = await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, { txHash });
+
+      const healthyPayment = paymentOn({ memo: invoice.memo });
+      let recoveryRequests = 0;
+      horizonResponder = (requestPath) => {
+        recoveryRequests++;
+        return healthyPayment(requestPath);
+      };
+      const recovered = await jsonRequest(port, 'POST', `/api/invoices/${invoice.id}/verify`, { txHash });
+
+      assert.deepEqual({
+        outageStatus: unavailable.status,
+        outageCode: unavailable.body.code,
+        outageRequests,
+        recoveryStatus: recovered.status,
+        invoiceStatus: recovered.body.data?.status,
+        cached: recovered.body.cached === true,
+        recoveryRequests,
+      }, {
+        outageStatus: 503,
+        outageCode: 'VERIFY_UNAVAILABLE',
+        outageRequests: HORIZON_MAX_ATTEMPTS,
+        recoveryStatus: 200,
+        invoiceStatus: 'PAID',
+        cached: false,
+        recoveryRequests: 2,
+      });
+    });
+  }
 
   it('settles a payment sent to a muxed M... account of the seller', async () => {
     const invoice = await createInvoice(port);
