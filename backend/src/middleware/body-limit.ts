@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
-import { getEdgeControlConfig, EDGE_CONTROL_DEFAULTS } from './edge-config';
+import { EDGE_CONTROL_DEFAULTS } from './edge-config';
 
-/** Bytes cap — default 16 KiB; live value via getEdgeControlConfig(). */
+/** Compatibility defaults only; app parsers use getEdgeControlConfig() at startup. */
 export const MAX_BODY_BYTES = EDGE_CONTROL_DEFAULTS.maxBodyBytes;
 /** Express `limit` string for the default body cap. */
 export const MAX_BODY_STRING = EDGE_CONTROL_DEFAULTS.maxBodyString;
@@ -20,12 +20,16 @@ export const bodyLimitErrorHandler: ErrorRequestHandler = (
   next: NextFunction
 ) => {
   if (err && (err.type === 'entity.too.large' || err.status === 413 || err.statusCode === 413)) {
-    const cfg = getEdgeControlConfig();
-    const kb = Math.max(1, Math.ceil(cfg.maxBodyBytes / 1024));
+    // body-parser supplies the actual limit captured by its parser instance.
+    // Re-reading env here could describe a different cap after a config change.
+    const bytes = err.limit;
+    const limit = Number.isSafeInteger(bytes) && bytes > 0
+      ? (bytes % 1024 === 0 ? `${bytes / 1024} kB` : `${bytes} byte`)
+      : 'configured';
     return res.status(413).json({
       success: false,
       code: 'PAYLOAD_TOO_LARGE',
-      error: `Payload too large: request body exceeds ${kb} kB limit`,
+      error: `Payload too large: request body exceeds ${limit} limit`,
     });
   }
   next(err);

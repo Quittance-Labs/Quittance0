@@ -8,8 +8,8 @@
  * Middleware order (documented so a reordering cannot silently swap a 429 for
  * a 413 or a 503):
  *
- *   App level (both server.ts and server-mvp.ts):
- *     1. express.json / urlencoded with MAX_BODY_STRING
+ *   App level (server.ts, server-mvp.ts and server-dual.ts):
+ *     1. express.json / urlencoded with the resolved maxBodyBytes at startup
  *        → 413 PAYLOAD_TOO_LARGE via the body-limit error handler
  *
  *   POST /invoices:
@@ -41,7 +41,7 @@
 export interface EdgeControlConfig {
   /** Hard JSON / urlencoded body cap in bytes. */
   maxBodyBytes: number;
-  /** Express `limit` string matching maxBodyBytes (e.g. "16kb"). */
+  /** Normalized Express `limit` string matching maxBodyBytes exactly. */
   maxBodyString: string;
 
   /** Global in-memory invoice ceiling. */
@@ -97,6 +97,25 @@ function readPositiveInt(
   return parsed;
 }
 
+/** A body cap must be an exact, positive, safely representable byte count. */
+function bodyBytesFromInteger(raw: string | undefined): number | null {
+  if (!raw || !/^\d+$/.test(raw.trim())) return null;
+  const bytes = Number(raw.trim());
+  return Number.isSafeInteger(bytes) && bytes > 0 ? bytes : null;
+}
+
+/** Accept Express-style byte units, rejecting partial parses and unbounded values. */
+function bodyBytesFromString(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const match = /^(\d+(?:\.\d*)?|\.\d+)\s*(b|kb|mb|gb|tb|pb)?$/i.exec(raw.trim());
+  if (!match) return null;
+  const units: Record<string, number> = {
+    b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3, tb: 1024 ** 4, pb: 1024 ** 5,
+  };
+  const bytes = Math.floor(Number(match[1]) * units[(match[2] || 'b').toLowerCase()]);
+  return Number.isSafeInteger(bytes) && bytes > 0 ? bytes : null;
+}
+
 /**
  * Resolve edge-control configuration from env (or an injected map for tests).
  * Safe demo defaults match docs/ABUSE-CONTROLS.md.
@@ -104,11 +123,14 @@ function readPositiveInt(
 export function resolveEdgeControlConfig(
   env: NodeJS.ProcessEnv = process.env
 ): EdgeControlConfig {
-  const maxBodyBytes = readPositiveInt(env, 'MAX_BODY_BYTES', DEFAULTS.maxBodyBytes);
-  // Prefer an explicit MAX_BODY_STRING; otherwise derive a kb string Express accepts.
-  const maxBodyString =
-    (env.MAX_BODY_STRING && env.MAX_BODY_STRING.trim()) ||
-    `${Math.max(1, Math.ceil(maxBodyBytes / 1024))}kb`;
+  // A valid explicit string takes precedence. Both fields describe the same cap;
+  // byte overrides must never gain extra allowance by rounding up to a KiB.
+  const maxBodyBytes = bodyBytesFromString(env.MAX_BODY_STRING)
+    ?? bodyBytesFromInteger(env.MAX_BODY_BYTES)
+    ?? DEFAULTS.maxBodyBytes;
+  const maxBodyString = maxBodyBytes % 1024 === 0
+    ? `${maxBodyBytes / 1024}kb`
+    : `${maxBodyBytes}b`;
 
   return {
     maxBodyBytes,

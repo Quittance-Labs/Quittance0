@@ -60,4 +60,34 @@ describe('edge control configuration', () => {
     assert.equal(cfg.verifyPerInvoice, EDGE_CONTROL_DEFAULTS.verifyPerInvoice);
     assert.equal(cfg.rateLimitWindowMs, EDGE_CONTROL_DEFAULTS.rateLimitWindowMs);
   });
+
+  it('preserves an exact byte cap without rounding up to a KiB', () => {
+    const cfg = resolveEdgeControlConfig({ MAX_BODY_BYTES: '1234' });
+    assert.equal(cfg.maxBodyBytes, 1234);
+    assert.equal(cfg.maxBodyString, '1234b');
+  });
+
+  it('normalizes a valid explicit body-size string into the authoritative byte cap', () => {
+    for (const [value, bytes] of [
+      ['1kb', 1024], ['1.5 KB', 1536], ['.5kb', 512], ['1.25b', 1],
+      ['2mb', 2 * 1024 * 1024], ['1234', 1234],
+    ] as const) {
+      const cfg = resolveEdgeControlConfig({ MAX_BODY_BYTES: '32768', MAX_BODY_STRING: value });
+      assert.equal(cfg.maxBodyBytes, bytes, value);
+      assert.equal(cfg.maxBodyString, bytes % 1024 === 0 ? `${bytes / 1024}kb` : `${bytes}b`);
+    }
+  });
+
+  it('falls back from invalid body-size strings to valid bytes or the safe default', () => {
+    for (const value of ['no-limit', '0', '-1kb', 'Infinity', '1kb trailing', '999999999999999999pb']) {
+      const cfg = resolveEdgeControlConfig({ MAX_BODY_BYTES: '1234', MAX_BODY_STRING: value });
+      assert.equal(cfg.maxBodyBytes, 1234, value);
+      assert.equal(cfg.maxBodyString, '1234b');
+    }
+    for (const value of ['0', '-1', '1.5', '1234junk', '1e4', 'Infinity', '9007199254740992']) {
+      const cfg = resolveEdgeControlConfig({ MAX_BODY_BYTES: value, MAX_BODY_STRING: 'invalid' });
+      assert.equal(cfg.maxBodyBytes, 16384, value);
+      assert.equal(cfg.maxBodyString, '16kb');
+    }
+  });
 });

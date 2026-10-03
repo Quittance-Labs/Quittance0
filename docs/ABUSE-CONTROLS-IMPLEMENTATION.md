@@ -115,12 +115,13 @@ as retryable `VERIFY_UNAVAILABLE` messaging — never as memo/amount rejection.
 **Problem**: No explicit JSON limit. Framework default (100 KB) could be exploited for memory pressure.
 
 **Fix**:
-- Hard cap at **16 KB** per request
-- Enforced before JSON parsing via `bodyLimitMiddleware`
-- Express parser configured with explicit `limit: '16kb'`
+- Default cap of **16 KiB** per request; configurable with `MAX_BODY_BYTES` or
+  the optional `MAX_BODY_STRING` override described in `ABUSE-CONTROLS.md`
+- All three server entrypoints resolve the cap after environment loading at startup
+- JSON and URL-encoded parsers enforce the same exact byte cap before decoding
 - Oversized requests return 413 with structured error
 
-**Why 16 KB**: 
+**Why the 16 KiB default**:
 - Invoice creation payload: ~500 bytes (seller info, amount, asset, memo, description, customer)
 - Verification payload: ~200 bytes (txHash, payer info)
 - 16 KB provides 30x headroom while blocking abuse

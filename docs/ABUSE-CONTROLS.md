@@ -10,7 +10,7 @@ variables in `backend/env.mvp.example` and `backend/env.example.txt`).
 | Fact | Evidence |
 |---|---|
 | Rate limiting on create / list / cancel / verify | `backend/src/middleware/rate-limit.ts` + `invoice.routes.ts` |
-| Request bodies capped at 16 kB (env-overridable) | `express.json({ limit: MAX_BODY_STRING })` + `bodyLimitErrorHandler` → 413 `PAYLOAD_TOO_LARGE` |
+| Request bodies capped at 16 KiB by default (env-overridable) | JSON and form parsers capture the resolved numeric byte limit + `bodyLimitErrorHandler` → 413 `PAYLOAD_TOO_LARGE` |
 | The invoice surface is public | `backend/src/routes/invoice.routes.ts` mounts create, list, payment-info, cancel, verify and the dev-only simulate route |
 | Cancellation requires seller proof | auth pre-check + signature verification (401 / 403) before the cancel rate limit |
 | The seller key is not a secret | `GET /invoices/:id/payment-info` returns the destination the payer must pay, which is the seller's public key |
@@ -59,6 +59,38 @@ Every variable is listed in `backend/env.mvp.example` and `backend/env.example.t
 and resolved by `resolveEdgeControlConfig()` with the safe demo defaults in the
 table below.
 
+### Request body cap
+
+All three entrypoints (`server.ts`, `server-mvp.ts`, and `server-dual.ts`) resolve
+the body cap after loading the environment, then pass the same numeric byte
+limit to `express.json` and `express.urlencoded`. The default is 16,384 bytes
+(16 KiB). Requests exactly at the cap are accepted by the parser; an additional
+byte produces `413 PAYLOAD_TOO_LARGE` before the route handler runs.
+
+- `MAX_BODY_BYTES` accepts a positive safe integer byte count. A value such as
+  `1234` is enforced as exactly 1,234 bytes, without rounding up to a KiB.
+- A valid `MAX_BODY_STRING` takes precedence when both variables are set. It
+  accepts a positive size with an optional case-insensitive `b`, `kb`, `mb`,
+  `gb`, `tb`, or `pb` suffix (powers of 1,024); for example, `1.5kb` is 1,536
+  bytes. Fractional byte results round down to a whole byte.
+- An empty, malformed, nonpositive, or unsafe string size falls back to a
+  valid `MAX_BODY_BYTES`, then to the 16 KiB default. Invalid byte counts also
+  fall back to that default. No invalid setting removes the limit.
+- Both env examples leave the optional `MAX_BODY_STRING` override commented
+  out, so editing `MAX_BODY_BYTES` changes the cap. In existing deployments,
+  remove or empty a previously configured `MAX_BODY_STRING` to use only the
+  numeric cap; an explicit valid string remains authoritative.
+
+The parser cap is captured at application construction, so changing the
+process environment requires restarting the app to change enforcement. The
+413 response reports the cap attached to the parser error, even if the process
+environment has subsequently changed. A non-parser 413 with no known cap keeps
+the same JSON envelope and uses the generic phrase `configured limit`.
+
+The API retains `success: false`, `code: PAYLOAD_TOO_LARGE`, and its `error`
+message. Whole-KiB caps retain the existing `kB` message label; other caps use
+their exact byte count.
+
 ## Proposed limits and HTTP behaviour
 
 Limits are per client IP, with the invoice id as a second key where it applies.
@@ -79,7 +111,7 @@ addresses further left do not create fresh budgets.
 | `POST /invoices/:id/verify` | 30 / min / IP, 10 / min / invoice | 429 + `Retry-After` |
 | `GET /invoices` | 60 / min / IP | 429 + `Retry-After` |
 | `POST /invoices/:id/cancel` | 10 / min / IP; and 401 when no proof of ownership is supplied | 401 (auth) before 429 (volume) |
-| any body over 16 kB | hard cap | 413 with a JSON error envelope |
+| JSON/form body over the configured cap (16 KiB by default) | hard byte cap, captured at app startup | 413 with a JSON error envelope |
 | global invoice ceiling (in-memory MVP) | e.g. 5,000 invoices | 503 `INVOICE_STORE_FULL` with a `Retry-After` |
 | Horizon-dependent paths under load | 1 in-flight verify per invoice; all Horizon calls share a 4-concurrent budget with timeout + bounded retry (`utils/horizon-client.ts`) | 429 `VERIFY_IN_PROGRESS`; upstream Horizon 429s surface as 503 `VERIFY_UNAVAILABLE`, never a memo/amount rejection |
 

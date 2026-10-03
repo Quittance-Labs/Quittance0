@@ -16,7 +16,8 @@ import { FilePaymentMonitorCheckpointStore } from './services/payment-monitor-ch
 import { SELLER_PUBLIC_KEY } from './config/stellar';
 import { configuredFrontendOrigins, corsOptions } from './config/runtime';
 import { healthHandler, readinessHandler } from './health';
-import { bodyLimitErrorHandler, MAX_BODY_STRING } from './middleware/body-limit';
+import { bodyLimitErrorHandler } from './middleware/body-limit';
+import { getEdgeControlConfig } from './middleware/edge-config';
 
 dotenv.config();
 
@@ -32,12 +33,13 @@ paymentMonitorService.configure({
 
 const app: Application = express();
 const PORT = process.env.PORT || 3001;
+const maxBodyBytes = getEdgeControlConfig().maxBodyBytes;
 
 // Middleware
 app.use(cors(corsOptions()));
 
-app.use(express.json({ limit: MAX_BODY_STRING }));
-app.use(express.urlencoded({ extended: true, limit: MAX_BODY_STRING }));
+app.use(express.json({ limit: maxBodyBytes }));
+app.use(express.urlencoded({ extended: true, limit: maxBodyBytes }));
 
 // Request logging
 app.use((req: Request, res: Response, next: NextFunction) => {

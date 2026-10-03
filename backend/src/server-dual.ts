@@ -33,7 +33,8 @@ import { pool } from './config/database';
 import { SELLER_PUBLIC_KEY, validateStellarConfig } from './config/stellar';
 import { configuredFrontendOrigins, configuredStorageMode, corsOptions } from './config/runtime';
 import { healthHandler, readinessHandler } from './health';
-import { bodyLimitErrorHandler, MAX_BODY_STRING } from './middleware/body-limit';
+import { bodyLimitErrorHandler } from './middleware/body-limit';
+import { getEdgeControlConfig } from './middleware/edge-config';
 import type { InvoiceStorage } from './storage/invoice-storage';
 
 dotenv.config();
@@ -69,10 +70,11 @@ paymentMonitorService.configure({
 
 const app: Application = express();
 const PORT = process.env.PORT || 3001;
+const maxBodyBytes = getEdgeControlConfig().maxBodyBytes;
 
 app.use(cors(corsOptions()));
-app.use(express.json({ limit: MAX_BODY_STRING }));
-app.use(express.urlencoded({ extended: true, limit: MAX_BODY_STRING }));
+app.use(express.json({ limit: maxBodyBytes }));
+app.use(express.urlencoded({ extended: true, limit: maxBodyBytes }));
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);

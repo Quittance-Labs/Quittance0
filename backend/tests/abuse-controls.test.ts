@@ -8,6 +8,8 @@ import { createInvoiceRouter } from '../src/routes/invoice.routes';
 import { MemoryInvoiceStorage } from '../src/storage/memory-invoice-storage';
 import { InvoiceMemoryService } from '../src/services/invoice-memory.service';
 import { MemoryStorage } from '../src/storage/memory-storage';
+import { bodyLimitErrorHandler } from '../src/middleware/body-limit';
+import { getEdgeControlConfig, resolveEdgeControlConfig } from '../src/middleware/edge-config';
 import {
   createRateLimiter,
   getClientIp,
@@ -100,8 +102,9 @@ describe('Abuse Controls Suite', () => {
     invoiceStorage = new MemoryInvoiceStorage(service);
 
     const app: Application = express();
-    app.use(express.json({ limit: '16kb' }));
-    app.use(express.urlencoded({ extended: true, limit: '16kb' }));
+    const maxBodyBytes = getEdgeControlConfig().maxBodyBytes;
+    app.use(express.json({ limit: maxBodyBytes }));
+    app.use(express.urlencoded({ extended: true, limit: maxBodyBytes }));
 
     const router = createInvoiceRouter({
       storage: invoiceStorage,
@@ -113,14 +116,8 @@ describe('Abuse Controls Suite', () => {
 
     app.use('/api', router);
 
+    app.use(bodyLimitErrorHandler);
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-      if (err && (err.type === 'entity.too.large' || err.status === 413 || err.statusCode === 413)) {
-        return res.status(413).json({
-          success: false,
-          code: 'PAYLOAD_TOO_LARGE',
-          error: 'Payload too large: request body exceeds 16 kB limit',
-        });
-      }
       res.status(500).json({ success: false, error: err.message || 'Internal server error' });
     });
 
@@ -611,17 +608,8 @@ describe('Abuse Controls Suite', () => {
       const txHash = 'b'.repeat(64);
 
       const customApp = express();
-      customApp.use(express.json({ limit: '16kb' }));
-      customApp.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
-        if (err && (err.type === 'entity.too.large' || err.status === 413 || err.statusCode === 413)) {
-          return res.status(413).json({
-            success: false,
-            code: 'PAYLOAD_TOO_LARGE',
-            error: 'Payload too large: request body exceeds 16 kB limit',
-          });
-        }
-        next(err);
-      });
+      customApp.use(express.json({ limit: getEdgeControlConfig().maxBodyBytes }));
+      customApp.use(bodyLimitErrorHandler);
 
       const stellar = {
         getTransaction: async () => ({
@@ -736,6 +724,104 @@ describe('Abuse Controls Suite', () => {
     });
   });
 
+});
+
+describe('Configured request body limits', () => {
+  const scenarios = [
+    { name: 'default', env: {}, bytes: 16384, label: '16 kB' },
+    { name: 'smaller byte override', env: { MAX_BODY_BYTES: '1024' }, bytes: 1024, label: '1 kB' },
+    { name: 'larger byte override', env: { MAX_BODY_BYTES: '32768' }, bytes: 32768, label: '32 kB' },
+    { name: 'exact non-KiB cap', env: { MAX_BODY_BYTES: '1234' }, bytes: 1234, label: '1234 byte' },
+    { name: 'explicit string precedence', env: { MAX_BODY_BYTES: '32768', MAX_BODY_STRING: '1kb' }, bytes: 1024, label: '1 kB' },
+    { name: 'invalid string falls back to bytes', env: { MAX_BODY_BYTES: '1234', MAX_BODY_STRING: 'invalid' }, bytes: 1234, label: '1234 byte' },
+  ];
+
+  function payload(type: string, bytes: number): string {
+    const prefix = type === 'application/json' ? '{"memo":"' : 'memo=';
+    const suffix = type === 'application/json' ? '"}' : '';
+    return prefix + 'x'.repeat(bytes - prefix.length - suffix.length) + suffix;
+  }
+
+  for (const scenario of scenarios) {
+    it(`enforces ${scenario.name} for actual JSON and form requests before the handler`, async () => {
+      const config = resolveEdgeControlConfig(scenario.env);
+      const app = express();
+      let accepted = 0;
+      app.use(express.json({ limit: config.maxBodyBytes }));
+      app.use(express.urlencoded({ extended: true, limit: config.maxBodyBytes }));
+      app.post('/body-boundary', (_req, res) => {
+        accepted += 1;
+        res.sendStatus(204);
+      });
+      app.use(bodyLimitErrorHandler);
+      const server = http.createServer(app);
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const port = (server.address() as AddressInfo).port;
+      try {
+        for (const type of ['application/json', 'application/x-www-form-urlencoded']) {
+          const exact = await request(port, 'POST', '/body-boundary', payload(type, scenario.bytes), { 'content-type': type });
+          assert.equal(exact.status, 204, `${type}: exact cap is accepted`);
+          const before = accepted;
+          const over = await request(port, 'POST', '/body-boundary', payload(type, scenario.bytes + 1), { 'content-type': type });
+          assert.equal(over.status, 413, `${type}: one extra byte is rejected`);
+          assert.deepEqual(over.body, {
+            success: false,
+            code: 'PAYLOAD_TOO_LARGE',
+            error: `Payload too large: request body exceeds ${scenario.label} limit`,
+          });
+          assert.equal(accepted, before, 'oversized requests must not reach the handler');
+        }
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+  }
+
+  it('reports the parser-captured cap even when environment changes after construction', async () => {
+    const previousBytes = process.env.MAX_BODY_BYTES;
+    const previousString = process.env.MAX_BODY_STRING;
+    process.env.MAX_BODY_BYTES = '1234';
+    delete process.env.MAX_BODY_STRING;
+    const config = getEdgeControlConfig();
+    const app = express();
+    app.use(express.json({ limit: config.maxBodyBytes }));
+    app.post('/body-boundary', (_req, res) => res.sendStatus(204));
+    app.use(bodyLimitErrorHandler);
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      process.env.MAX_BODY_BYTES = '32768';
+      process.env.MAX_BODY_STRING = '32kb';
+      const response = await request((server.address() as AddressInfo).port, 'POST', '/body-boundary', payload('application/json', 1235));
+      assert.equal(response.status, 413);
+      assert.equal(response.body.error, 'Payload too large: request body exceeds 1234 byte limit');
+    } finally {
+      if (previousBytes === undefined) delete process.env.MAX_BODY_BYTES;
+      else process.env.MAX_BODY_BYTES = previousBytes;
+      if (previousString === undefined) delete process.env.MAX_BODY_STRING;
+      else process.env.MAX_BODY_STRING = previousString;
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('keeps external 413 errors generic when no parser limit is available', async () => {
+    const app = express();
+    app.post('/external-limit', (_req, _res, next) => next({ status: 413 }));
+    app.use(bodyLimitErrorHandler);
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const response = await request((server.address() as AddressInfo).port, 'POST', '/external-limit');
+      assert.equal(response.status, 413);
+      assert.deepEqual(response.body, {
+        success: false,
+        code: 'PAYLOAD_TOO_LARGE',
+        error: 'Payload too large: request body exceeds configured limit',
+      });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
 });
 
 describe('Rate-limit client identity behind a trusted proxy', () => {
