@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { reportProofHandoff } = require('../lib/proof-handoff.ts');
-const { openInvoicePDF, generateInvoicePDF } = require('../lib/export.ts');
+const { openInvoicePDF } = require('../lib/export.ts');
 const { paidInvoice, pendingInvoice } = require('./fixtures/quittance-proof.fixture');
 const { installDom, loadBundle, render } = require('./support/a11y-harness');
 
@@ -117,7 +117,11 @@ test('populated print content is unchanged when reporting fails', async (t) => {
   const fetchMock = t.mock.method(globalThis, 'fetch', async () => { throw new Error('observation failed'); });
   assert.doesNotThrow(() => openInvoicePDF(paidInvoice));
   await new Promise(setImmediate);
-  assert.equal(content, generateInvoicePDF(paidInvoice));
+  // The print window carries the canonical proof document (#448) even
+  // though the observation call failed.
+  assert.match(content, /^<!DOCTYPE html>/);
+  assert.ok(content.includes(paidInvoice.id));
+  assert.ok(content.includes(paidInvoice.paymentTxHash));
   assert.equal(closed, true);
   assert.equal(typeof popup.onload, 'function');
   assert.equal(fetchMock.mock.callCount(), 1);
