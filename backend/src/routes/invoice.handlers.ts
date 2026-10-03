@@ -26,6 +26,8 @@ import type { InvoiceStorage, StoredInvoice } from '../storage/invoice-storage';
 import { STELLAR_NETWORK } from '../config/stellar';
 import {
   checkInvoiceIsPayable,
+  checkPayerInfo,
+  checkTxHash,
   messageForCode,
   stageForCode,
   executePaymentVerificationPipeline,
@@ -303,7 +305,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           return sendFailure(res, 403, 'Forbidden: not the seller of this invoice');
         }
 
-        const events = (await storage.getPaymentEvents?.(invoice.id)) ?? [];
+        const events = await storage.getPaymentEvents(invoice.id);
         sendSuccess(
           res,
           200,
@@ -463,6 +465,21 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           );
         }
 
+        // Reject malformed request fields before the pipeline performs a
+        // Horizon lookup, preserving the HTTP input-validation contract.
+        const hashCheck = checkTxHash(req.body?.txHash);
+        if (!hashCheck.ok) {
+          return sendVerificationFailure(res, 400, hashCheck.code, hashCheck.error, {
+            stage: stageForCode(hashCheck.code),
+          });
+        }
+        const payerCheck = checkPayerInfo(req.body);
+        if (!payerCheck.ok) {
+          return sendVerificationFailure(res, 400, payerCheck.code, payerCheck.error, {
+            stage: stageForCode(payerCheck.code),
+          });
+        }
+
         const invoice = await storage.getInvoiceById(id);
         if (!invoice) {
           return sendFailure(res, 404, 'Invoice not found');
@@ -470,15 +487,12 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
         const pipeline = await executePaymentVerificationPipeline({
           invoice,
-          txHash: req.body?.txHash,
+          txHash: hashCheck.value,
           network,
           expectedNetwork: STELLAR_NETWORK,
           stellar,
           storage,
-          payer: {
-            payerName: req.body?.payerName,
-            payerEmail: req.body?.payerEmail,
-          },
+          payer: payerCheck.value,
           requireSettledAt: true,
           onAfterPersist: async () => {
             options.paymentMonitor?.unregisterWatch(id);
@@ -545,7 +559,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
               pipeline.code === 'VERIFY_RATE_LIMIT_EXCEEDED';
             if (!skipEvent && cacheableHash) {
               await storage
-                .logPaymentEvent?.(
+                .logPaymentEvent(
                   id,
                   pipeline.code === 'AMOUNT_TOO_LOW' || pipeline.code === 'AMOUNT_MISMATCH'
                     ? 'PARTIAL_PAYMENT'

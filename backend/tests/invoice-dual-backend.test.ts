@@ -50,6 +50,22 @@ function createFakePostgres() {
     const sql = text.replace(/\s+/g, ' ').trim();
 
     if (sql.startsWith('INSERT INTO invoices')) {
+      const idempotencyKey = params[13] ?? null;
+      if (idempotencyKey !== null) {
+        const clash = rows.find(
+          (row) =>
+            row.seller_public_key === params[1] && row.idempotency_key === idempotencyKey
+        );
+        if (clash) {
+          return { rows: [], rowCount: 0 };
+        }
+      }
+      if (rows.some((row) => row.id === params[0])) {
+        const err: any = new Error('duplicate key value violates unique constraint "invoices_pkey"');
+        err.code = '23505';
+        err.constraint = 'invoices_pkey';
+        throw err;
+      }
       const row = {
         id: params[0],
         seller_public_key: params[1],
@@ -76,14 +92,41 @@ function createFakePostgres() {
         prior_status: null,
         late_payment_warning_code: null,
         metadata: null,
+        idempotency_key: idempotencyKey,
       };
       rows.push(row);
       return { rows: [clone(row)], rowCount: 1 };
     }
 
+    if (sql.startsWith('SELECT * FROM invoices WHERE seller_public_key = $1 AND idempotency_key')) {
+      const found = rows.filter(
+        (row) => row.seller_public_key === params[0] && row.idempotency_key === params[1]
+      );
+      return { rows: found.map(clone), rowCount: found.length };
+    }
+
     if (sql.startsWith('INSERT INTO payment_events')) {
-      events.push({ invoiceId: params[0], eventType: params[1] });
+      events.push({
+        id: `evt-${events.length + 1}`,
+        invoiceId: params[0],
+        eventType: params[1],
+        eventData: typeof params[2] === 'string' ? JSON.parse(params[2]) : params[2] ?? null,
+        createdAt: new Date(),
+      });
       return { rows: [], rowCount: 1 };
+    }
+
+    if (sql.startsWith('SELECT id, invoice_id, event_type, event_data, created_at FROM payment_events')) {
+      const found = events
+        .filter((event) => event.invoiceId === params[0])
+        .map((event) => ({
+          id: event.id,
+          invoice_id: event.invoiceId,
+          event_type: event.eventType,
+          event_data: event.eventData,
+          created_at: event.createdAt,
+        }));
+      return { rows: found.map(clone), rowCount: found.length };
     }
 
     if (sql.startsWith('SELECT * FROM invoices WHERE id =')) {
@@ -110,6 +153,24 @@ function createFakePostgres() {
       return { rows: page.map(clone), rowCount: page.length };
     }
 
+    if (sql.startsWith("SELECT * FROM invoices WHERE status = 'PENDING'")) {
+      let found = rows.filter((r) => r.status === 'PENDING');
+      if (sql.includes('AND seller_public_key =')) {
+        found = found.filter((r) => r.seller_public_key === params[0]);
+      }
+      const limit = params[params.length - 1];
+      const page = found
+        .slice()
+        .sort((a, b) => a.created_at.getTime() - b.created_at.getTime())
+        .slice(0, typeof limit === 'number' ? limit : undefined);
+      return { rows: page.map(clone), rowCount: page.length };
+    }
+
+    if (sql.startsWith('SELECT id FROM invoices WHERE payment_tx_hash = $1')) {
+      const found = rows.filter((r) => r.payment_tx_hash === params[0]);
+      return { rows: found.map((r) => ({ id: r.id })), rowCount: found.length };
+    }
+
     if (sql.startsWith("UPDATE invoices SET status = 'EXPIRED'")) {
       const now = new Date(params[0]).getTime();
       const expired = rows.filter(
@@ -129,6 +190,12 @@ function createFakePostgres() {
           )
       );
       if (!row) return { rows: [], rowCount: 0 };
+      if (params[1] && rows.some(r => r.payment_tx_hash === params[1] && r.id !== params[0])) {
+        const err: any = new Error('duplicate key value violates unique constraint "uq_invoices_payment_tx_hash"');
+        err.code = '23505';
+        err.constraint = 'uq_invoices_payment_tx_hash';
+        throw err;
+      }
       const priorStatus = row.status;
       const afterCancel =
         priorStatus === 'CANCELLED' &&
@@ -411,10 +478,16 @@ function runDualBackendSuite(
     describe('markAsPaid (payment attribution)', () => {
       it('attributes payment to the correct invoice with all payer fields', async () => {
         const inv = await storage.createInvoice(baseInput(SELLER_A));
-        const paid = await storage.markAsPaid(inv.id, TX_HASH_1, PAYER, {
-          payerName: 'Hal Finney',
-          payerEmail: 'hal@example.com',
-        });
+        const paid = await storage.markAsPaid(
+          inv.id,
+          TX_HASH_1,
+          PAYER,
+          {
+            payerName: 'Hal Finney',
+            payerEmail: 'hal@example.com',
+          },
+          { settledAt: new Date() }
+        );
 
         assert.equal(paid.status, 'PAID');
         assert.equal(paid.paymentTxHash, TX_HASH_1);
@@ -426,24 +499,24 @@ function runDualBackendSuite(
 
       it('rejects attribution when the invoice has already been paid', async () => {
         const inv = await storage.createInvoice(baseInput(SELLER_A));
-        await storage.markAsPaid(inv.id, TX_HASH_1, PAYER);
+        await storage.markAsPaid(inv.id, TX_HASH_1, PAYER, undefined, { settledAt: new Date() });
 
         await assert.rejects(
-          () => storage.markAsPaid(inv.id, TX_HASH_2, PAYER),
+          () => storage.markAsPaid(inv.id, TX_HASH_2, PAYER, undefined, { settledAt: new Date() }),
           /Invoice not found|expired|already processed/
         );
       });
 
       it('rejects attribution for a missing invoice', async () => {
         await assert.rejects(
-          () => storage.markAsPaid('00000000-0000-4000-8000-000000000000', TX_HASH_1, PAYER),
+          () => storage.markAsPaid('00000000-0000-4000-8000-000000000000', TX_HASH_1, PAYER, undefined, { settledAt: new Date() }),
           /Invoice not found|expired|already processed/
         );
       });
 
       it('getInvoiceById returns the paid state after successful attribution', async () => {
         const inv = await storage.createInvoice(baseInput(SELLER_A));
-        await storage.markAsPaid(inv.id, TX_HASH_1, PAYER);
+        await storage.markAsPaid(inv.id, TX_HASH_1, PAYER, undefined, { settledAt: new Date() });
         const fetched = await storage.getInvoiceById(inv.id);
 
         assert.equal(fetched?.status, 'PAID');
@@ -457,7 +530,7 @@ function runDualBackendSuite(
       it('returns counts scoped to the requesting seller', async () => {
         await storage.createInvoice(baseInput(SELLER_A));
         const bInv = await storage.createInvoice(baseInput(SELLER_B, { amount: 100 }));
-        await storage.markAsPaid(bInv.id, TX_HASH_1, PAYER);
+        await storage.markAsPaid(bInv.id, TX_HASH_1, PAYER, undefined, { settledAt: new Date() });
 
         const [statsA] = await storage.getInvoiceStats(SELLER_A);
         const [statsB] = await storage.getInvoiceStats(SELLER_B);
@@ -489,6 +562,60 @@ function runDualBackendSuite(
       });
     });
 
+    // ── IDEMPOTENCY & COLLISION ──────────────────────────────────────────────
+
+    describe('idempotent create and id collision', () => {
+      it('returns existing invoice on duplicate idempotent create', async () => {
+        const input = {
+          ...baseInput(SELLER_A),
+          idempotencyKey: 'idem-key-1',
+        };
+        const inv1 = await storage.createInvoice(input as any);
+        const inv2 = await storage.createInvoice(input as any);
+        assert.equal(inv1.id, inv2.id);
+        assert.equal(inv1.memo, inv2.memo);
+      });
+    });
+
+    // ── PAYMENT EVENTS ────────────────────────────────────────────────────────
+
+    describe('payment-event append and retrieval', () => {
+      it('appends and returns payment events in order', async () => {
+        const inv = await storage.createInvoice(baseInput(SELLER_A));
+        await storage.logPaymentEvent(inv.id, 'PAYMENT_RECEIVED', { txHash: TX_HASH_1 });
+        await storage.logPaymentEvent(inv.id, 'PAYMENT_VERIFIED', { verified: true });
+
+        const events = await storage.getPaymentEvents(inv.id);
+        assert.equal(events.length, 2);
+        assert.equal(events[0].invoiceId, inv.id);
+        assert.equal(events[0].eventType, 'PAYMENT_RECEIVED');
+        assert.deepEqual(events[0].eventData, { txHash: TX_HASH_1 });
+        assert.equal(events[1].eventType, 'PAYMENT_VERIFIED');
+        assert.deepEqual(events[1].eventData, { verified: true });
+      });
+    });
+
+    // ── MEMO LOOKUP & PENDING INVOICES ────────────────────────────────────────
+
+    describe('memo lookup and pending listing', () => {
+      it('retrieves an invoice by memo', async () => {
+        const inv = await storage.createInvoice(baseInput(SELLER_A));
+        const fetched = await storage.getInvoiceByMemo(inv.memo);
+        assert.ok(fetched);
+        assert.equal(fetched.id, inv.id);
+        assert.equal(fetched.memo, inv.memo);
+      });
+
+      it('lists pending invoices scoped to seller', async () => {
+        const invA = await storage.createInvoice(baseInput(SELLER_A));
+        const invB = await storage.createInvoice(baseInput(SELLER_B));
+
+        const pendingA = await storage.listPendingInvoices(SELLER_A);
+        assert.ok(pendingA.some((i) => i.id === invA.id));
+        assert.ok(!pendingA.some((i) => i.id === invB.id));
+      });
+    });
+
     // ── mode ─────────────────────────────────────────────────────────────────
 
     describe('storage.mode', () => {
@@ -511,3 +638,20 @@ runDualBackendSuite(
   'postgres',
   () => new PostgresInvoiceStorage(new InvoiceService(createFakePostgres())),
 );
+
+describe('InvoiceStorage adapter parity', () => {
+  it('exposes the exact same public methods on MemoryInvoiceStorage and PostgresInvoiceStorage', () => {
+    const memoryKeys = Object.getOwnPropertyNames(MemoryInvoiceStorage.prototype)
+      .filter((k) => k !== 'constructor')
+      .sort();
+    const postgresKeys = Object.getOwnPropertyNames(PostgresInvoiceStorage.prototype)
+      .filter((k) => k !== 'constructor')
+      .sort();
+
+    assert.deepEqual(
+      memoryKeys,
+      postgresKeys,
+      'A handler change cannot call a method that exists on only one adapter'
+    );
+  });
+});

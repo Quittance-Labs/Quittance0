@@ -390,6 +390,7 @@ describe('invoice payment loop', () => {
 
     assert.equal(verified.status, 400);
     assert.equal(verified.body.code, 'INVALID_PAYER_EMAIL');
+    assert.equal(verified.body.stage, 'attribute');
     assert.match(verified.body.error, /email is invalid/i);
   });
 
