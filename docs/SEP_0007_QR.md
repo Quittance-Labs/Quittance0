@@ -2,10 +2,12 @@
 
 ## Recommendation
 
-Keep the web+stellar:pay operation and deterministic parameter order. In a
-follow-up implementation, add the invoice network passphrase and reject text
-memos longer than 28 UTF-8 bytes before QR generation. Keep amount mandatory
-for Quittance even though SEP-0007 makes it optional for donation requests.
+Keep the web+stellar:pay operation and deterministic parameter order. The
+invoice network passphrase is pinned from `shared/network.ts`, and text memos
+longer than 28 UTF-8 bytes are refused before QR generation. Keep amount
+mandatory for Quittance even though SEP-0007 makes it optional for donation
+requests. Create, the pay page, and the seller copy action share one pay-link
+artifact (issue #557).
 
 Do not claim Freighter compatibility until the vectors below are exercised
 against a named Freighter release. Its public documentation and repository do
@@ -26,11 +28,11 @@ Primary references:
 | 2 | amount | optional in SEP-7 | correctly mandatory for a fixed-price invoice |
 | 3 | asset_code | optional; XLM when absent | correct; omitted for native XLM |
 | 4 | asset_issuer | identifies an issued asset | correct when present; missing issuer is rejected |
-| 5 | memo | optional on-chain memo | encoded correctly, but byte limit is unchecked |
+| 5 | memo | optional on-chain memo | encoded correctly; over 28 UTF-8 bytes is refused |
 | 6 | memo_type | one of four SEP-7 memo types | correctly emits MEMO_TEXT |
 | — | callback | optional | intentionally omitted; wallet submits |
 | — | msg | optional, 300 characters maximum | intentionally omitted |
-| — | network_passphrase | required away from public network | gap for Testnet invoices |
+| — | network_passphrase | required away from public network | conformant — TESTNET emits it via `shared/network.ts` |
 | — | origin_domain and signature | optional trust signal as a pair | omitted; acceptable for MVP, add together later |
 
 The QR encoder correctly stores the complete URI as its payload. QR error
@@ -105,11 +107,11 @@ backend/tests/sep-0007-wallet-vectors.test.ts.
 | Native XLM, public network | accept | accept | XLM is implied |
 | Issued USDC with issuer | accept | accept | destination receives exact asset |
 | 28-byte ASCII memo | accept | accept | maximum valid MEMO_TEXT |
-| 29-byte ASCII memo | reject | gap | wallet cannot build valid memo |
-| Eight emoji, 32 UTF-8 bytes | reject | gap | byte count exceeds limit |
+| 29-byte ASCII memo | reject | reject | wallet cannot build valid memo |
+| Eight emoji, 32 UTF-8 bytes | reject | reject | byte count exceeds limit |
 | Missing amount | reject | reject | product rule, although donations may omit it |
-| Testnet passphrase | accept | gap | prevents accidental public-network interpretation |
-| Public hint on Testnet invoice | reject | gap | network conflict |
+| Testnet passphrase | accept | accept | prevents accidental public-network interpretation |
+| Public hint on Testnet invoice | reject | reject | network conflict |
 | Issued asset without issuer | reject | reject | asset identity is incomplete |
 
 A wallet verification pass should record wallet name/version, operating system,
@@ -119,16 +121,17 @@ match the vector before signing; no test needs a secret key or live payment.
 
 ## Follow-up formatter change
 
-The implementation PR should:
+Done in issue #557 alongside the pay-link artifact:
 
-1. Add network to QrPaymentPayloadInput using the existing TESTNET/PUBLIC enum.
-2. Append network_passphrase for Testnet and omit it for public.
-3. reject a memo above 28 UTF-8 bytes with a stable error;
-4. keep deterministic encoding and current native/issued asset shapes;
-5. move the gap vectors into ordinary pass/fail formatter cases;
-6. decode each generated QR in a test and compare the exact URI;
-7. run the wallet matrix and record supported Freighter behavior without
-   assuming protocol-handler support.
+1. ~~Add network to QrPaymentPayloadInput using the existing TESTNET/PUBLIC enum.~~
+2. ~~Append network_passphrase for Testnet and omit it for public.~~
+3. ~~Reject a memo above 28 UTF-8 bytes with a stable error.~~
+4. Keep deterministic encoding and current native/issued asset shapes.
+5. ~~Move the gap vectors into ordinary pass/fail formatter cases.~~
+6. Create / pay / seller render one `buildPayLinkArtifact` result so the URI
+   and fallback decision cannot drift.
+7. Still open: run the wallet matrix and record supported Freighter behavior
+   without assuming protocol-handler support.
 
 origin_domain must only be added together with a valid SEP-0007 signature and a
 published URI_REQUEST_SIGNING_KEY. Adding an unsigned domain would make a

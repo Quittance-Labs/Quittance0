@@ -13,7 +13,10 @@ import {
 } from '../utils/validation';
 import { firstCreateInvoiceMessage } from '../../../shared/invoice-validation';
 import { toPublicInvoiceDto } from '../../../shared/invoice';
-import { generatePaymentQR, generateStellarPaymentQR } from '../utils/qrcode';
+import {
+  buildHttpsPayQr,
+  buildPayLinkArtifact,
+} from '../utils/pay-link-artifact';
 import {
   apiSuccess,
   sendFailure,
@@ -38,7 +41,6 @@ import {
   warningForLatePayment,
 } from '../domain/invoice-settlement';
 import { cutoverDrainMode, simulationAllowed } from '../config/runtime';
-import { canonicalAmount } from '../utils/safe-amount-compare';
 import { idempotencyKeyForCreate } from '../utils/idempotency';
 import { createRequestId } from '../utils/request-correlation-id';
 import { checkInvoiceVerifyLimit } from '../middleware/rate-limit';
@@ -48,7 +50,7 @@ import {
   type CachedVerificationBody,
 } from '../middleware/verify-cache';
 import { verifySellerSignature } from '../utils/signature-verification';
-import { isHorizonUnavailable } from '../utils/horizon-client';
+import { classifyHorizonFailure } from '../utils/horizon-client';
 import { redactPaymentEventData } from '../utils/payment-event-redaction';
 
 /** Kept explicit so clients can tune polling without duplicating backend policy. */
@@ -141,31 +143,36 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
         paymentUrl,
         qrCode: null,
         stellarQrCode: null,
+        stellarUri: null,
+        stellarQrEncodesUri: null,
+        copyValue: null,
+        networkPassphrase: null,
       };
     }
 
-    const stellarPayment = await generateStellarPaymentQR(
-      invoice.sellerPublicKey,
-      // The QR embeds the same stroop string the verifier compares —
-      // `toString()` would emit `1e-7` for small amounts and fail the URI.
-      canonicalAmount(invoice.amount) ?? invoice.amount.toString(),
-      invoice.assetCode || 'XLM',
-      invoice.memo,
-      invoice.assetIssuer,
-      paymentUrl
-    );
+    // One artifact for create, the pay page, and the seller copy action
+    // (issue #557). Amount, memo, network, and the QR fallback decision are
+    // decided here once so the three surfaces cannot disagree.
+    const artifact = await buildPayLinkArtifact({
+      invoiceId: invoice.id,
+      frontendUrl: frontendUrl(),
+      destination: invoice.sellerPublicKey,
+      amount: invoice.amount,
+      assetCode: invoice.assetCode || 'XLM',
+      assetIssuer: invoice.assetIssuer,
+      memo: invoice.memo,
+    });
 
     return {
       paymentAvailable: true,
-      paymentUrl,
+      paymentUrl: artifact.paymentUrl,
       statusPollingIntervalMs: PAYMENT_STATUS_POLL_INTERVAL_MS,
-      qrCode: await generatePaymentQR(paymentUrl),
-      stellarQrCode: stellarPayment.qrDataUrl,
-      stellarUri: stellarPayment.uri,
-      // False when the SEP-0007 URI outgrew the QR budget and the image
-      // encodes the HTTPS pay link instead — the payer still gets the full
-      // URI as copyable text.
-      stellarQrEncodesUri: stellarPayment.encodesSep7Uri,
+      qrCode: await buildHttpsPayQr(artifact.paymentUrl),
+      stellarQrCode: artifact.qrDataUrl,
+      stellarUri: artifact.stellarUri,
+      stellarQrEncodesUri: artifact.encodesSep7Uri,
+      copyValue: artifact.copyValue,
+      networkPassphrase: artifact.networkPassphrase,
     };
   };
 
@@ -217,6 +224,8 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           stellarQrCode: payment.stellarQrCode,
           stellarUri: payment.stellarUri,
           stellarQrEncodesUri: payment.stellarQrEncodesUri,
+          copyValue: payment.copyValue,
+          networkPassphrase: payment.networkPassphrase,
         });
       } catch (error: any) {
         logError('Create invoice error:', error, requestId);
@@ -308,7 +317,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           return sendFailure(res, 403, 'Forbidden: not the seller of this invoice');
         }
 
-        const events = (await storage.getPaymentEvents?.(invoice.id)) ?? [];
+        const events = await storage.getPaymentEvents(invoice.id);
         sendSuccess(
           res,
           200,
@@ -497,7 +506,8 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           txDetails = await stellar.getTransaction(hashCheck.value);
         } catch (error: any) {
           logError('Verify payment lookup error:', error);
-          if (isHorizonUnavailable(error)) {
+          // Classify timeout/429/connection before memo/amount compare (#556).
+          if (classifyHorizonFailure(error)) {
             // Horizon is overloaded or unreachable. A 503 invites the payer to
             // retry; it is never cached — caching an outage as a rejection
             // would poison the hash against later retries.
@@ -537,7 +547,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           // Issue #515: a rejected verify lands on the seller's audit feed with
           // the same taxonomy the monitor uses, so "still PENDING" answers
           // itself without the payer having to say so.
-          await storage.logPaymentEvent?.(
+          await storage.logPaymentEvent(
             id,
             verification.code === 'AMOUNT_TOO_LOW' || verification.code === 'AMOUNT_MISMATCH'
               ? 'PARTIAL_PAYMENT'

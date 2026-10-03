@@ -11,6 +11,7 @@ import {
   SettlementTimeUnavailableError,
 } from '../domain/invoice-settlement';
 import { monitorBackoffMs } from '../utils/monitor-retry-backoff';
+import { classifyHorizonFailure } from '../utils/horizon-client';
 import {
   FilePaymentMonitorCheckpointStore,
   PaymentMonitorCheckpointStore,
@@ -379,6 +380,12 @@ export class PaymentMonitorService {
       };
       this.schedule(this.pollIntervalMs);
     } catch (error: any) {
+      // Horizon timeout/429/connection share the same backoff the pay page
+      // tells the payer to wait for (issue #556).
+      const failureClass = classifyHorizonFailure(error);
+      if (failureClass) {
+        console.error(`Payment monitor Horizon ${failureClass}; backing off`, error);
+      }
       const failures = this.snapshot.consecutiveFailures + 1;
       const retryMs = monitorBackoffMs(failures - 1);
       this.snapshot = {
@@ -421,6 +428,9 @@ export class PaymentMonitorService {
     let cursor = checkpoint.cursor;
     let processed = 0;
     for (let pageNumber = 0; pageNumber < this.maxPagesPerRun; pageNumber += 1) {
+      // getPaymentsPage goes through horizonCall; a timeout/429/connection
+      // failure throws and tick() applies the shared backoff before any
+      // memo/destination/amount compare (issue #556).
       const page = await this.source.getPaymentsPage(this.account, cursor, this.pageSize);
       if (page.length === 0) break;
 
@@ -503,6 +513,9 @@ export class PaymentMonitorService {
     const payable = checkInvoiceIsPayable(invoice.status);
     if (!payable.ok && invoice.status !== 'CANCELLED' && invoice.status !== 'EXPIRED') return;
 
+    // Payment records only reach here after Horizon returned them through
+    // horizonCall. tick() classifies timeout/429/connection failures and
+    // backs off — this compare never runs on an outage (issue #556).
     const isNative = payment.assetCode === 'XLM' && !payment.assetIssuer;
     const verification = verifyHorizonPayment({
       txHash: payment.txHash,

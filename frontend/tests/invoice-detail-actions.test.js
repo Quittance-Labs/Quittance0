@@ -65,7 +65,14 @@ function primeApi(invoice) {
   bundle.resetResponses();
   bundle.setResponse(`/invoices/${invoice.id}`, { data: invoice });
   bundle.setResponse(`/invoices/${invoice.id}/payment-info`, {
-    data: { paymentUrl: `https://quittance.test/pay/${invoice.id}` },
+    data: {
+      paymentUrl: `https://quittance.test/pay/${invoice.id}`,
+      stellarUri: `web+stellar:pay?destination=${invoice.sellerPublicKey}&amount=125.5000000&memo=${invoice.memo}&memo_type=MEMO_TEXT`,
+      copyValue: `https://quittance.test/pay/${invoice.id}`,
+      stellarQrEncodesUri: false,
+      stellarQrCode: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      paymentAvailable: invoice.status === 'PENDING',
+    },
   });
 }
 
