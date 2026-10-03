@@ -288,7 +288,8 @@ export class InvoiceService {
     sellerPublicKey: string,
     status?: string,
     limit: number = 50,
-    offset: number = 0
+    offset: number = 0,
+    q?: string
   ): Promise<Invoice[]> {
     if (!sellerPublicKey) {
       throw new Error('Seller public key is required');
@@ -300,8 +301,21 @@ export class InvoiceService {
     const params: any[] = [sellerPublicKey];
 
     if (status) {
-      query += ' AND status = $2';
       params.push(status);
+      query += ` AND status = $${params.length}`;
+    }
+
+    // Match the memory adapter's literal, case-insensitive search over the
+    // same nonempty fields. A substring search keeps %, _ and backslashes
+    // literal and preserves terms spanning adjacent fields. The seller and
+    // status predicates remain outside this search expression.
+    if (q && q.trim()) {
+      params.push(q.trim().toLowerCase());
+      const searchParamIndex = params.length;
+      query += ` AND strpos(lower(concat_ws(' ',
+        id::text, memo, NULLIF(description, ''),
+        NULLIF(customer_name, ''), NULLIF(customer_email, '')
+      )), $${searchParamIndex}) > 0`;
     }
 
     query += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
