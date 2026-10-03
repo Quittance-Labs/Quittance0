@@ -6,6 +6,7 @@ import { describeAmount } from '@/lib/a11y';
 import { Check, Download, ExternalLink, FileText, Mail } from 'lucide-react';
 import AssetLogo from './AssetLogo';
 import { openInvoicePDF, emailPaymentProof } from '@/lib/export';
+import { reportProofHandoff } from '@/lib/proof-handoff';
 import { canSendProofEmail, getProofMailtoRecipient } from '@/lib/mailto-delivery';
 import { toast } from 'sonner';
 import type { PayPageInvoice } from './pay-page.types';
@@ -101,6 +102,7 @@ Stellar Blockchain Payment System
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    void reportProofHandoff(invoice.id, { proofFormat: 'text', handoff: 'download' });
   };
 
   const activeAssetCode = invoice.assetCode || 'XLM';

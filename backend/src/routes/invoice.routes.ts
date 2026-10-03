@@ -1,11 +1,15 @@
 import { Router, Request, Response, NextFunction, RequestHandler } from 'express';
+import { requestCorrelationMiddleware } from '../utils/request-correlation-id';
 import { createInvoiceHandlers, InvoiceHandlerOptions } from './invoice.handlers';
+import { createProofHandoffHandler } from './proof-handoff';
 import {
   createInvoiceRateLimiters,
   createVerifyRateLimiters,
   createGetInvoicesRateLimiter,
   createCancelInvoiceRateLimiter,
   verifyConcurrencyLock,
+  createRateLimiter,
+  getClientIp,
 } from '../middleware/rate-limit';
 import { createInvoiceCeilingMiddleware } from '../middleware/invoice-ceiling';
 import { createVerifyCacheMiddleware, verificationCache } from '../middleware/verify-cache';
@@ -30,6 +34,7 @@ export interface InvoiceRouterOptions extends InvoiceHandlerOptions {
  *   GET    /invoices/:id/payment-info
  *   POST   /invoices/:id/cancel (seller authorized)
  *   POST   /invoices/:id/verify
+ *   POST   /invoices/:id/proof-handoff
  *   POST   /invoices/:id/simulate-payment
  *
  * Edge middleware order (issue #450) — see also middleware/edge-config.ts:
@@ -42,6 +47,7 @@ export interface InvoiceRouterOptions extends InvoiceHandlerOptions {
 export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
   const handlers = createInvoiceHandlers(options);
   const router = Router();
+  router.use(requestCorrelationMiddleware);
 
   const enableRateLimiting =
     options.enableRateLimiting ??
@@ -135,6 +141,16 @@ export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
     );
   }
   router.post('/invoices/:id/verify', ...verifyMiddlewares, handlers.verifyPayment);
+
+  const proofHandoffMiddlewares: RequestHandler[] = [];
+  if (enableRateLimiting) {
+    proofHandoffMiddlewares.push(createRateLimiter({
+      windowMs: 60_000,
+      max: 30,
+      keyGenerator: (req) => `proof-handoff:${getClientIp(req)}`,
+    }));
+  }
+  router.post('/invoices/:id/proof-handoff', ...proofHandoffMiddlewares, createProofHandoffHandler(options.storage));
 
   router.post('/invoices/:id/simulate-payment', handlers.simulatePayment);
 

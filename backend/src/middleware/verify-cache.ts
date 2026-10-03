@@ -21,6 +21,7 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { Redis } from 'ioredis';
 import { createRedisClient } from '../config/redis';
+import { emitEvent, logReference, emitOperationalFailure, operationalLogContext } from '../observability/log-events';
 
 const VERIFIED_TTL_SECONDS = 259200; // 72 hours (invoice expiry window)
 const NOT_FOUND_TTL_SECONDS = 60; // short: indexing lag must not wedge a valid hash
@@ -70,7 +71,7 @@ export class VerificationCache {
       try {
         this.redis = await createRedisClient();
       } catch (error) {
-        console.warn('[VerifyCache] Redis unavailable, using memory fallback');
+        emitOperationalFailure('cache.connect', 'warn');
         this.redis = null;
       }
     }
@@ -106,7 +107,7 @@ export class VerificationCache {
         }
       }
     } catch (error) {
-      console.warn('[VerifyCache] Redis get failed, trying memory:', error);
+      emitOperationalFailure('cache.get', 'warn');
     }
 
     // Fallback to memory
@@ -143,7 +144,7 @@ export class VerificationCache {
         await client.setex(key, ttl, JSON.stringify(cached));
       }
     } catch (error) {
-      console.warn('[VerifyCache] Redis set failed, using memory:', error);
+      emitOperationalFailure('cache.set', 'warn');
     }
 
     // Always store in memory as backup
@@ -165,7 +166,7 @@ export class VerificationCache {
         if (keys.length) await client.del(...keys);
       }
     } catch (error) {
-      console.warn('[VerifyCache] Redis clear failed:', error);
+      emitOperationalFailure('cache.clear', 'warn');
     }
   }
 
@@ -205,12 +206,16 @@ export function createVerifyCacheMiddleware(cache: VerificationCache): RequestHa
         if (!cached) {
           return next();
         }
-        console.log(`[VerifyCache] Cache hit for invoice ${invoiceId}, txHash ${txHash}`);
+        emitEvent('info', 'payment.verify.cached', operationalLogContext(), {
+          invoiceRef: logReference(invoiceId),
+          txRef: logReference(txHash),
+          httpStatus: cached.httpStatus,
+        });
         // Replay the exact response the first attempt produced.
         res.status(cached.httpStatus).json({ ...cached.body, cached: true });
       })
       .catch(error => {
-        console.error('[VerifyCache] Check failed:', error);
+        emitOperationalFailure('cache.verify');
         // Fail open: proceed to handler if cache check breaks
         next();
       });
@@ -232,7 +237,7 @@ export async function cacheVerificationResult(
   try {
     await verificationCache.set(invoiceId, txHash, httpStatus, body);
   } catch (error) {
-    console.error('[VerifyCache] Failed to cache result:', error);
+    emitOperationalFailure('cache.set');
     // Non-fatal: verification still completed, just won't be cached
   }
 }

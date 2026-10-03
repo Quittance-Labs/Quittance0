@@ -1,5 +1,8 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import { requestCorrelationMiddleware } from './utils/request-correlation-id';
+import { requestLoggingMiddleware } from './observability/request-logging';
+import { emitOperationalFailure } from './observability/log-events';
 import dotenv from 'dotenv';
 import routes from './routes';
 import { pool } from './config/database';
@@ -18,14 +21,12 @@ const PORT = process.env.PORT || 3001;
 const maxBodyBytes = getEdgeControlConfig().maxBodyBytes;
 
 app.use(cors(corsOptions()));
+app.use(requestCorrelationMiddleware);
+app.use(requestLoggingMiddleware);
 
 app.use(express.json({ limit: maxBodyBytes }));
 app.use(express.urlencoded({ extended: true, limit: maxBodyBytes }));
 
-app.use((req: Request, res: Response, next: NextFunction) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
 
 // Liveness probes (process up, cold-start safe)
 app.get('/health', healthHandler(postgresInvoiceStorage.mode));
@@ -50,7 +51,7 @@ app.get('/', (req: Request, res: Response) => {
 app.use(bodyLimitErrorHandler);
 
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error('Unhandled error:', err);
+  emitOperationalFailure('http.request');
   const code = (err as Error & { code?: string }).code;
   res.status(code === 'CORS_ORIGIN_DENIED' ? 403 : 500).json({
     success: false,
@@ -79,7 +80,7 @@ async function initialize() {
       console.log('Wallet-scoped mode: no SELLER_PUBLIC_KEY, payment monitor disabled');
     }
   } catch (error) {
-    console.error('Failed to initialize:', error);
+    emitOperationalFailure('server.initialize');
     process.exit(1);
   }
 }
