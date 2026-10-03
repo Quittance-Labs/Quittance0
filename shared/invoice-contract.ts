@@ -539,39 +539,72 @@ export function parseVerifyPaymentResponse(
 
 /**
  * Validates that an API response adheres to the GetStatsResponse contract.
- * Accepts either a stats object or a one-element array (current storage shape).
+ * Accepts a bare stats object or a success envelope containing an object or
+ * one-element array (the current storage response). The normalized result is
+ * always an object. Missing or malformed values must not become zero totals.
  */
 export function parseGetStatsResponse(
   input: unknown
 ): ContractResult<GetStatsResponse> {
-  if (!isObject(input) || input.success === false) {
+  if (!isObject(input)) {
     return { success: false, error: 'Stats response must be an object' };
   }
 
-  const rawData = 'data' in input ? (input as { data: unknown }).data : input;
+  const hasOwn = (object: Record<string, unknown>, key: string): boolean =>
+    Object.prototype.hasOwnProperty.call(object, key);
+  const isEnvelope = hasOwn(input, 'data') || hasOwn(input, 'success');
+  if (isEnvelope && (!hasOwn(input, 'success') || input.success !== true || !hasOwn(input, 'data'))) {
+    return { success: false, error: 'Stats response must contain success: true and data' };
+  }
+
+  const rawData = isEnvelope ? input.data : input;
+  if (Array.isArray(rawData) && rawData.length !== 1) {
+    return { success: false, error: 'Stats data must contain exactly one stats object' };
+  }
   const targetObj = Array.isArray(rawData) ? rawData[0] : rawData;
   if (!isObject(targetObj)) {
     return { success: false, error: 'Stats data must be an object' };
   }
 
-  const stats: InvoiceStatsDto = {
-    total_invoices: Number(targetObj.total_invoices || 0),
-    paid_invoices: Number(targetObj.paid_invoices || 0),
-    pending_invoices: Number(targetObj.pending_invoices || 0),
-    actionable_invoices: Number(
-      targetObj.actionable_invoices || targetObj.pending_invoices || 0
-    ),
-    expired_invoices: Number(targetObj.expired_invoices || 0),
-    revenue_by_asset: isObject(targetObj.revenue_by_asset)
-      ? (targetObj.revenue_by_asset as Record<string, number>)
-      : {},
-  };
+  const countFields = [
+    'total_invoices',
+    'paid_invoices',
+    'pending_invoices',
+    'actionable_invoices',
+    'expired_invoices',
+  ] as const;
+  const counts = {} as Pick<InvoiceStatsDto, (typeof countFields)[number]>;
+  for (const field of countFields) {
+    const value = targetObj[field];
+    if (
+      !hasOwn(targetObj, field) ||
+      typeof value !== 'number' ||
+      !Number.isSafeInteger(value) ||
+      value < 0
+    ) {
+      return { success: false, error: `Stats ${field} must be a non-negative safe integer` };
+    }
+    counts[field] = value;
+  }
+
+  const revenue = targetObj.revenue_by_asset;
+  if (!hasOwn(targetObj, 'revenue_by_asset') || !isObject(revenue)) {
+    return { success: false, error: 'Stats revenue_by_asset must be an object' };
+  }
+  for (const value of Object.values(revenue)) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      return { success: false, error: 'Stats asset revenue must be a non-negative finite number' };
+    }
+  }
 
   return {
     success: true,
     data: {
       success: true,
-      data: stats,
+      data: {
+        ...counts,
+        revenue_by_asset: { ...revenue } as Record<string, number>,
+      },
     },
   };
 }
@@ -946,14 +979,14 @@ export const INVOICE_OPENAPI_SPEC = {
           'revenue_by_asset',
         ],
         properties: {
-          total_invoices: { type: 'integer' },
-          paid_invoices: { type: 'integer' },
-          pending_invoices: { type: 'integer' },
-          actionable_invoices: { type: 'integer' },
-          expired_invoices: { type: 'integer' },
+          total_invoices: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+          paid_invoices: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+          pending_invoices: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+          actionable_invoices: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+          expired_invoices: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
           revenue_by_asset: {
             type: 'object',
-            additionalProperties: { type: 'number' },
+            additionalProperties: { type: 'number', minimum: 0 },
           },
         },
       },
@@ -1122,7 +1155,17 @@ export const INVOICE_OPENAPI_SPEC = {
         required: ['success', 'data'],
         properties: {
           success: { type: 'boolean', enum: [true] },
-          data: { $ref: '#/components/schemas/InvoiceStatsDto' },
+          data: {
+            oneOf: [
+              { $ref: '#/components/schemas/InvoiceStatsDto' },
+              {
+                type: 'array',
+                minItems: 1,
+                maxItems: 1,
+                items: { $ref: '#/components/schemas/InvoiceStatsDto' },
+              },
+            ],
+          },
         },
       },
     },

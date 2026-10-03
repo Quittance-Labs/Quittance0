@@ -27,6 +27,119 @@ import {
 import { createInvoiceRouter } from '../src/routes/invoice.routes';
 import { MemoryInvoiceStorage } from '../src/storage/memory-invoice-storage';
 
+describe('Statistics response contract', () => {
+  const stats = {
+    total_invoices: 4,
+    paid_invoices: 1,
+    pending_invoices: 3,
+    actionable_invoices: 0,
+    expired_invoices: 0,
+    revenue_by_asset: { XLM: 0.0000001, USDC: 25.5 },
+  };
+  const shapes = {
+    bare: (data: unknown) => data,
+    object: (data: unknown) => ({ success: true, data }),
+    storage: (data: unknown) => ({ success: true, data: [data] }),
+  };
+  const schema = INVOICE_OPENAPI_SPEC.components.schemas.InvoiceStatsDto;
+
+  for (const [name, wrap] of Object.entries(shapes)) {
+    it(`preserves explicit zero counts in the ${name} shape`, () => {
+      const parsed = parseGetStatsResponse(wrap(stats));
+      assert.equal(parsed.success, true);
+      if (parsed.success) assert.deepEqual(parsed.data.data, stats);
+    });
+  }
+
+  for (const field of schema.required) {
+    it(`rejects missing required statistic ${field}`, () => {
+      const incomplete: Record<string, unknown> = { ...stats };
+      delete incomplete[field];
+      for (const wrap of Object.values(shapes)) {
+        assert.equal(parseGetStatsResponse(wrap(incomplete)).success, false);
+      }
+    });
+  }
+
+  for (const field of schema.required.filter((field) => field !== 'revenue_by_asset')) {
+    it(`rejects malformed ${field} instead of coercing it`, () => {
+      for (const value of [undefined, null, '', '0', 'invalid', false, true, [], {}, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+        const parsed = parseGetStatsResponse({ success: true, data: { ...stats, [field]: value } });
+        assert.equal(parsed.success, false, `${field} accepted ${String(value)}`);
+      }
+    });
+  }
+
+  it('requires own statistic fields', () => {
+    const inherited = Object.create(stats);
+    assert.equal(parseGetStatsResponse({ success: true, data: inherited }).success, false);
+  });
+
+  it('rejects malformed revenue maps and values', () => {
+    for (const revenue of [null, [], '', 1, { XLM: '1' }, { XLM: false }, { XLM: null }, { XLM: -1 }, { XLM: NaN }, { XLM: Infinity }]) {
+      assert.equal(
+        parseGetStatsResponse({ success: true, data: { ...stats, revenue_by_asset: revenue } }).success,
+        false
+      );
+    }
+  });
+
+  it('accepts complete zero statistics and finite fractional revenue', () => {
+    const empty = {
+      total_invoices: 0,
+      paid_invoices: 0,
+      pending_invoices: 0,
+      actionable_invoices: 0,
+      expired_invoices: 0,
+      revenue_by_asset: {},
+    };
+    const parsed = parseGetStatsResponse({ success: true, data: [empty] });
+    assert.equal(parsed.success, true);
+    if (parsed.success) assert.deepEqual(parsed.data.data, empty);
+    assert.equal(parseGetStatsResponse({ ...stats, total_invoices: Number.MAX_SAFE_INTEGER }).success, true);
+  });
+
+  it('preserves own asset keys without altering the object prototype', () => {
+    const revenue = JSON.parse('{"__proto__":2,"constructor":3,"XLM":0}');
+    const parsed = parseGetStatsResponse({ ...stats, revenue_by_asset: revenue });
+    assert.equal(parsed.success, true);
+    if (parsed.success) {
+      assert.deepEqual(parsed.data.data.revenue_by_asset, revenue);
+      assert.equal(Object.getPrototypeOf(parsed.data.data.revenue_by_asset), Object.prototype);
+    }
+  });
+
+  it('rejects incomplete or non-success envelopes', () => {
+    for (const success of [undefined, null, false, 0, 1, 'true']) {
+      assert.equal(parseGetStatsResponse({ success, data: stats }).success, false);
+    }
+    assert.equal(parseGetStatsResponse({ data: stats }).success, false);
+    assert.equal(parseGetStatsResponse({ ...stats, success: true }).success, false);
+    assert.equal(parseGetStatsResponse({ success: true, data: null }).success, false);
+  });
+
+  it('rejects missing or ambiguous storage rows', () => {
+    for (const data of [[], [stats, stats], [null], [1]]) {
+      assert.equal(parseGetStatsResponse({ success: true, data }).success, false);
+    }
+  });
+
+  it('publishes matching numeric bounds and the one-row storage response', () => {
+    for (const field of schema.required.filter((field) => field !== 'revenue_by_asset')) {
+      assert.deepEqual(schema.properties[field], {
+        type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER,
+      });
+    }
+    assert.deepEqual(schema.properties.revenue_by_asset.additionalProperties, { type: 'number', minimum: 0 });
+    assert.deepEqual(INVOICE_OPENAPI_SPEC.components.schemas.GetStatsResponse.properties.data, {
+      oneOf: [
+        { $ref: '#/components/schemas/InvoiceStatsDto' },
+        { type: 'array', minItems: 1, maxItems: 1, items: { $ref: '#/components/schemas/InvoiceStatsDto' } },
+      ],
+    });
+  });
+});
+
 interface HttpResponse {
   status: number;
   headers: http.IncomingHttpHeaders;
@@ -305,6 +418,27 @@ describe('Invoice API contract (issue #446)', () => {
       assert.equal(parsed.success, true);
       if (parsed.success) {
         assert.ok(parsed.data.data.total_invoices >= 1);
+      }
+    });
+
+    it('GET /api/invoices/stats preserves a complete empty seller response', async () => {
+      const res = await request(
+        port,
+        'GET',
+        `/api/invoices/stats?sellerPublicKey=${encodeURIComponent(Keypair.random().publicKey())}`
+      );
+      assert.equal(res.status, 200);
+      const parsed = parseGetStatsResponse(res.body);
+      assert.equal(parsed.success, true);
+      if (parsed.success) {
+        assert.deepEqual(parsed.data.data, {
+          total_invoices: 0,
+          paid_invoices: 0,
+          pending_invoices: 0,
+          actionable_invoices: 0,
+          expired_invoices: 0,
+          revenue_by_asset: {},
+        });
       }
     });
 
