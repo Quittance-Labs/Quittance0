@@ -61,7 +61,8 @@ operation because it has no HTTP request.
 | payment.verify.started | info | invoiceRef, txRef, network | after hash validation, before Horizon |
 | payment.verify.rejected | warn | invoiceRef, txRef, errorCode, network, durationMs | one terminal verification rejection |
 | invoice.paid | info | invoiceRef, sellerRef, txRef, assetCode, network, storage, durationMs | committed PENDING→PAID |
-| proof.downloaded | info | invoiceRef, txRef, proofFormat | PDF, text, or JSON proof action |
+| proof.downloaded | info | invoiceRef, txRef, proofFormat | legacy, unmounted backend proof controller |
+| proof.handoff | info | invoiceRef, txRef, proofFormat, handoff | browser print window populated or TXT download dispatched |
 | horizon.request.failed | warn or error | operation, errorCode, network, attempt, durationMs | failed Horizon boundary |
 | http.request.completed | info | method, route, statusCode, durationMs | response finishes, including parser failures and unmatched routes |
 | operation.failed | warn or error | operation, errorCode | failed API, storage, cache, QR, monitor, or Stellar boundary |
@@ -79,11 +80,33 @@ the response correlation id. Identifier fingerprints still fail closed to
 
 ### Proof coverage boundary
 
-The legacy backend proof controller emits `proof.downloaded`, but the current
-server routers do not mount that controller. Current receipt exports run in
-the browser and do not emit this event. The runtime privacy checks below cover
-create, read, pay-info, verify, replay, and failures; they are not evidence of
-an instrumented browser proof download or a complete create-to-proof trace.
+Current receipt exports run in the browser. After a print window is populated
+or the TXT download is dispatched, the browser sends a best-effort
+`POST /api/invoices/:id/proof-handoff` with only `proofFormat` and `handoff`.
+The shared router accepts only `pdf` / `print-window` and `text` / `download`,
+requires the stored invoice to be `PAID` under the existing proof policy, and
+derives keyed invoice/transaction references from that stored record. Supplied
+references, transaction hashes, status, proof contents, and other extra fields
+are rejected. The event and HTTP completion share the browser's correlation id;
+the keyed `invoiceRef` links them to create and payment events across requests.
+
+`proof.handoff` describes the browser action only. It is not confirmation that
+the user printed, saved, opened, or retained a file. A blocked popup or failure
+before the handoff produces no observation. Observation failure does not change
+the proof or show a delivery error: the request has a 1.5-second timeout, no
+retry, and no persistent queue. Existing production rate limiting admits at
+most 30 observations per client IP per minute; dropped observations may
+undercount handoffs. The route does not mutate invoice or payment state, return
+invoice fields, or query Horizon.
+
+The observation handler and completed-response logger contain sink failures.
+An unavailable sink can reject the observation, but cannot throw out of the
+response-finish listener and terminate the process after its response.
+
+The legacy backend proof controller remains unmounted. Its `proof.downloaded`
+event and the unused canonical JSON export are not evidence of browser file
+save completion. Browser proof handoff coverage uses the actual mounted route;
+external wallets, production PostgreSQL, and successful OS save remain separate.
 
 `errorCode` is a bounded stable code such as `MEMO_MISMATCH`, `HORIZON_UNAVAILABLE`,
 or `VALIDATION_FAILED`. Error messages and stack traces go to a restricted debug
@@ -137,8 +160,10 @@ requests and service callbacks, in addition to the structured sink assertions:
 
 ```sh
 cd backend
-node --import tsx --test tests/observability.test.ts tests/runtime-log-privacy.test.ts
+node --import tsx --test tests/observability.test.ts tests/runtime-log-privacy.test.ts tests/proof-handoff.test.ts
 npm run typecheck
+cd ../frontend
+node --test tests/proof-handoff.test.js tests/payment-proof-policy.test.js
 ```
 
 It uses local Horizon fixtures for success, memo rejection, service outage,
@@ -161,3 +186,4 @@ invoiceRef, sellerRef, txRef, or requestId.
 | horizon_failure_total | count horizon.request.failed by errorCode |
 | verify_duration_ms | distribution of terminal verify durationMs |
 | proof_download_total | count proof.downloaded by proofFormat |
+| proof_handoff_total | count proof.handoff by proofFormat and handoff; browser handoffs, not saved files |

@@ -8,14 +8,19 @@ export function requestLoggingMiddleware(req: Request, res: Response, next: Next
   const startedAt = Date.now();
   res.once('finish', () => {
     const route = req.route?.path;
-    emitEvent('info', 'http.request.completed', operationalLogContext(
-      (req as Request & { requestId?: string }).requestId
-    ), {
-      method: METHODS.has(req.method) ? req.method : 'OTHER',
-      route: typeof route === 'string' ? route : 'unmatched',
-      statusCode: res.statusCode,
-      durationMs: Date.now() - startedAt,
-    });
+    try {
+      emitEvent('info', 'http.request.completed', operationalLogContext(
+        (req as Request & { requestId?: string }).requestId
+      ), {
+        method: METHODS.has(req.method) ? req.method : 'OTHER',
+        route: typeof route === 'string' ? route : 'unmatched',
+        statusCode: res.statusCode,
+        durationMs: Date.now() - startedAt,
+      });
+    } catch {
+      // The response is already complete. A failed observation sink must not
+      // escape this event listener and terminate otherwise completed work.
+    }
   });
   next();
 }

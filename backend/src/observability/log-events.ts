@@ -12,6 +12,7 @@ export const LOG_EVENTS = [
   'payment.verify.rejected',
   'invoice.paid',
   'proof.downloaded',
+  'proof.handoff',
   'horizon.request.failed',
   'http.request.completed',
   'operation.failed',
@@ -32,6 +33,7 @@ const EVENT_FIELDS: Record<LogEventName, readonly string[]> = {
   'payment.verify.rejected': ['invoiceRef', 'txRef', 'errorCode', 'network', 'durationMs'],
   'invoice.paid': ['invoiceRef', 'sellerRef', 'txRef', 'assetCode', 'network', 'storage', 'durationMs'],
   'proof.downloaded': ['invoiceRef', 'txRef', 'proofFormat'],
+  'proof.handoff': ['invoiceRef', 'txRef', 'proofFormat', 'handoff'],
   'horizon.request.failed': ['operation', 'errorCode', 'network', 'attempt', 'durationMs'],
   'http.request.completed': ['method', 'route', 'statusCode', 'durationMs'],
   'operation.failed': ['operation', 'errorCode'],
@@ -47,7 +49,7 @@ const FAILURE_OPERATIONS = [
   'stellar.account', 'stellar.verify', 'stellar.transaction', 'stellar.stream',
   'stellar.streamPayment', 'stellar.payments', 'stellar.submit',
   'cache.connect', 'cache.get', 'cache.set', 'cache.clear', 'cache.verify',
-  'proof.invariants', 'proof.json', 'proof.pdf',
+  'proof.invariants', 'proof.json', 'proof.pdf', 'proof.handoff',
 ] as const;
 
 type FailureOperation = typeof FAILURE_OPERATIONS[number];

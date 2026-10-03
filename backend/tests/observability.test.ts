@@ -99,6 +99,7 @@ describe('MVP observability (#449)', () => {
       'payment.verify.rejected',
       'invoice.paid',
       'proof.downloaded',
+      'proof.handoff',
       'horizon.request.failed',
       'http.request.completed',
       'operation.failed',

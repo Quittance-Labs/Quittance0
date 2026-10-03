@@ -7,6 +7,7 @@ import {
 } from './api-runtime.js';
 import { resolveVerificationError } from './verification.js';
 import { resolveStellarNetwork } from '@shared/network';
+import { createBrowserRequestId } from './request-correlation-id.ts';
 
 /**
  * The API origin, resolved once per build.
@@ -34,18 +35,6 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
-
-
-function createBrowserRequestId(): string {
-  const bytes = new Uint8Array(8);
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(bytes);
-  } else {
-    for (let i = 0; i < 8; i += 1) bytes[i] = Math.floor(Math.random() * 256);
-  }
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  return `req-${hex}`;
-}
 
 api.interceptors.request.use((config) => {
   const headers = config.headers ?? {};

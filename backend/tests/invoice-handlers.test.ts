@@ -1256,6 +1256,7 @@ describe('shared invoice router', () => {
       'GET /invoices/:id/payment-info',
       'POST /invoices/:id/cancel',
       'POST /invoices/:id/verify',
+      'POST /invoices/:id/proof-handoff',
       'POST /invoices/:id/simulate-payment',
     ];
 
