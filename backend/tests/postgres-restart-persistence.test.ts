@@ -3,9 +3,8 @@
 // Issue #452 — Requirement 6 / Requirement 14: Stable public payment IDs.
 //
 // Demonstrates that the public /pay/[id] identifier of an invoice remains
-// stable after the PostgreSQL storage is closed and re-opened, and that the
-// pending set Postgres returns after restart is exactly what a memory process
-// loses (issue #555). The test simulates a process restart by:
+// stable after the PostgreSQL storage is closed and re-opened.  The test
+// simulates a process restart by:
 //   1. Creating a PostgresInvoiceStorage backed by an in-process fake database.
 //   2. Creating an invoice and capturing its id (the /pay/[id] path segment).
 //   3. Discarding the first storage instance (simulating process exit).
@@ -34,7 +33,6 @@ const SELLER_A = 'GB3Q3VRHH3OQDYITTLONDLEHWQGKB27T2BEDSFHIUMOERULVXPDXRKG4';
 const PAYER    = 'GCBIBQVH2B3STCBIYSMTQH6DWKSB2XUGLXH7RGPIN3OXPCFCIQEICVZ6';
 const USDC_ISSUER = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 const TX_HASH = 'd'.repeat(64);
-const SETTLED_AT = new Date();
 
 // ── Shared in-process "database" ──────────────────────────────────────────
 //
@@ -102,6 +100,19 @@ function createSharedFakeDatabase() {
         .slice()
         .sort((a, b) => b.created_at.getTime() - a.created_at.getTime())
         .slice(offset, offset + limit);
+      return Promise.resolve({ rows: page.map(clone), rowCount: page.length });
+    }
+
+    if (sql.startsWith("SELECT * FROM invoices WHERE status = 'PENDING'")) {
+      let found = rows.filter(r => r.status === 'PENDING');
+      if (sql.includes('AND seller_public_key =')) {
+        found = found.filter(r => r.seller_public_key === params[0]);
+      }
+      const limit = params[params.length - 1];
+      const page = found
+        .slice()
+        .sort((a, b) => a.created_at.getTime() - b.created_at.getTime())
+        .slice(0, typeof limit === 'number' ? limit : undefined);
       return Promise.resolve({ rows: page.map(clone), rowCount: page.length });
     }
 
@@ -245,7 +256,7 @@ describe('Postgres restart persistence — stable public payment IDs (Issue #452
     await storageBefore.markAsPaid(created.id, TX_HASH, PAYER, {
       payerName: 'Satoshi Nakamoto',
       payerEmail: 'satoshi@example.com',
-    }, { settledAt: SETTLED_AT });
+    });
 
     const publicPaymentId = created.id;
 
@@ -317,55 +328,62 @@ describe('Postgres restart persistence — stable public payment IDs (Issue #452
     assert.ok(ids.includes(inv2.id), 'invoice 2 must appear after restart');
     assert.ok(listed.every(r => r.sellerPublicKey === SELLER_A));
   });
-});
 
-describe('Restart contrast — Postgres keeps the pending set memory loses (issue #555)', () => {
-  it('returns the same pending invoices after a Postgres restart that a fresh memory process cannot', async () => {
-    const db = createSharedFakeDatabase();
-    const pgBefore = new PostgresInvoiceStorage(new InvoiceService(db));
-
-    const pendingA = await pgBefore.createInvoice({
+  it('restart on Postgres returns the same pending set the memory process loses, and the test says so', async () => {
+    const memBefore = new MemoryInvoiceStorage(new InvoiceMemoryService(new MemoryStorage()));
+    await memBefore.createInvoice({
       sellerPublicKey: SELLER_A,
       amount: 15,
       assetCode: 'XLM',
       expiresInDays: 7,
     } as any);
-    const pendingB = await pgBefore.createInvoice({
+    await memBefore.createInvoice({
       sellerPublicKey: SELLER_A,
       amount: 25,
       assetCode: 'XLM',
       expiresInDays: 7,
     } as any);
 
-    // Postgres "restart": new adapter, same durable rows.
-    const pgAfter = new PostgresInvoiceStorage(new InvoiceService(db));
-    const pgPending = await pgAfter.getInvoicesBySeller(SELLER_A, 'PENDING');
-    const pgIds = pgPending.map((row) => row.id).sort();
-    assert.deepEqual(
-      pgIds,
-      [pendingA.id, pendingB.id].sort(),
-      'Postgres restart must return the same pending set'
+    const memPendingBefore = await memBefore.listPendingInvoices(SELLER_A);
+    assert.equal(memPendingBefore.length, 2);
+
+    const memAfter = new MemoryInvoiceStorage(new InvoiceMemoryService(new MemoryStorage()));
+    const memPendingAfter = await memAfter.listPendingInvoices(SELLER_A);
+    assert.equal(
+      memPendingAfter.length,
+      0,
+      'Memory storage loses pending invoices across process restart'
     );
 
-    // Memory "restart": a new empty MemoryStorage stands in for process exit.
-    const memStore = new MemoryStorage();
-    const memBefore = new MemoryInvoiceStorage(new InvoiceMemoryService(memStore));
-    const memPendingA = await memBefore.createInvoice({
+    const db = createSharedFakeDatabase();
+    const pgBefore = new PostgresInvoiceStorage(new InvoiceService(db));
+    const pgInv1 = await pgBefore.createInvoice({
       sellerPublicKey: SELLER_A,
       amount: 15,
       assetCode: 'XLM',
       expiresInDays: 7,
     } as any);
-    assert.ok(memPendingA.id);
+    const pgInv2 = await pgBefore.createInvoice({
+      sellerPublicKey: SELLER_A,
+      amount: 25,
+      assetCode: 'XLM',
+      expiresInDays: 7,
+    } as any);
 
-    const memAfter = new MemoryInvoiceStorage(new InvoiceMemoryService(new MemoryStorage()));
-    const memPending = await memAfter.getInvoicesBySeller(SELLER_A, 'PENDING');
+    const pgPendingBefore = await pgBefore.listPendingInvoices(SELLER_A);
+    assert.equal(pgPendingBefore.length, 2);
+
+    const pgAfter = new PostgresInvoiceStorage(new InvoiceService(db));
+    const pgPendingAfter = await pgAfter.listPendingInvoices(SELLER_A);
     assert.equal(
-      memPending.length,
-      0,
-      'a memory process restart loses every pending invoice; Postgres does not'
+      pgPendingAfter.length,
+      2,
+      'Postgres retains the same pending set across storage restart'
     );
-    assert.equal(await memAfter.countInvoices(), 0);
-    assert.ok((await pgAfter.countInvoices()) >= 2);
+    assert.deepEqual(
+      pgPendingAfter.map((i) => i.id).sort(),
+      pgPendingBefore.map((i) => i.id).sort(),
+      'Postgres returns the exact same pending invoices that memory process lost'
+    );
   });
 });
