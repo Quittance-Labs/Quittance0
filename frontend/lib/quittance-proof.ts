@@ -1,5 +1,11 @@
 import { buildHorizonTxUrl } from './explorer-tx-link.ts';
 import { canonicalAmount } from './stroop-amount.js';
+import {
+  formatAssetLabel,
+  normalizeAssetCode,
+  NATIVE_ASSET_CODE,
+  resolveInvoiceAsset,
+} from '../../shared/assets.ts';
 
 export const QUITTANCE_PROOF_VERSION = 'quittance.v1';
 
@@ -266,10 +272,19 @@ export function buildQuittanceProof(
       txHash: txHash ?? '',
       memo: typeof input.memo === 'string' && input.memo !== '' ? input.memo : null,
       amount,
-      asset: {
-        code: typeof input.assetCode === 'string' && input.assetCode !== '' ? input.assetCode : 'XLM',
-        issuer: typeof input.assetIssuer === 'string' && input.assetIssuer !== '' ? input.assetIssuer : null,
-      },
+      asset: (() => {
+        const code =
+          typeof input.assetCode === 'string' && input.assetCode.trim() !== ''
+            ? normalizeAssetCode(input.assetCode)
+            : NATIVE_ASSET_CODE;
+        const issuer =
+          typeof input.assetIssuer === 'string' && input.assetIssuer.trim() !== ''
+            ? input.assetIssuer.trim()
+            : null;
+        // Use the verifier's identity rule: XLM is native only without an issuer.
+        const asset = resolveInvoiceAsset({ assetCode: code, assetIssuer: issuer ?? undefined });
+        return { code: asset.code, issuer: asset.kind === 'credit' ? asset.issuer : null };
+      })(),
       explorerUrl: txHash ? buildHorizonTxUrl(txHash, network) : null,
     },
     verification: settled
@@ -908,6 +923,16 @@ export function createQuittanceProofPdf(
   doc.setFontSize(14);
   doc.setTextColor(20, 83, 45);
   doc.text(`Amount: ${proof.payment.amount} ${proof.payment.asset.code}`, 14, 62);
+
+  const assetLabel = formatAssetLabel({
+    assetCode: proof.payment.asset.code,
+    assetIssuer: proof.payment.asset.issuer,
+  });
+  if (proof.payment.asset.issuer && assetLabel !== proof.payment.asset.code) {
+    // Keep look-alike issuers visible without crowding the amount line.
+    doc.setFontSize(8);
+    doc.text(`Issuer: ${proof.payment.asset.issuer}`, 14, 67);
+  }
 
   doc.setFontSize(10);
   doc.setTextColor(75, 85, 99);

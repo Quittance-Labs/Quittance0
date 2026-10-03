@@ -6,7 +6,13 @@
 // any QR generation library.
 
 import { Keypair } from '@stellar/stellar-sdk';
-import { formatStroops, parseStroops, STROOP_DECIMALS } from './safe-amount-compare';
+import {
+  formatStroops,
+  parseStroops,
+  STROOP_DECIMALS,
+  NATIVE_ASSET_CODE,
+  encodeSep0007PayUri,
+} from '../../../shared/assets';
 import { fitsStellarTextMemo } from '../../../shared/memo';
 import {
   passphraseFor,
@@ -22,7 +28,8 @@ export interface QrPaymentAsset {
   code: string;
   /**
    * Stellar public key of the asset issuer.
-   * Required for non-native assets and ignored for XLM.
+   * Required for non-native assets. XLM with an issuer is rejected, matching
+   * invoice creation, instead of silently requesting a different asset.
    */
   issuer?: string;
 }
@@ -134,17 +141,32 @@ export const formatQrPaymentPayload = (
     throw new Error('amount must be a positive number');
   }
 
-  const assetCode = asset?.code?.trim().toUpperCase() || 'XLM';
+  const assetCode = asset?.code?.trim().toUpperCase() || NATIVE_ASSET_CODE;
   const assetIssuer = asset?.issuer?.trim();
-  const isNative = assetCode === 'XLM';
+  const isNative = assetCode === NATIVE_ASSET_CODE;
 
   if (!isNative && !assetIssuer) {
     throw new Error(`asset issuer is required for ${assetCode}`);
   }
 
-  if (!isNative && assetIssuer && !isValidPublicKey(assetIssuer)) {
-    throw new Error('asset issuer must be a valid Stellar public key');
+  if (memo !== undefined && memo !== null && memo !== '') {
+    // The URI advertises memo_type=MEMO_TEXT, so refuse to encode a memo the
+    // chain could not carry as text rather than emitting a QR that submits
+    // and fails.
+    if (!fitsStellarTextMemo(memo)) {
+      throw new Error('memo exceeds the 28-byte Stellar text memo limit');
+    }
   }
+
+  // Shared SEP-0007 encoder owns amount canon + asset_code/issuer pairing so
+  // QR payloads stay aligned with verify fixtures (issue #447).
+  const uri = encodeSep0007PayUri({
+    destination,
+    amount: formatStroops(stroops),
+    assetCode,
+    assetIssuer,
+    memo: memo !== undefined && memo !== null && memo !== '' ? memo : undefined,
+  });
 
   const params: Record<string, string> = {
     destination,
@@ -157,12 +179,6 @@ export const formatQrPaymentPayload = (
   }
 
   if (memo !== undefined && memo !== null && memo !== '') {
-    // The URI advertises memo_type=MEMO_TEXT, so refuse to encode a memo the
-    // chain could not carry as text rather than emitting a QR that submits
-    // and fails.
-    if (!fitsStellarTextMemo(memo)) {
-      throw new Error('memo exceeds the 28-byte Stellar text memo limit');
-    }
     params.memo = memo;
     params.memo_type = 'MEMO_TEXT';
   }
@@ -194,13 +210,13 @@ export const formatQrPaymentPayload = (
     throw new Error('network is required when a network passphrase hint is supplied');
   }
 
-  const query = Object.entries(params)
-    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
-    .join('&');
+  // The shared encoder emits the asset/memo params; the network passphrase
+  // comes from the resolver above and always goes last (issue #557).
+  const payUri = params.network_passphrase
+    ? `${uri}&network_passphrase=${encodeURIComponent(params.network_passphrase)}`
+    : uri;
 
-  const uri = `web+stellar:pay?${query}`;
-
-  return { uri, params };
+  return { uri: payUri, params };
 };
 
 export default {

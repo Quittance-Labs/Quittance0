@@ -8,6 +8,7 @@ import { Clock, ExternalLink, Copy, Check, Mail, Download, X, Hash } from 'lucid
 import { copyToClipboard } from '@/lib/utils';
 import { toast } from 'sonner';
 import AssetLogo from './AssetLogo';
+import { formatAssetLabel } from '@/lib/asset-code-display';
 import { openInvoicePDF, shareInvoiceByEmail, emailPaymentProof } from '@/lib/export';
 import { canSendProofEmail } from '@/lib/mailto-delivery';
 import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
@@ -19,6 +20,7 @@ interface Invoice {
   id: string;
   amount: number;
   assetCode: string;
+  assetIssuer?: string;
   description?: string;
   customerName?: string;
   customerEmail?: string;
@@ -110,7 +112,11 @@ export default function InvoiceCard({ invoice, userWallet, onCancel }: InvoiceCa
   const headingId = `invoice-${invoice.id}-heading`;
   const emailReasonId = `invoice-${invoice.id}-email-reason`;
   const canEmail = canSendProofEmail(invoice as any);
-  const amountLabel = describeAmount(formatAmount(invoice.amount), invoice.assetCode);
+  const activeAssetLabel = formatAssetLabel({
+    assetCode: invoice.assetCode,
+    assetIssuer: invoice.assetIssuer,
+  });
+  const amountLabel = describeAmount(formatAmount(invoice.amount), activeAssetLabel);
 
   return (
     /*
@@ -125,7 +131,7 @@ export default function InvoiceCard({ invoice, userWallet, onCancel }: InvoiceCa
             {/* The heading already names the asset — the logo would repeat it. */}
             <AssetLogo code={invoice.assetCode || 'XLM'} size={24} showName={false} decorative />
             <h3 id={headingId} className="text-lg font-bold text-gray-900">
-              {formatAmount(invoice.amount)} <span className="text-cyan-700">{invoice.assetCode || 'XLM'}</span>
+              {formatAmount(invoice.amount)} <span className="text-cyan-700">{activeAssetLabel}</span>
               <span className="sr-only"> invoice</span>
             </h3>
           </div>

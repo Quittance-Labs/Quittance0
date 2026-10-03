@@ -5,6 +5,7 @@ import { canonicalAmount } from '@/lib/stroop-amount';
 import { describeAmount } from '@/lib/a11y';
 import { Check, Download, ExternalLink, FileText, Mail } from 'lucide-react';
 import AssetLogo from './AssetLogo';
+import { formatAssetLabel } from '@/lib/asset-code-display';
 import { openInvoicePDF, emailPaymentProof } from '@/lib/export';
 import { buildQuittanceProof, type QuittanceProof } from '@/lib/quittance-proof';
 import { reportProofHandoff } from '@/lib/proof-handoff';
@@ -80,7 +81,7 @@ ${warning ? `Warning: ${warning.title}. ${warning.body}` : ''}
 PAYMENT DETAILS
 ───────────────────────────────────────
 
-Amount Paid: ${displayAmount} ${displayAssetCode}
+Amount Paid: ${displayAmount} ${displayAssetLabel}
 ${invoice.description ? `Description: ${invoice.description}` : ''}
 ${invoice.customerName ? `Customer: ${invoice.customerName}` : ''}
 ${invoice.customerEmail ? `Email: ${invoice.customerEmail}` : ''}
@@ -137,7 +138,11 @@ Stellar Blockchain Payment System
   const proofRecipient = getProofMailtoRecipient(invoice as any);
   const emailReasonId = 'receipt-email-reason';
 
-  const amountLabel = describeAmount(displayAmount, displayAssetCode);
+  const displayAssetLabel = formatAssetLabel({
+    assetCode: displayAssetCode,
+    assetIssuer: proof ? proof.payment.asset.issuer ?? undefined : invoice.assetIssuer,
+  });
+  const amountLabel = describeAmount(displayAmount, displayAssetLabel);
 
   /*
    * The explorer link has to follow the network the payment was made on. A
@@ -196,7 +201,7 @@ Stellar Blockchain Payment System
                 {displayAmount}
               </p>
               <p className="text-lg font-semibold text-green-700 mt-1">
-                {displayAssetCode}
+                {displayAssetLabel}
               </p>
             </div>
           </div>
