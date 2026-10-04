@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction, RequestHandler } from 'express';
+import { Router, RequestHandler } from 'express';
 import { requestCorrelationMiddleware } from '../utils/request-correlation-id';
 import { createInvoiceHandlers, InvoiceHandlerOptions } from './invoice.handlers';
 import { createProofHandoffHandler } from './proof-handoff';
@@ -13,6 +13,9 @@ import {
 } from '../middleware/rate-limit';
 import { createInvoiceCeilingMiddleware } from '../middleware/invoice-ceiling';
 import { createVerifyCacheMiddleware, verificationCache } from '../middleware/verify-cache';
+import { optionalSellerSession, requireSellerSession } from '../middleware/seller-session';
+import { SellerSessionService, sellerSessionsFromEnvironment } from '../services/seller-session.service';
+import { createSellerAuthRouter } from './auth.routes';
 
 export interface InvoiceRouterOptions extends InvoiceHandlerOptions {
   enableRateLimiting?: boolean;
@@ -20,6 +23,8 @@ export interface InvoiceRouterOptions extends InvoiceHandlerOptions {
   enableCeilingCheck?: boolean;
   enableVerifyCache?: boolean;
   invoiceCeiling?: number;
+  /** Inject one authority for tests or an explicitly configured embedding. */
+  sellerSessions?: SellerSessionService;
 }
 
 /**
@@ -27,6 +32,8 @@ export interface InvoiceRouterOptions extends InvoiceHandlerOptions {
  *
  * Route list is kept identical between server.ts (Postgres) and
  * server-mvp.ts (in-memory):
+ *   GET    /auth/challenge
+ *   POST   /auth/session
  *   POST   /invoices
  *   GET    /invoices/stats
  *   GET    /invoices
@@ -39,9 +46,9 @@ export interface InvoiceRouterOptions extends InvoiceHandlerOptions {
  *
  * Edge middleware order (issue #450) — see also middleware/edge-config.ts:
  *   App:     body size → 413 PAYLOAD_TOO_LARGE
- *   create:  ceiling → create rate limits → handler
- *   list:    list rate limit → handler
- *   cancel:  auth pre-check → cancel rate limit → handler
+ *   create:  seller session → ceiling → create rate limits → handler
+ *   list:    seller session → list rate limit → handler
+ *   cancel:  seller session → cancel rate limit → handler
  *   verify:  concurrency lock → verify rate limits → replay cache → handler
  */
 export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
@@ -53,6 +60,14 @@ export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
     options.enableRateLimiting ??
     (process.env.ENABLE_RATE_LIMITING === 'true' || process.env.NODE_ENV === 'production');
 
+  // Resolve lazily so public checkout/health remain available without exposing
+  // seller data when auth configuration is missing. All modes share one nonce
+  // authority per router and the exact same route/middleware contract.
+  let sellerSessions = options.sellerSessions;
+  const sessionProvider = () => sellerSessions ??= sellerSessionsFromEnvironment();
+  const sellerAuth = requireSellerSession(sessionProvider);
+  router.use(createSellerAuthRouter(sessionProvider, enableRateLimiting));
+
   const enableConcurrencyLock =
     options.enableConcurrencyLock ??
     (process.env.ENABLE_VERIFY_CONCURRENCY_LOCK === 'true' || process.env.NODE_ENV === 'production');
@@ -63,8 +78,8 @@ export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
       process.env.NODE_ENV === 'production' ||
       options.invoiceCeiling !== undefined);
 
-  // create order: ceiling (503) → short/long rate limits (429) → handler
-  const createMiddlewares: RequestHandler[] = [];
+  // Authenticate before admission work or any write.
+  const createMiddlewares: RequestHandler[] = [sellerAuth];
   if (enableCeilingCheck && options.storage.countInvoices) {
     createMiddlewares.push(
       createInvoiceCeilingMiddleware(() => options.storage.countInvoices!(), {
@@ -77,44 +92,23 @@ export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
   }
 
   router.post('/invoices', ...createMiddlewares, handlers.createInvoice);
-  router.get('/invoices/stats', handlers.getStats);
+  router.get('/invoices/stats', sellerAuth, handlers.getStats);
 
-  const getInvoicesMiddlewares: RequestHandler[] = [];
+  const getInvoicesMiddlewares: RequestHandler[] = [sellerAuth];
   if (enableRateLimiting) {
     getInvoicesMiddlewares.push(createGetInvoicesRateLimiter());
   }
   router.get('/invoices', ...getInvoicesMiddlewares, handlers.getInvoices);
 
-  router.get('/invoices/:id', handlers.getInvoice);
+  router.get('/invoices/:id', optionalSellerSession(sessionProvider), handlers.getInvoice);
 
   // GET /invoices/:id/events - seller-scoped audit feed (issue #515)
-  router.get('/invoices/:id/events', handlers.getPaymentEvents);
+  router.get('/invoices/:id/events', sellerAuth, handlers.getPaymentEvents);
 
   // GET /invoices/:id/payment-info - Payment info (no rate limit, needed for checkout)
   router.get('/invoices/:id/payment-info', handlers.getPaymentInfo);
 
-  const cancelMiddlewares: RequestHandler[] = [];
-  const cancelAuthPreCheck: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
-    const requireSig =
-      options.requireCancelSignature ??
-      (process.env.REQUIRE_CANCEL_SIGNATURE === 'true' ||
-        process.env.NODE_ENV === 'production');
-    if (requireSig) {
-      // Body-only contract (issue #517): the handler rejects query/header
-      // transports itself; this pre-check only enforces signature presence.
-      const sellerKey = req.body?.sellerPublicKey;
-      const signature = req.body?.signature;
-      if (!sellerKey || !signature) {
-        return res.status(401).json({
-          success: false,
-          code: 'UNAUTHORIZED',
-          error: 'Cancellation requires seller proof of ownership (signature)',
-        });
-      }
-    }
-    next();
-  };
-  cancelMiddlewares.push(cancelAuthPreCheck);
+  const cancelMiddlewares: RequestHandler[] = [sellerAuth];
   if (enableRateLimiting) {
     cancelMiddlewares.push(createCancelInvoiceRateLimiter());
   }
