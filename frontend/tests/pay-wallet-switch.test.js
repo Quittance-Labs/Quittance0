@@ -195,3 +195,98 @@ test('reconnecting the same key resumes a clean session for the invoice', async 
     unmount();
   }
 });
+
+/** Keep one real API read pending while the mounted page changes session. */
+function deferWalletReturnLoad(stage) {
+  primePayPage();
+  bundle.resetCalls();
+  window.sessionStorage.clear();
+  walletOnTestnet(ALICE);
+  globalThis.__PAY_PAGE_SEARCH__ = `tx=${TX_HASH}`;
+
+  let release;
+  const response = new Promise((resolve) => { release = resolve; });
+  const invoice = pendingInvoice();
+  const path = `/invoices/${invoice.id}${stage === 'payment-info' ? '/payment-info' : ''}`;
+  const payload = stage === 'payment-info'
+    ? { data: { paymentUrl: `https://quittance.test/pay/${invoice.id}` } }
+    : { data: invoice };
+  bundle.setResponse(path, response);
+
+  return () => release(payload);
+}
+
+function verifyRequests() {
+  return bundle.getCalls().filter((call) => call.startsWith('POST ') && call.endsWith('/verify'));
+}
+
+for (const stage of ['invoice', 'payment-info']) {
+  for (const cancellation of ['unmount', 'wallet switch', 'disconnect']) {
+    test(`wallet return does not verify after ${cancellation} while ${stage} is loading`, async () => {
+      const releaseLoad = deferWalletReturnLoad(stage);
+      const page = await render(React.createElement(bundle.PayPage));
+      let mounted = true;
+      try {
+        assert.deepEqual(verifyRequests(), [], 'verification waits for the initial load');
+
+        if (cancellation === 'unmount') {
+          page.unmount();
+          mounted = false;
+        } else {
+          await React.act(async () => {
+            if (cancellation === 'wallet switch') walletOnTestnet(BOB);
+            else setWallet({});
+          });
+        }
+
+        await React.act(async () => {
+          releaseLoad();
+          await settle();
+        });
+
+        assert.deepEqual(verifyRequests(), [], 'the abandoned return must not start a verify POST');
+        assert.equal(
+          window.sessionStorage.getItem('quittance.pay-session.v1'),
+          null,
+          'the abandoned return must not persist a verification session'
+        );
+      } finally {
+        if (mounted) page.unmount();
+        await React.act(async () => {
+          releaseLoad();
+          await settle();
+        });
+        delete globalThis.__PAY_PAGE_SEARCH__;
+        window.sessionStorage.clear();
+      }
+    });
+  }
+
+  test(`an active wallet return verifies once after delayed ${stage} and reaches PAID`, async () => {
+    const releaseLoad = deferWalletReturnLoad(stage);
+    const { container, unmount } = await render(React.createElement(bundle.PayPage));
+    try {
+      assert.deepEqual(verifyRequests(), [], 'verification waits for the initial load');
+      primeInvoiceAsPaid();
+      await React.act(async () => {
+        releaseLoad();
+        await settle();
+      });
+
+      assert.deepEqual(verifyRequests(), ['POST /invoices/inv_a11y_fixture/verify']);
+      assert.match(container.textContent, /Payment confirmed/i);
+      assert.deepEqual(JSON.parse(window.sessionStorage.getItem('quittance.pay-session.v1')), {
+        invoiceId: 'inv_a11y_fixture',
+        txHash: TX_HASH,
+      });
+    } finally {
+      unmount();
+      await React.act(async () => {
+        releaseLoad();
+        await settle();
+      });
+      delete globalThis.__PAY_PAGE_SEARCH__;
+      window.sessionStorage.clear();
+    }
+  });
+}

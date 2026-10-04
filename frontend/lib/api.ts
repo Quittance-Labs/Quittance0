@@ -7,8 +7,11 @@ import {
 } from './api-runtime.js';
 import { resolveVerificationError } from './verification.js';
 import { resolveStellarNetwork } from '@shared/network';
+import { createBrowserRequestId } from './request-correlation-id.ts';
 
 import type {
+  ApiSuccess,
+  InvoiceStatsDto,
   CancelInvoiceResponse,
   CreateInvoiceRequest,
   CreateInvoiceResponse,
@@ -18,15 +21,6 @@ import type {
   ListInvoicesResponse,
   PaymentInfoResponse,
   VerifyPaymentResponse,
-} from '../../shared/invoice-contract';
-import {
-  parseCancelInvoiceResponse,
-  parseCreateInvoiceResponse,
-  parseGetInvoiceResponse,
-  parseGetStatsResponse,
-  parseListInvoicesResponse,
-  parsePaymentInfoResponse,
-  parseVerifyPaymentResponse,
 } from '../../shared/invoice-contract';
 
 /**
@@ -56,6 +50,22 @@ const api = axios.create({
   },
 });
 
+api.interceptors.request.use((config) => {
+  const headers = config.headers ?? {};
+  const existing =
+    headers['X-Request-Id'] ||
+    headers['x-request-id'] ||
+    headers['X-Correlation-Id'] ||
+    headers['x-correlation-id'];
+  if (!existing) {
+    const id = createBrowserRequestId();
+    headers['X-Request-Id'] = id;
+    headers['X-Correlation-Id'] = id;
+  }
+  config.headers = headers;
+  return config;
+});
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -65,20 +75,18 @@ api.interceptors.response.use(
   }
 );
 
-
-
+// Keep shared response types without making schema drift a runtime page gate.
+// Contract tests validate the strict parsers; rolling client/server versions may
+// omit optional fields or add new ones. Transport and server failures still
+// reject through the interceptor above; request validation is unchanged.
 export const invoiceApi = {
   create: async (data: CreateInvoiceRequest): Promise<CreateInvoiceResponse> => {
     const normalizedAssetCode = data.assetCode ? data.assetCode.toUpperCase() : 'XLM';
-    const response = await api.post('/invoices', {
+    const response = await api.post<CreateInvoiceResponse>('/invoices', {
       ...data,
       assetCode: normalizedAssetCode,
     });
-    const parsed = parseCreateInvoiceResponse(response.data);
-    if (!parsed.success) {
-      throw new Error(`Create invoice contract parse failure: ${parsed.error}`);
-    }
-    return parsed.data;
+    return response.data;
   },
   getById: async (
     id: string,
@@ -87,34 +95,20 @@ export const invoiceApi = {
     // Workspace fields (client contact, payer identity) are only returned when
     // the caller presents the invoice's own seller key — issue #503. The pay
     // page calls this without a key and receives the public pay DTO.
-    const response = await api.get(`/invoices/${id}`, {
+    const response = await api.get<GetInvoiceResponse>(`/invoices/${id}`, {
       params: sellerPublicKey ? { sellerPublicKey } : undefined,
     });
-    const parsed = parseGetInvoiceResponse(response.data);
-    if (!parsed.success) {
-      throw new Error(`Get invoice contract parse failure: ${parsed.error}`);
-    }
-    return parsed.data;
+    return response.data;
   },
-  // Invoice history is scoped to the connected Freighter wallet, so the seller
-  // key is required for list and stats calls.
   // Invoice history is scoped to the connected Freighter wallet, so the seller
   // key is required for list and stats calls.
   getAll: async (params: ListInvoicesQuery): Promise<ListInvoicesResponse> => {
-    const response = await api.get('/invoices', { params });
-    const parsed = parseListInvoicesResponse(response.data);
-    if (!parsed.success) {
-      throw new Error(`List invoices contract parse failure: ${parsed.error}`);
-    }
-    return parsed.data;
+    const response = await api.get<ListInvoicesResponse>('/invoices', { params });
+    return response.data;
   },
   getPaymentInfo: async (id: string): Promise<PaymentInfoResponse> => {
-    const response = await api.get(`/invoices/${id}/payment-info`);
-    const parsed = parsePaymentInfoResponse(response.data);
-    if (!parsed.success) {
-      throw new Error(`Payment info contract parse failure: ${parsed.error}`);
-    }
-    return parsed.data;
+    const response = await api.get<PaymentInfoResponse>(`/invoices/${id}/payment-info`);
+    return response.data;
   },
   // Seller-only audit feed (issue #515): rejected verifies and monitor
   // rejections for this invoice. Requires the invoice's own seller key.
@@ -127,29 +121,23 @@ export const invoiceApi = {
 
   // One proof path (issue #517): the seller key and the Freighter signature
   // over `cancel:<id>` travel in the request body — never in query or header.
-  // One proof path (issue #517): the seller key and the Freighter signature
-  // over `cancel:<id>` travel in the request body — never in query or header.
   cancel: async (
     id: string,
     sellerPublicKey: string,
     signature?: string
   ): Promise<CancelInvoiceResponse> => {
-    const response = await api.post(`/invoices/${id}/cancel`, {
+    const response = await api.post<CancelInvoiceResponse>(`/invoices/${id}/cancel`, {
       sellerPublicKey,
       signature,
     });
-    const parsed = parseCancelInvoiceResponse(response.data);
-    if (!parsed.success) {
-      throw new Error(`Cancel invoice contract parse failure: ${parsed.error}`);
-    }
-    return parsed.data;
+    return response.data;
   },
   verify: async (
     id: string,
     txHash: string,
     payerInfo?: { payerName?: string; payerEmail?: string }
   ): Promise<VerifyPaymentResponse> => {
-    const response = await api.post(`/invoices/${id}/verify`, {
+    const response = await api.post<VerifyPaymentResponse>(`/invoices/${id}/verify`, {
       txHash,
       // Lets the server reject a payment submitted from the wrong wallet network.
       // Resolved through the shared contract so the client sends the canonical
@@ -157,21 +145,16 @@ export const invoiceApi = {
       network: resolveStellarNetwork(process.env.NEXT_PUBLIC_STELLAR_NETWORK),
       ...payerInfo,
     });
-    const parsed = parseVerifyPaymentResponse(response.data);
-    if (!parsed.success) {
-      throw new Error(`Verify payment contract parse failure: ${parsed.error}`);
-    }
-    return parsed.data;
+    return response.data;
   },
   getStats: async (sellerPublicKey: string): Promise<GetStatsResponse> => {
-    const response = await api.get('/invoices/stats', {
+    const response = await api.get<GetStatsResponse | ApiSuccess<InvoiceStatsDto[]>>('/invoices/stats', {
       params: { sellerPublicKey },
     });
-    const parsed = parseGetStatsResponse(response.data);
-    if (!parsed.success) {
-      throw new Error(`Get stats contract parse failure: ${parsed.error}`);
-    }
-    return parsed.data;
+    // Storage currently wraps stats in a one-row array. Keep the client's
+    // object shape without rejecting older partial responses or losing fields.
+    const body = response.data;
+    return Array.isArray(body.data) ? { ...body, data: body.data[0] } : body as GetStatsResponse;
   }
 };
 

@@ -97,6 +97,8 @@ export interface CreateInvoiceResult {
   stellarQrCode?: string | null;
   stellarUri?: string | null;
   stellarQrEncodesUri?: boolean;
+  copyValue?: string | null;
+  networkPassphrase?: string | null;
 }
 
 /** Complete response envelope for invoice creation. */
@@ -113,6 +115,8 @@ export type GetInvoiceResponse = ApiSuccess<InvoiceDto>;
 /** Query parameters for listing seller invoices. */
 export interface ListInvoicesQuery {
   sellerPublicKey: string;
+  /** Search term supported by the current seller dashboard. */
+  q?: string;
   status?: InvoiceStatus | string;
   limit?: number;
   offset?: number;
@@ -131,6 +135,8 @@ export interface PaymentInfoResult {
   stellarQrCode?: string | null;
   stellarUri?: string | null;
   stellarQrEncodesUri?: boolean;
+  copyValue?: string | null;
+  networkPassphrase?: string | null;
 }
 
 /** Complete response envelope for invoice payment instructions. */
@@ -342,6 +348,9 @@ export function parseCreateInvoiceResponse(
         qrCode: typeof raw.qrCode === 'string' ? raw.qrCode : null,
         stellarQrCode: typeof raw.stellarQrCode === 'string' ? raw.stellarQrCode : null,
         stellarUri: typeof raw.stellarUri === 'string' ? raw.stellarUri : null,
+        copyValue: typeof raw.copyValue === 'string' ? raw.copyValue : null,
+        networkPassphrase:
+          typeof raw.networkPassphrase === 'string' ? raw.networkPassphrase : null,
         stellarQrEncodesUri:
           typeof raw.stellarQrEncodesUri === 'boolean'
             ? raw.stellarQrEncodesUri
@@ -477,6 +486,9 @@ export function parsePaymentInfoResponse(
         qrCode: typeof raw.qrCode === 'string' ? raw.qrCode : null,
         stellarQrCode: typeof raw.stellarQrCode === 'string' ? raw.stellarQrCode : null,
         stellarUri: typeof raw.stellarUri === 'string' ? raw.stellarUri : null,
+        copyValue: typeof raw.copyValue === 'string' ? raw.copyValue : null,
+        networkPassphrase:
+          typeof raw.networkPassphrase === 'string' ? raw.networkPassphrase : null,
         stellarQrEncodesUri:
           typeof raw.stellarQrEncodesUri === 'boolean'
             ? raw.stellarQrEncodesUri
@@ -691,6 +703,12 @@ export const INVOICE_OPENAPI_SPEC = {
             name: 'sellerPublicKey',
             in: 'query',
             required: true,
+            schema: { type: 'string' },
+          },
+          {
+            name: 'q',
+            in: 'query',
+            required: false,
             schema: { type: 'string' },
           },
           {
@@ -1062,6 +1080,8 @@ export const INVOICE_OPENAPI_SPEC = {
               stellarQrCode: { type: 'string', nullable: true },
               stellarUri: { type: 'string', nullable: true },
               stellarQrEncodesUri: { type: 'boolean' },
+              copyValue: { type: 'string', nullable: true },
+              networkPassphrase: { type: 'string', nullable: true },
             },
           },
         },
@@ -1109,6 +1129,8 @@ export const INVOICE_OPENAPI_SPEC = {
               stellarQrCode: { type: 'string', nullable: true },
               stellarUri: { type: 'string', nullable: true },
               stellarQrEncodesUri: { type: 'boolean' },
+              copyValue: { type: 'string', nullable: true },
+              networkPassphrase: { type: 'string', nullable: true },
             },
           },
         },

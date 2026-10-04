@@ -1,3 +1,4 @@
+import { emitOperationalFailure } from '../observability/log-events';
 import { Request, Response } from 'express';
 import stellarService from '../services/stellar.service';
 import { SELLER_PUBLIC_KEY, STELLAR_NETWORK } from '../config/stellar';
@@ -24,7 +25,7 @@ class StellarController {
         },
       });
     } catch (error: any) {
-      console.error('Get account info error:', error);
+      emitOperationalFailure('stellar.account');
       res.status(500).json({
         success: false,
         error: error.message || 'Failed to get account info',
@@ -48,7 +49,7 @@ class StellarController {
         data: payments,
       });
     } catch (error: any) {
-      console.error('Get payments error:', error);
+      emitOperationalFailure('stellar.payments');
       res.status(500).json({
         success: false,
         error: error.message || 'Failed to get payments',
@@ -70,7 +71,7 @@ class StellarController {
         data: transaction,
       });
     } catch (error: any) {
-      console.error('Get transaction error:', error);
+      emitOperationalFailure('stellar.transaction');
       res.status(500).json({
         success: false,
         error: error.message || 'Failed to get transaction',
@@ -119,7 +120,7 @@ class StellarController {
         },
       });
     } catch (error: any) {
-      console.error('Verify payment error:', error);
+      emitOperationalFailure('stellar.verify');
       res.status(500).json({
         success: false,
         error: error.message || 'Failed to verify payment',

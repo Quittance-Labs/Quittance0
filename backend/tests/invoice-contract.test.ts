@@ -27,6 +27,64 @@ import {
 import { createInvoiceRouter } from '../src/routes/invoice.routes';
 import { MemoryInvoiceStorage } from '../src/storage/memory-invoice-storage';
 
+describe('Pay-link artifact response contract', () => {
+  const invoice = {
+    id: 'invoice-artifact-contract',
+    sellerPublicKey: `G${'A'.repeat(55)}`,
+    amount: 1,
+    assetCode: 'XLM',
+    memo: 'ARTIFACT',
+    status: 'PENDING',
+    createdAt: '2026-10-04T00:00:00.000Z',
+    expiresAt: '2026-10-05T00:00:00.000Z',
+  };
+  const payload = {
+    invoice,
+    paymentAvailable: true,
+    paymentUrl: 'https://example.test/pay/invoice-artifact-contract',
+    copyValue: 'web+stellar:pay?destination=example',
+    networkPassphrase: 'Test SDF Network ; September 2015',
+  };
+
+  for (const [name, parse] of [
+    ['create', parseCreateInvoiceResponse],
+    ['payment-info', parsePaymentInfoResponse],
+  ] as const) {
+    it(`${name} retains the copy value and network passphrase`, () => {
+      const parsed = parse({ success: true, data: payload });
+      assert.equal(parsed.success, true);
+      if (parsed.success) {
+        assert.equal(parsed.data.data.copyValue, payload.copyValue);
+        assert.equal(parsed.data.data.networkPassphrase, payload.networkPassphrase);
+      }
+    });
+
+    it(`${name} accepts absent or null optional artifact fields`, () => {
+      for (const value of [undefined, null]) {
+        const parsed = parse({
+          success: true,
+          data: { ...payload, copyValue: value, networkPassphrase: value },
+        });
+        assert.equal(parsed.success, true);
+        if (parsed.success) {
+          assert.equal(parsed.data.data.copyValue, null);
+          assert.equal(parsed.data.data.networkPassphrase, null);
+        }
+      }
+    });
+  }
+
+  it('publishes the artifact fields in both response schemas', () => {
+    for (const schema of [
+      INVOICE_OPENAPI_SPEC.components.schemas.CreateInvoiceResponse,
+      INVOICE_OPENAPI_SPEC.components.schemas.PaymentInfoResponse,
+    ]) {
+      assert.deepEqual(schema.properties.data.properties.copyValue, { type: 'string', nullable: true });
+      assert.deepEqual(schema.properties.data.properties.networkPassphrase, { type: 'string', nullable: true });
+    }
+  });
+});
+
 describe('Statistics response contract', () => {
   const stats = {
     total_invoices: 4,
