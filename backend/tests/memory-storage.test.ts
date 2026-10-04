@@ -188,8 +188,15 @@ describe('MemoryStorage parity with Postgres invoice columns', () => {
     const cancelled = store.cancelInvoice(pending.id, sellerA);
     assert.equal(cancelled?.status, 'CANCELLED');
 
-    const alreadyCancelled = store.cancelInvoice(pending.id, sellerA);
-    assert.equal(alreadyCancelled, undefined);
+    assert.throws(
+      () => store.cancelInvoice(pending.id, sellerA),
+      {
+        name: 'InvoiceTerminalConflictError',
+        code: 'INVOICE_ALREADY_CANCELLED',
+        currentStatus: 'CANCELLED',
+      }
+    );
+    assert.equal(store.getInvoiceById(pending.id)?.status, 'CANCELLED');
   });
 
   it('cancelInvoice throws unauthorized when sellerPublicKey does not match', () => {

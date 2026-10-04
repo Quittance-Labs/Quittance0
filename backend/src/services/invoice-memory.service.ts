@@ -234,9 +234,7 @@ export class InvoiceMemoryService {
     if (sellerPublicKey && existing.sellerPublicKey !== sellerPublicKey) {
       throw new Error('Unauthorized: only the seller can cancel this invoice');
     }
-    if (existing.status !== 'PENDING') {
-      throw new IllegalStateTransitionError(existing.status, 'CANCELLED');
-    }
+    // MemoryStorage throws InvoiceTerminalConflictError when cancel loses the race.
     const updated = this.storage.cancelInvoice(invoiceId, sellerPublicKey);
     if (!updated) {
       throw new Error('Invoice not found or already processed');

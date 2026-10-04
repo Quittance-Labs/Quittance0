@@ -118,6 +118,7 @@ test('the Freighter payment gate opens for a connected wallet on the expected ne
 test('an invoice that is already settled starts in its terminal state', () => {
   assert.equal(initialPaymentState(paid).status, PAY_STATES.PAID);
   assert.equal(initialPaymentState(expired).status, PAY_STATES.EXPIRED);
+  assert.equal(initialPaymentState({ status: 'CANCELLED' }).status, PAY_STATES.CANCELLED);
   assert.equal(initialPaymentState(pending).status, PAY_STATES.IDLE);
   assert.equal(initialPaymentState(null).status, PAY_STATES.IDLE);
 });
@@ -130,8 +131,8 @@ test('the initial state carries an already recorded transaction hash', () => {
 test('stateForStatus only forces a state for settled invoices', () => {
   assert.equal(stateForStatus('PAID'), PAY_STATES.PAID);
   assert.equal(stateForStatus('EXPIRED'), PAY_STATES.EXPIRED);
+  assert.equal(stateForStatus('CANCELLED'), PAY_STATES.CANCELLED);
   assert.equal(stateForStatus('PENDING'), null);
-  assert.equal(stateForStatus('CANCELLED'), null);
 });
 
 // ------------------------------------------------------------- happy paths
@@ -395,8 +396,13 @@ test('the busy states are exactly the two with a request in flight', () => {
   }
 });
 
-test('the result states are the three that carry an answer', () => {
-  const results = [PAY_STATES.PAID, PAY_STATES.EXPIRED, PAY_STATES.ERROR];
+test('the result states are the answers worth moving focus to', () => {
+  const results = [
+    PAY_STATES.PAID,
+    PAY_STATES.EXPIRED,
+    PAY_STATES.CANCELLED,
+    PAY_STATES.ERROR,
+  ];
 
   for (const status of Object.values(PAY_STATES)) {
     assert.equal(
@@ -529,4 +535,18 @@ test('terminal states are never reset by a wallet change', () => {
       `${status} must survive a disconnect`
     );
   }
+});
+
+test('POLL_RESULT forces cancelled when storage committed CANCELLED (issue #558)', () => {
+  let state = idleOn(pending);
+  state = paymentReducer(state, { type: 'PAY_STARTED' });
+  assert.equal(state.status, PAY_STATES.PAYING);
+  state = paymentReducer(state, {
+    type: 'POLL_RESULT',
+    invoice: { status: 'CANCELLED' },
+  });
+  assert.equal(state.status, PAY_STATES.CANCELLED);
+  // Terminal: a later VERIFY_FAILED must not reopen the page.
+  const stuck = paymentReducer(state, { type: 'VERIFY_FAILED', error: 'nope' });
+  assert.equal(stuck.status, PAY_STATES.CANCELLED);
 });

@@ -16,11 +16,12 @@
  *     │                                                                  │
  *     ◀──────────────────────── RESET ───────────────────────────────────┘
  *
- *   Any state ──INVOICE_LOADED / POLL_RESULT (PAID)────▶ paid
- *   Any state ──INVOICE_LOADED / POLL_RESULT (EXPIRED)─▶ expired
+ *   Any state ──INVOICE_LOADED / POLL_RESULT (PAID)──────▶ paid
+ *   Any state ──INVOICE_LOADED / POLL_RESULT (EXPIRED)───▶ expired
+ *   Any state ──INVOICE_LOADED / POLL_RESULT (CANCELLED)─▶ cancelled
  *
- * `paid` and `expired` are terminal: the ledger has decided, and no local event
- * moves the page back out of them.
+ * `paid`, `expired`, and `cancelled` are terminal: storage committed one
+ * outcome, and no local event moves the page back out of them (issue #558).
  */
 
 /** Every state the pay page can be in. */
@@ -31,9 +32,14 @@ const PAY_STATES = Object.freeze({
   PAID: 'paid',
   ERROR: 'error',
   EXPIRED: 'expired',
+  CANCELLED: 'cancelled',
 });
 
-const TERMINAL_STATES = Object.freeze([PAY_STATES.PAID, PAY_STATES.EXPIRED]);
+const TERMINAL_STATES = Object.freeze([
+  PAY_STATES.PAID,
+  PAY_STATES.EXPIRED,
+  PAY_STATES.CANCELLED,
+]);
 const { isTerminalPayState } = require('./pay-terminal-guard.ts');
 const { effectiveInvoiceStatus, hasInvoiceExpired } = require('./invoice-lifecycle');
 const { walletSessionChanged, walletSessionGate } = require('./wallet-session');
@@ -81,7 +87,9 @@ function getPayPageWalletGate(invoice, session, expectedNetwork, now) {
       title: 'Payment unavailable',
       message: view.expired
         ? 'This invoice has expired and can no longer be paid.'
-        : 'This invoice is not available for payment.',
+        : view.cancelled
+          ? 'This invoice was cancelled and can no longer be paid.'
+          : 'This invoice is not available for payment.',
       action: 'none',
     };
   }
@@ -93,6 +101,7 @@ function getPayPageWalletGate(invoice, session, expectedNetwork, now) {
 function stateForStatus(statusOrInvoice, now) {
   const status = effectiveInvoiceStatus(asInvoice(statusOrInvoice), now);
   if (status === 'PAID') return PAY_STATES.PAID;
+  if (status === 'CANCELLED') return PAY_STATES.CANCELLED;
   if (isExpiredInvoice(status)) return PAY_STATES.EXPIRED;
   return null;
 }
@@ -295,6 +304,7 @@ function isResultState(state) {
   return (
     state?.status === PAY_STATES.PAID ||
     state?.status === PAY_STATES.EXPIRED ||
+    state?.status === PAY_STATES.CANCELLED ||
     state?.status === PAY_STATES.ERROR
   );
 }
@@ -338,6 +348,8 @@ function describePaymentState(state) {
       return 'Payment confirmed. Your payment proof is ready to download.';
     case PAY_STATES.EXPIRED:
       return 'This invoice has expired and can no longer be paid.';
+    case PAY_STATES.CANCELLED:
+      return 'This invoice was cancelled and can no longer be paid.';
     case PAY_STATES.ERROR:
       return state?.error
         ? `Payment could not be completed. ${asSentence(state.error)}`

@@ -13,6 +13,7 @@ import {
 } from '../domain/invoice-lifecycle';
 import {
   SettlementTimeUnavailableError,
+  cancelConflictForStatus,
   type LatePaymentWarningCode,
   type SettlementContext,
 } from '../domain/invoice-settlement';
@@ -390,21 +391,18 @@ export class InvoiceService {
       if (existing.rows.length === 0) {
         throw new Error('Invoice not found');
       }
-      const current = existing.rows[0];
+      const row = existing.rows[0];
       if (
         sellerPublicKey &&
-        current.status === 'PENDING' &&
-        current.seller_public_key !== sellerPublicKey
+        row.seller_public_key !== sellerPublicKey
       ) {
         throw new Error('Unauthorized: only the seller can cancel this invoice');
       }
-      if (current.status !== 'PENDING') {
-        throw new IllegalStateTransitionError(
-          current.status as 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED',
-          'CANCELLED'
-        );
-      }
-      throw new Error('Invoice not found or already processed');
+      // Another terminal outcome already won — do not clear payment_tx_hash.
+      throw cancelConflictForStatus(
+        row.status,
+        row.payment_tx_hash ?? undefined
+      );
     }
 
     return this.mapRowToInvoice(result.rows[0]);

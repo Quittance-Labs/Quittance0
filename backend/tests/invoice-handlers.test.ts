@@ -694,7 +694,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
             body: { txHash: TX_HASH, payerEmail: 'percy@payer.example' },
           })
         );
-        assert.equal(res.statusCode, 200);
+        assert.equal(res.statusCode, 200, JSON.stringify(res.body));
         for (const key of PII_KEYS) {
           assert.equal(res.body.data[key], undefined, `verify response leaked ${key}`);
         }
@@ -1004,8 +1004,10 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
         handlers().cancelInvoice,
         createReq({ params: { id: invoice.id }, body: { sellerPublicKey: SELLER_A } })
       );
-      assert.equal(again.statusCode, 400);
+      assert.equal(again.statusCode, 409, JSON.stringify(again.body));
       assert.equal(again.body.success, false);
+      assert.equal(again.body.code, 'INVOICE_ALREADY_CANCELLED');
+      assert.equal(again.body.status, 'CANCELLED');
     });
 
     it('cancels a pending invoice when sellerPublicKey matches', async () => {
@@ -1057,10 +1059,10 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
         })
       );
       assert.equal(res.statusCode, 400);
-      assert.match(res.body.error, /conflicting/i);
+      assert.match(res.body.error, /query and header keys are not accepted/i);
     });
 
-    it('rejects cancel when body and header seller keys disagree (400)', async () => {
+    it('rejects cancel when a header seller key is present (400)', async () => {
       const invoice = await createInvoice();
 
       const res = await call(
@@ -1072,7 +1074,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
         })
       );
       assert.equal(res.statusCode, 400);
-      assert.match(res.body.error, /conflicting/i);
+      assert.match(res.body.error, /query and header keys are not accepted/i);
     });
 
     it('rejects a query-only seller key — the body is the one transport (400)', async () => {
@@ -1085,7 +1087,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       assert.equal(res.statusCode, 400);
     });
 
-    it('tolerates a duplicate query key that agrees with the body', async () => {
+    it('rejects a duplicate query key even when it agrees with the body (issue #558)', async () => {
       const invoice = await createInvoice();
 
       const res = await call(
@@ -1096,8 +1098,10 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
           query: { sellerPublicKey: SELLER_A },
         })
       );
-      assert.equal(res.statusCode, 200);
-      assert.equal(res.body.data.status, 'CANCELLED');
+      assert.equal(res.statusCode, 400);
+      assert.match(res.body.error, /query and header keys are not accepted/i);
+      const stored = await storage.getInvoiceById(invoice.id);
+      assert.equal(stored?.status, 'PENDING');
     });
 
     it('requires a signature when requireCancelSignature is set (401)', async () => {

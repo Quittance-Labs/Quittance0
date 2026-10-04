@@ -89,3 +89,108 @@ export function settlementFieldsForInvoice(
     latePaymentWarningCode: afterExpiry ? 'PAYMENT_RECEIVED_AFTER_EXPIRY' : undefined,
   };
 }
+
+/** Outcomes cancel / verify / monitor may commit as the invoice's terminal status. */
+export type TerminalOutcome = 'PAID' | 'CANCELLED';
+
+/** Stable codes when a terminal commit loses the race or is otherwise illegal. */
+export type TerminalConflictCode =
+  | 'INVOICE_ALREADY_PAID'
+  | 'INVOICE_ALREADY_CANCELLED'
+  | 'INVOICE_EXPIRED'
+  | 'INVOICE_NOT_PENDING';
+
+const TERMINAL_CONFLICT_MESSAGES: Record<TerminalConflictCode, string> = {
+  INVOICE_ALREADY_PAID: 'Invoice has already been paid',
+  INVOICE_ALREADY_CANCELLED: 'Invoice has already been cancelled',
+  INVOICE_EXPIRED: 'Invoice has expired and can no longer accept payment',
+  INVOICE_NOT_PENDING: 'Invoice is not pending',
+};
+
+/**
+ * Legal status transitions that decide a terminal invoice outcome.
+ *
+ * PAID is hard-terminal: nothing leaves it (idempotent PAID replay is not a
+ * transition). CANCELLED and EXPIRED may still settle to PAID when an exact
+ * on-chain payment is attributed — that is the late-settlement path from
+ * LATE_PAYMENT_POLICY, not a concurrent cancel overwrite. Cancel itself is
+ * PENDING → CANCELLED only.
+ */
+export const LEGAL_TERMINAL_TRANSITIONS: ReadonlyArray<readonly [InvoiceStatus, InvoiceStatus]> = [
+  ['PENDING', 'CANCELLED'],
+  ['PENDING', 'PAID'],
+  ['EXPIRED', 'PAID'],
+  ['CANCELLED', 'PAID'],
+];
+
+export function isLegalTerminalTransition(from: InvoiceStatus, to: InvoiceStatus): boolean {
+  if (from === to && to === 'PAID') {
+    // Idempotent replay of the same paid invoice is allowed at the claim layer;
+    // it is not a storage status rewrite.
+    return false;
+  }
+  return LEGAL_TERMINAL_TRANSITIONS.some(([a, b]) => a === from && b === to);
+}
+
+export function messageForTerminalConflict(code: TerminalConflictCode): string {
+  return TERMINAL_CONFLICT_MESSAGES[code];
+}
+
+/**
+ * Raised when cancel or settlement refuses because another terminal outcome
+ * already won. Carries the stable code handlers return to clients.
+ */
+export class InvoiceTerminalConflictError extends Error {
+  readonly code: TerminalConflictCode;
+  readonly currentStatus: InvoiceStatus;
+  /** Present when the losing cancel must not clear an already-recorded hash. */
+  readonly paymentTxHash?: string;
+
+  constructor(code: TerminalConflictCode, currentStatus: InvoiceStatus, paymentTxHash?: string) {
+    super(messageForTerminalConflict(code));
+    this.name = 'InvoiceTerminalConflictError';
+    this.code = code;
+    this.currentStatus = currentStatus;
+    this.paymentTxHash = paymentTxHash;
+  }
+}
+
+/** Map a non-PENDING status onto the cancel-loser conflict code. */
+export function cancelConflictForStatus(
+  status: InvoiceStatus,
+  paymentTxHash?: string | null
+): InvoiceTerminalConflictError {
+  if (status === 'PAID') {
+    return new InvoiceTerminalConflictError('INVOICE_ALREADY_PAID', status, paymentTxHash ?? undefined);
+  }
+  if (status === 'CANCELLED') {
+    return new InvoiceTerminalConflictError('INVOICE_ALREADY_CANCELLED', status, paymentTxHash ?? undefined);
+  }
+  if (status === 'EXPIRED') {
+    return new InvoiceTerminalConflictError('INVOICE_EXPIRED', status, paymentTxHash ?? undefined);
+  }
+  return new InvoiceTerminalConflictError('INVOICE_NOT_PENDING', status, paymentTxHash ?? undefined);
+}
+
+/**
+ * Guard used by both storages before PENDING → CANCELLED. Throws a typed
+ * conflict when cancel lost the race (or the invoice was never pending).
+ */
+export function assertCancelTransitionAllowed(
+  status: InvoiceStatus,
+  paymentTxHash?: string | null
+): void {
+  if (status === 'PENDING') return;
+  throw cancelConflictForStatus(status, paymentTxHash);
+}
+
+/**
+ * Guard used by both storages before writing PAID. Replay of an already-PAID
+ * invoice is handled by the caller (return existing / already-processed);
+ * every other illegal source status throws.
+ */
+export function assertPaidTransitionAllowed(status: InvoiceStatus): void {
+  if (status === 'PAID') return;
+  if (isLegalTerminalTransition(status, 'PAID')) return;
+  throw new InvoiceTerminalConflictError('INVOICE_NOT_PENDING', status);
+}

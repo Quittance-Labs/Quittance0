@@ -452,8 +452,13 @@ function runDualBackendSuite(
 
         await assert.rejects(
           () => storage.cancelInvoice(inv.id, SELLER_A),
-          /Invoice not found or already processed/
+          {
+            name: 'InvoiceTerminalConflictError',
+            code: 'INVOICE_ALREADY_CANCELLED',
+            currentStatus: 'CANCELLED',
+          }
         );
+        assert.equal((await storage.getInvoiceById(inv.id))?.status, 'CANCELLED');
       });
 
       it('rejects cancel when sellerPublicKey does not match (cross-seller guard)', async () => {
@@ -463,6 +468,26 @@ function runDualBackendSuite(
           () => storage.cancelInvoice(inv.id, SELLER_B),
           /[Uu]nauthorized/
         );
+      });
+
+      it('keeps terminal invoice details private from a different seller', async () => {
+        const inv = await storage.createInvoice(baseInput(SELLER_A));
+        await storage.markAsPaid(
+          inv.id,
+          TX_HASH_1,
+          PAYER,
+          undefined,
+          { settledAt: new Date() }
+        );
+
+        await assert.rejects(
+          () => storage.cancelInvoice(inv.id, SELLER_B),
+          /[Uu]nauthorized/
+        );
+
+        const stored = await storage.getInvoiceById(inv.id);
+        assert.equal(stored?.status, 'PAID');
+        assert.equal(stored?.paymentTxHash, TX_HASH_1);
       });
 
       it('rejects cancel for a missing invoice', async () => {

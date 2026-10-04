@@ -10,6 +10,7 @@ import {
   isUiTerminalInvoiceStatus,
 } from '../src/domain/invoice-lifecycle.ts';
 import type { InvoiceStatus } from '../src/domain/invoice-lifecycle.ts';
+import { InvoiceTerminalConflictError } from '../src/domain/invoice-settlement.ts';
 import { createInvoiceHandlers } from '../src/routes/invoice.handlers.ts';
 import { MemoryInvoiceStorage } from '../src/storage/memory-invoice-storage.ts';
 
@@ -162,7 +163,7 @@ describe('Invoice lifecycle domain transitions (issue #443)', () => {
 });
 
 describe('Invoice lifecycle HTTP cancel guards (issue #443)', () => {
-  it('cancelInvoice returns 400 with INVOICE_ALREADY_PAID when invoice is already PAID', async () => {
+  it('cancelInvoice returns 409 with INVOICE_ALREADY_PAID when invoice is already PAID', async () => {
     const storage = new MemoryInvoiceStorage();
     const handlers = createInvoiceHandlers({ storage });
 
@@ -193,12 +194,14 @@ describe('Invoice lifecycle HTTP cancel guards (issue #443)', () => {
       cancelRes
     );
 
-    assert.equal(cancelRes.statusCode, 400);
+    assert.equal(cancelRes.statusCode, 409);
     assert.equal(cancelRes.body.success, false);
     assert.equal(cancelRes.body.code, 'INVOICE_ALREADY_PAID');
+    assert.equal(cancelRes.body.status, 'PAID');
+    assert.equal(cancelRes.body.paymentTxHash, 'a'.repeat(64));
   });
 
-  it('cancelInvoice returns 400 with INVOICE_NOT_PENDING when invoice is already CANCELLED', async () => {
+  it('cancelInvoice returns 409 with INVOICE_ALREADY_CANCELLED when invoice is already CANCELLED', async () => {
     const storage = new MemoryInvoiceStorage();
     const handlers = createInvoiceHandlers({ storage });
 
@@ -235,12 +238,13 @@ describe('Invoice lifecycle HTTP cancel guards (issue #443)', () => {
       secondCancelRes
     );
 
-    assert.equal(secondCancelRes.statusCode, 400);
+    assert.equal(secondCancelRes.statusCode, 409);
     assert.equal(secondCancelRes.body.success, false);
-    assert.equal(secondCancelRes.body.code, 'INVOICE_NOT_PENDING');
+    assert.equal(secondCancelRes.body.code, 'INVOICE_ALREADY_CANCELLED');
+    assert.equal(secondCancelRes.body.status, 'CANCELLED');
   });
 
-  it('cancelInvoice returns 400 with INVOICE_EXPIRED when invoice is EXPIRED', async () => {
+  it('cancelInvoice returns 409 with INVOICE_EXPIRED when invoice is EXPIRED', async () => {
     const storage = new MemoryInvoiceStorage();
     const handlers = createInvoiceHandlers({ storage });
 
@@ -268,9 +272,10 @@ describe('Invoice lifecycle HTTP cancel guards (issue #443)', () => {
       cancelRes
     );
 
-    assert.equal(cancelRes.statusCode, 400);
+    assert.equal(cancelRes.statusCode, 409);
     assert.equal(cancelRes.body.success, false);
     assert.equal(cancelRes.body.code, 'INVOICE_EXPIRED');
+    assert.equal(cancelRes.body.status, 'EXPIRED');
   });
 
   it('cancelInvoice returns 404 when invoice does not exist', async () => {
@@ -314,7 +319,7 @@ describe('Invoice lifecycle storage matrix (issue #443)', () => {
     await assert.rejects(
       () => storage.cancelInvoice(paid.id, SELLER_KEY),
       (err: any) => {
-        assert.equal(err instanceof IllegalStateTransitionError, true);
+        assert.equal(err instanceof InvoiceTerminalConflictError, true);
         assert.equal(err.code, 'INVOICE_ALREADY_PAID');
         return true;
       }
