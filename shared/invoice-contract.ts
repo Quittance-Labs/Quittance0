@@ -79,7 +79,7 @@ export interface CreateInvoiceRequest {
   description?: string;
   customerName?: string;
   customerEmail?: string;
-  sellerPublicKey?: string;
+  sellerPublicKey: string;
   sellerName?: string;
   sellerEmail?: string;
   expiresInDays?: number;
