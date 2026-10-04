@@ -181,6 +181,10 @@ export class InvoiceMemoryService {
     offset: number = 0,
     q?: string
   ): Promise<StoredInvoice[]> {
+    if (!sellerPublicKey) {
+      throw new Error('Seller public key is required');
+    }
+
     let invoices = this.storage.getAllInvoices(status ? { status } : undefined);
 
     if (sellerPublicKey) {
@@ -257,6 +261,10 @@ export class InvoiceMemoryService {
   }
 
   async getInvoiceStats(sellerPublicKey: string): Promise<InvoiceStats[]> {
+    if (!sellerPublicKey) {
+      throw new Error('Seller public key is required');
+    }
+
     return [this.storage.getStats(sellerPublicKey)];
   }
 

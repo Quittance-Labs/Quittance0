@@ -125,18 +125,23 @@ ALTER TABLE invoices ADD CONSTRAINT invoices_late_payment_warning_code_check
     late_payment_warning_code IN ('PAYMENT_RECEIVED_AFTER_EXPIRY', 'PAYMENT_RECEIVED_AFTER_CANCEL')
   );
 
--- Unique constraint: one transaction hash may settle at most one invoice.
+-- Unique index: one transaction hash may settle at most one invoice.
 -- Added idempotently so re-running the migration on an upgraded database is safe.
--- The constraint is partial (WHERE payment_tx_hash IS NOT NULL) so unpaid rows
+-- The index is partial (WHERE payment_tx_hash IS NOT NULL) so unpaid rows
 -- do not consume unique index space and NULL values never collide.
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conname = 'invoices_payment_tx_hash_unique'
-      AND conrelid = 'invoices'::regclass
+    -- Standalone partial indexes are recorded in pg_index, not pg_constraint.
+    SELECT 1
+    FROM pg_index i
+    JOIN pg_class c ON c.oid = i.indexrelid
+    WHERE c.relname = 'invoices_payment_tx_hash_unique'
+      AND i.indrelid = 'invoices'::regclass
+      AND i.indisunique
+      AND i.indisvalid
   ) THEN
-    -- Check for any existing duplicates before adding the constraint.
+    -- Check for any existing duplicates before adding the index.
     -- A duplicate means a bug in prior code; surface it rather than silently skip.
     IF (
       SELECT COUNT(*) FROM (

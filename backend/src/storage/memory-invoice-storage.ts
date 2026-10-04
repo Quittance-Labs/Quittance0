@@ -66,7 +66,11 @@ export class MemoryInvoiceStorage implements InvoiceStorage {
   }
 
   async getPaymentEvents(invoiceId: string): Promise<PaymentEventRecord[]> {
-    return this.service.getPaymentEvents(invoiceId);
+    const events = await this.service.getPaymentEvents(invoiceId);
+    return events.map((event) => ({
+      ...event,
+      eventData: event.eventData ?? null,
+    }));
   }
 
   async logPaymentEvent(

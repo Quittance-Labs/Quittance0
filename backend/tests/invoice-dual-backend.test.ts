@@ -580,6 +580,21 @@ function runDualBackendSuite(
     // ── PAYMENT EVENTS ────────────────────────────────────────────────────────
 
     describe('payment-event append and retrieval', () => {
+      it('returns a null event payload when data is omitted or explicitly null', async () => {
+        const inv = await storage.createInvoice(baseInput(SELLER_A));
+        await storage.logPaymentEvent(inv.id, 'PAYMENT_REJECTED');
+        await storage.logPaymentEvent(inv.id, 'PAYMENT_REJECTED', null);
+
+        const events = await storage.getPaymentEvents(inv.id);
+        assert.equal(events.length, 2);
+        for (const event of events) {
+          assert.equal(event.eventData, null);
+          const serialized = JSON.parse(JSON.stringify(event));
+          assert.equal(Object.hasOwn(serialized, 'eventData'), true);
+          assert.equal(serialized.eventData, null);
+        }
+      });
+
       it('appends and returns payment events in order', async () => {
         const inv = await storage.createInvoice(baseInput(SELLER_A));
         await storage.logPaymentEvent(inv.id, 'PAYMENT_RECEIVED', { txHash: TX_HASH_1 });

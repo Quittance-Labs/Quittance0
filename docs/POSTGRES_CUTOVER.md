@@ -63,9 +63,14 @@ npm run db:migrate
 
 The migration script (`db/schema.sql`) creates the invoices, transactions,
 payment_events, and payment_monitor_checkpoints tables; adds all required
-indexes; and adds the `payment_tx_hash` uniqueness constraint.  Re-running the
-migration on an existing database is safe — every `CREATE TABLE`, `ALTER TABLE`,
-and `CREATE INDEX` statement uses `IF NOT EXISTS`.
+indexes; and enforces `payment_tx_hash` uniqueness. Re-running the migration on
+an existing database preserves its invoice and payment-event data. Tables,
+columns, and indexes use existence guards, while lifecycle checks are replaced
+with their current definitions. The partial payment-hash index is looked up in
+`pg_index` for the invoices table; it is not a table constraint in `pg_constraint`.
+The Postgres integration suite reapplies the schema to populated tables and
+checks that existing rows survive and duplicate non-null payment hashes remain
+rejected. Multiple unpaid invoices may retain null payment hashes.
 
 ### 3. Verify the schema applied cleanly
 
