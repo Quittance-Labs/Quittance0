@@ -31,6 +31,7 @@ import {
   normalizePaymentOperation,
 } from './payment-verification';
 import { PaymentClaimError } from '../domain/payment-attribution';
+import { IllegalStateTransitionError } from '../domain/invoice-lifecycle';
 import {
   SettlementTimeUnavailableError,
 } from '../domain/invoice-settlement';
@@ -551,6 +552,23 @@ export async function persistPaidStage(
     }
     if (err instanceof SettlementTimeUnavailableError) {
       return stageFailure('persist_paid', 'TRANSACTION_CLOSE_TIME_UNAVAILABLE');
+    }
+    if (err instanceof IllegalStateTransitionError) {
+      const code: VerificationCode =
+        err.code === 'INVOICE_ALREADY_PAID' || err.code === 'INVOICE_EXPIRED'
+          ? err.code
+          : 'INVOICE_NOT_PENDING';
+      return {
+        ok: false,
+        stage: 'persist_paid',
+        code,
+        error: err.message,
+        details: {
+          lifecycleCode: err.code,
+          fromStatus: err.fromStatus,
+          toStatus: err.toStatus,
+        },
+      };
     }
     if (input.storage.getInvoiceById) {
       try {
