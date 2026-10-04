@@ -50,6 +50,7 @@ const FAILURE_OPERATIONS = [
   'stellar.streamPayment', 'stellar.payments', 'stellar.submit',
   'cache.connect', 'cache.get', 'cache.set', 'cache.clear', 'cache.verify',
   'proof.invariants', 'proof.json', 'proof.pdf', 'proof.handoff',
+  'webhook.worker', 'webhook.manage',
 ] as const;
 
 type FailureOperation = typeof FAILURE_OPERATIONS[number];

@@ -21,6 +21,7 @@ import { configuredFrontendOrigins, corsOptions } from './config/runtime';
 import { healthHandler, readinessHandler } from './health';
 import { bodyLimitErrorHandler } from './middleware/body-limit';
 import { getEdgeControlConfig } from './middleware/edge-config';
+import { startConfiguredWebhookWorker, type WebhookWorker } from './services/webhook-worker';
 
 dotenv.config();
 
@@ -37,6 +38,7 @@ paymentMonitorService.configure({
 const app: Application = express();
 const PORT = process.env.PORT || 3001;
 const maxBodyBytes = getEdgeControlConfig().maxBodyBytes;
+let webhookWorker: WebhookWorker | undefined;
 
 // Middleware
 app.use(cors(corsOptions()));
@@ -119,6 +121,8 @@ app.use((req: Request, res: Response) => {
  * configured one, and so importing this module never starts a server.
  */
 export function startServer(port: number | string = PORT) {
+  const worker = startConfiguredWebhookWorker(memoryInvoiceStorage.webhooks);
+  webhookWorker = worker;
   if (SELLER_PUBLIC_KEY) {
     try {
       paymentMonitorService.start();
@@ -127,7 +131,7 @@ export function startServer(port: number | string = PORT) {
     }
   }
 
-  return app.listen(port, () => {
+  const server = app.listen(port, () => {
     console.log('\n🚀 Quittance Backend (MVP Mode)');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log(`✅ Server running on port ${port}`);
@@ -138,6 +142,9 @@ export function startServer(port: number | string = PORT) {
     console.log(`🌐 Frontends: ${configuredFrontendOrigins().join(', ') || 'not configured'}`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
   });
+  server.once('close', () => { void worker?.stop(); });
+  server.once('error', () => { void worker?.stop(); });
+  return server;
 }
 
 const entryPoint = process.argv[1] ?? '';
@@ -145,12 +152,14 @@ if (/server-mvp(\.[cm]?[jt]s)?$/.test(entryPoint)) {
   startServer();
 }
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
+  await webhookWorker?.stop();
   paymentMonitorService.stop();
   process.exit(0);
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
+  await webhookWorker?.stop();
   paymentMonitorService.stop();
   process.exit(0);
 });

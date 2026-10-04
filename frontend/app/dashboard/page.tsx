@@ -5,6 +5,7 @@ import { invoiceApi } from '@/lib/api';
 import InvoiceCard from '@/components/InvoiceCard';
 import WalletConnect from '@/components/WalletConnect';
 import UserProfile from '@/components/UserProfile';
+import SellerWebhooksPanel from '@/components/SellerWebhooksPanel';
 import FreighterInstallPrompt from '@/components/FreighterInstallPrompt';
 import AssetLogo from '@/components/AssetLogo';
 import { useWalletStore } from '@/lib/store';
@@ -510,6 +511,7 @@ export default function DashboardPage() {
                 </ul>
               </section>
             )}
+            <SellerWebhooksPanel />
           </>
           </>
         )}

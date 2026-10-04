@@ -13,6 +13,7 @@ import {
 } from '../middleware/rate-limit';
 import { createInvoiceCeilingMiddleware } from '../middleware/invoice-ceiling';
 import { createVerifyCacheMiddleware, verificationCache } from '../middleware/verify-cache';
+import { createWebhookRouter } from './webhook.routes';
 
 export interface InvoiceRouterOptions extends InvoiceHandlerOptions {
   enableRateLimiting?: boolean;
@@ -48,6 +49,7 @@ export function createInvoiceRouter(options: InvoiceRouterOptions): Router {
   const handlers = createInvoiceHandlers(options);
   const router = Router();
   router.use(requestCorrelationMiddleware);
+  if (options.storage.webhooks) router.use(createWebhookRouter(options.storage.webhooks));
 
   const enableRateLimiting =
     options.enableRateLimiting ??
