@@ -1,3 +1,4 @@
+import { sellerSessionLocals } from './fixtures/seller-auth';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Request, Response } from 'express';
@@ -194,7 +195,7 @@ describe('wallet-scoped invoice reads', () => {
  * The cases above drive MemoryInvoiceStorage directly, which proves the filter
  * exists but not that a request reaches it. These go through the real handlers,
  * so a request naming another seller cannot be answered even if a caller forgets
- * to scope: both endpoints refuse without a seller key, scope with one, and the
+ * to scope: both endpoints refuse without an authenticated session, scope by it, and the
  * status filter runs inside that scope.
  */
 interface FakeResponse {
@@ -206,6 +207,7 @@ function createRes(): FakeResponse & Response {
   const res: any = {
     statusCode: 200,
     body: undefined,
+    setHeader() {},
     status(code: number) {
       res.statusCode = code;
       return res;
@@ -218,8 +220,11 @@ function createRes(): FakeResponse & Response {
   return res;
 }
 
-function createReq(init: { body?: any; query?: any } = {}): Request {
-  return { body: init.body || {}, params: {}, query: init.query || {} } as unknown as Request;
+function createReq(init: { body?: any; query?: any; sessionSeller?: string | null } = {}): Request {
+  return {
+    body: init.body || {}, params: {}, query: init.query || {},
+    fixtureSeller: init.sessionSeller === null ? undefined : init.sessionSeller ?? init.body?.sellerPublicKey ?? init.query?.sellerPublicKey,
+  } as unknown as Request;
 }
 
 async function call(
@@ -227,6 +232,7 @@ async function call(
   req: Request
 ): Promise<FakeResponse> {
   const res = createRes();
+  res.locals = sellerSessionLocals((req as any).fixtureSeller);
   await handler(req, res);
   return res;
 }
@@ -299,26 +305,26 @@ describe('wallet-scoped invoice endpoints', () => {
     assert.equal(bob.body.data[0].total_invoices, 1);
   });
 
-  it('refuses a list or stats request that names no seller', async () => {
+  it('refuses a list or stats request without a session', async () => {
     const { handlers } = makeApi();
     await seedThroughApi(handlers);
 
     const list = await call(handlers.getInvoices as any, createReq({}));
     const stats = await call(handlers.getStats as any, createReq({}));
 
-    assert.equal(list.statusCode, 400);
-    assert.equal(stats.statusCode, 400);
+    assert.equal(list.statusCode, 401);
+    assert.equal(stats.statusCode, 401);
   });
 
   it('refuses a seller key that is not a Stellar account id', async () => {
     const { handlers } = makeApi();
     await seedThroughApi(handlers);
 
-    const list = await call(handlers.getInvoices as any, createReq({ query: { sellerPublicKey: 'nope' } }));
-    const stats = await call(handlers.getStats as any, createReq({ query: { sellerPublicKey: 'nope' } }));
+    const list = await call(handlers.getInvoices as any, createReq({ query: { sellerPublicKey: 'nope' }, sessionSeller: ALICE }));
+    const stats = await call(handlers.getStats as any, createReq({ query: { sellerPublicKey: 'nope' }, sessionSeller: ALICE }));
 
-    assert.equal(list.statusCode, 400);
-    assert.equal(stats.statusCode, 400);
+    assert.equal(list.statusCode, 403);
+    assert.equal(stats.statusCode, 403);
   });
 
   it('filters invoices by search query through the endpoint', async () => {

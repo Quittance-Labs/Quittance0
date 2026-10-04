@@ -4,6 +4,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express, { Application } from 'express';
 import { Keypair } from '@stellar/stellar-sdk';
+import { sellerAuthEnvironment, sellerAuthHeaders } from './fixtures/seller-auth';
 import { createInvoiceRouter } from '../src/routes/invoice.routes';
 import { MemoryInvoiceStorage } from '../src/storage/memory-invoice-storage';
 import { InvoiceMemoryService } from '../src/services/invoice-memory.service';
@@ -96,7 +97,15 @@ describe('Abuse Controls Suite', () => {
   const otherKeypair = Keypair.random();
   const otherPublicKey = otherKeypair.publicKey();
 
+  function authenticatedRequest(
+    targetPort: number, method: string, path: string, body?: unknown,
+    headers: Record<string, string> = {}
+  ) {
+    return request(targetPort, method, path, body, { ...sellerAuthHeaders(sellerPublicKey), ...headers });
+  }
+
   before(async () => {
+    Object.assign(process.env, sellerAuthEnvironment);
     rawStorage = new MemoryStorage();
     const service = new InvoiceMemoryService(rawStorage);
     invoiceStorage = new MemoryInvoiceStorage(service);
@@ -155,7 +164,7 @@ describe('Abuse Controls Suite', () => {
       const res = await request(port, 'POST', `/api/invoices/${created.id}/cancel`, {});
       assert.equal(res.status, 401);
       assert.equal(res.body.success, false);
-      assert.equal(res.body.code, 'UNAUTHORIZED');
+      assert.equal(res.body.code, 'AUTH_SESSION_REQUIRED');
 
       const check = await invoiceStorage.getInvoiceById(created.id);
       assert.equal(check?.status, 'PENDING');
@@ -171,14 +180,11 @@ describe('Abuse Controls Suite', () => {
         expiresAt: new Date(Date.now() + 86400000),
       });
 
-      const fakeSig = otherKeypair.sign(Buffer.from(`cancel:${created.id}`)).toString('base64');
-      const res = await request(port, 'POST', `/api/invoices/${created.id}/cancel`, {
+      const res = await authenticatedRequest(port, 'POST', `/api/invoices/${created.id}/cancel`, {
         sellerPublicKey: otherPublicKey,
-        signature: fakeSig,
       });
 
-      // Issue #517: a signed request from a non-seller is forbidden, not
-      // unauthenticated — the signature was valid, the identity is foreign.
+      // The authenticated seller cannot assert a different body identity.
       assert.equal(res.status, 403);
       assert.equal(res.body.success, false);
 
@@ -186,7 +192,7 @@ describe('Abuse Controls Suite', () => {
       assert.equal(check?.status, 'PENDING');
     });
 
-    it('refuses cancellation with correct seller public key but missing signature', async () => {
+    it('refuses a public key or retired cancel blob without a seller session', async () => {
       const created = await rawStorage.createInvoice({
         id: 'inv-test-cancel-3',
         sellerPublicKey,
@@ -196,19 +202,19 @@ describe('Abuse Controls Suite', () => {
         expiresAt: new Date(Date.now() + 86400000),
       });
 
-      const res = await request(port, 'POST', `/api/invoices/${created.id}/cancel`, {
-        sellerPublicKey,
-      });
-
-      assert.equal(res.status, 401);
-      assert.equal(res.body.success, false);
-      assert.equal(res.body.code, 'UNAUTHORIZED');
+      const signature = sellerKeypair.sign(Buffer.from(`cancel:${created.id}`)).toString('base64');
+      for (const body of [{ sellerPublicKey }, { sellerPublicKey, signature }]) {
+        const res = await request(port, 'POST', `/api/invoices/${created.id}/cancel`, body);
+        assert.equal(res.status, 401);
+        assert.equal(res.body.success, false);
+        assert.equal(res.body.code, 'AUTH_SESSION_REQUIRED');
+      }
 
       const check = await invoiceStorage.getInvoiceById(created.id);
       assert.equal(check?.status, 'PENDING');
     });
 
-    it('refuses cancellation with invalid cryptographic signature', async () => {
+    it('refuses cancellation with an invalid session signature', async () => {
       const created = await rawStorage.createInvoice({
         id: 'inv-test-cancel-4',
         sellerPublicKey,
@@ -218,21 +224,21 @@ describe('Abuse Controls Suite', () => {
         expiresAt: new Date(Date.now() + 86400000),
       });
 
-      const corruptSig = Buffer.alloc(64, 1).toString('base64');
+      const pieces = sellerAuthHeaders(sellerPublicKey).authorization.split('.');
+      pieces[2] = (pieces[2][0] === 'A' ? 'B' : 'A') + pieces[2].slice(1);
       const res = await request(port, 'POST', `/api/invoices/${created.id}/cancel`, {
         sellerPublicKey,
-        signature: corruptSig,
-      });
+      }, { authorization: pieces.join('.') });
 
       assert.equal(res.status, 401);
       assert.equal(res.body.success, false);
-      assert.equal(res.body.code, 'INVALID_SIGNATURE');
+      assert.equal(res.body.code, 'AUTH_TOKEN_INVALID');
 
       const check = await invoiceStorage.getInvoiceById(created.id);
       assert.equal(check?.status, 'PENDING');
     });
 
-    it('successfully cancels invoice with verified ed25519 seller signature', async () => {
+    it('successfully cancels invoice with a verified seller session', async () => {
       const created = await rawStorage.createInvoice({
         id: 'inv-test-cancel-5',
         sellerPublicKey,
@@ -242,12 +248,8 @@ describe('Abuse Controls Suite', () => {
         expiresAt: new Date(Date.now() + 86400000),
       });
 
-      const validSig = sellerKeypair
-        .sign(Buffer.from(`cancel:${created.id}`))
-        .toString('base64');
-      const res = await request(port, 'POST', `/api/invoices/${created.id}/cancel`, {
+      const res = await authenticatedRequest(port, 'POST', `/api/invoices/${created.id}/cancel`, {
         sellerPublicKey,
-        signature: validSig,
       });
 
       assert.equal(res.status, 200);
@@ -262,7 +264,7 @@ describe('Abuse Controls Suite', () => {
   describe('Scenario 4: Creation Rate Limit and Storage Ceiling', () => {
     it('rate limits invoice creation beyond 5 requests per minute per IP', async () => {
       for (let i = 0; i < 5; i++) {
-        const res = await request(port, 'POST', '/api/invoices', {
+        const res = await authenticatedRequest(port, 'POST', '/api/invoices', {
           sellerPublicKey,
           amount: 10,
           assetCode: 'XLM',
@@ -270,7 +272,7 @@ describe('Abuse Controls Suite', () => {
         assert.equal(res.status, 201, `Request ${i + 1} should succeed`);
       }
 
-      const excessive = await request(port, 'POST', '/api/invoices', {
+      const excessive = await authenticatedRequest(port, 'POST', '/api/invoices', {
         sellerPublicKey,
         amount: 10,
         assetCode: 'XLM',
@@ -284,7 +286,7 @@ describe('Abuse Controls Suite', () => {
 
     it('keeps one create budget when an untrusted client rotates forwarding headers', async () => {
       for (let i = 0; i < 5; i++) {
-        const res = await request(port, 'POST', '/api/invoices', {
+        const res = await authenticatedRequest(port, 'POST', '/api/invoices', {
           sellerPublicKey,
           amount: 10,
           assetCode: 'XLM',
@@ -295,7 +297,7 @@ describe('Abuse Controls Suite', () => {
         assert.equal(res.status, 201, `Request ${i + 1} should succeed`);
       }
 
-      const excessive = await request(port, 'POST', '/api/invoices', {
+      const excessive = await authenticatedRequest(port, 'POST', '/api/invoices', {
         sellerPublicKey,
         amount: 10,
         assetCode: 'XLM',
@@ -329,19 +331,19 @@ describe('Abuse Controls Suite', () => {
       const ceilingPort = (ceilingServer.address() as AddressInfo).port;
 
       try {
-        const res1 = await request(ceilingPort, 'POST', '/api/invoices', {
+        const res1 = await authenticatedRequest(ceilingPort, 'POST', '/api/invoices', {
           sellerPublicKey,
           amount: 1,
         });
         assert.equal(res1.status, 201);
 
-        const res2 = await request(ceilingPort, 'POST', '/api/invoices', {
+        const res2 = await authenticatedRequest(ceilingPort, 'POST', '/api/invoices', {
           sellerPublicKey,
           amount: 2,
         });
         assert.equal(res2.status, 201);
 
-        const fullRes = await request(ceilingPort, 'POST', '/api/invoices', {
+        const fullRes = await authenticatedRequest(ceilingPort, 'POST', '/api/invoices', {
           sellerPublicKey,
           amount: 3,
         });
@@ -377,11 +379,11 @@ describe('Abuse Controls Suite', () => {
   describe('Scenario 5: Listing Rate Limiting', () => {
     it('rate limits GET /invoices beyond 60 requests per minute', async () => {
       for (let i = 0; i < 60; i++) {
-        const res = await request(port, 'GET', `/api/invoices?sellerPublicKey=${sellerPublicKey}`);
+        const res = await authenticatedRequest(port, 'GET', `/api/invoices?sellerPublicKey=${sellerPublicKey}`);
         assert.equal(res.status, 200);
       }
 
-      const excessive = await request(port, 'GET', `/api/invoices?sellerPublicKey=${sellerPublicKey}`);
+      const excessive = await authenticatedRequest(port, 'GET', `/api/invoices?sellerPublicKey=${sellerPublicKey}`);
       assert.equal(excessive.status, 429);
       assert.equal(excessive.body.success, false);
       assert.equal(excessive.body.code, 'RATE_LIMIT_EXCEEDED');
@@ -526,7 +528,7 @@ describe('Abuse Controls Suite', () => {
       const ceilingPort = (ceilingServer.address() as AddressInfo).port;
 
       try {
-        const first = await request(ceilingPort, 'POST', '/api/invoices', {
+        const first = await authenticatedRequest(ceilingPort, 'POST', '/api/invoices', {
           sellerPublicKey,
           amount: 1,
         });
@@ -534,7 +536,7 @@ describe('Abuse Controls Suite', () => {
 
         // Second create must be the ceiling (503), not a rate-limit 429 — order
         // is ceiling → rate limits, and we are still inside the create budget.
-        const full = await request(ceilingPort, 'POST', '/api/invoices', {
+        const full = await authenticatedRequest(ceilingPort, 'POST', '/api/invoices', {
           sellerPublicKey,
           amount: 2,
         });

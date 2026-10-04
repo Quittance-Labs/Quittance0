@@ -9,7 +9,6 @@ import stellarService from '../services/stellar.service';
 import {
   createInvoiceFieldErrors,
   createInvoiceSchema,
-  stellarPublicKeySchema,
 } from '../utils/validation';
 import { firstCreateInvoiceMessage } from '../../../shared/invoice-validation';
 import { toPublicInvoiceDto } from '../../../shared/invoice';
@@ -56,7 +55,7 @@ import {
   type VerificationCache,
   type CachedVerificationBody,
 } from '../middleware/verify-cache';
-import { verifySellerSignature } from '../utils/signature-verification';
+import { requireSellerContext, sellerSessionFor } from '../middleware/seller-session';
 import { classifyHorizonFailure } from '../utils/horizon-client';
 import { redactPaymentEventData } from '../utils/payment-event-redaction';
 
@@ -80,6 +79,7 @@ export interface InvoiceHandlerOptions {
   /** Optional local-test override. Production always forces simulation off. */
   allowSimulate?: boolean;
   stellar?: TransactionLookup;
+  /** @deprecated Ignored: every seller action now requires a signed session. */
   requireCancelSignature?: boolean;
   paymentMonitor?: PaymentMonitorWatchRegistry;
   /** Shared with the route's cache middleware; tests inject a controllable one. */
@@ -191,6 +191,8 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
 
   return {
     async createInvoice(req: Request, res: Response) {
+      const session = requireSellerContext(req, res);
+      if (!session) return;
       if (cutoverDrainMode()) {
         const context = resolveLogContext(req);
         emitEvent('warn', 'invoice.create.rejected', context, {
@@ -210,7 +212,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
       const requestId = context.requestId;
       const storageMode = storageLabel(storage.mode);
       try {
-        const parsed = createInvoiceSchema.safeParse(req.body);
+        const parsed = createInvoiceSchema.safeParse({ ...req.body, sellerPublicKey: session.sellerPublicKey });
         if (!parsed.success) {
           const fieldErrors = createInvoiceFieldErrors(parsed.error);
           emitEvent('warn', 'invoice.create.rejected', context, {
@@ -253,8 +255,9 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
             return sendFailure(res, 400, 'Idempotency-Key header is invalid');
           }
           validatedData.idempotencyKey = headerKey;
+        } else {
+          validatedData.idempotencyKey = idempotencyKeyForCreate(validatedData);
         }
-        validatedData.idempotencyKey = idempotencyKeyForCreate(validatedData);
         emitEvent('info', 'invoice.create.started', context, {
           sellerRef: logReference(validatedData.sellerPublicKey),
           assetCode: validatedData.assetCode || 'XLM',
@@ -307,20 +310,10 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
           return sendFailure(res, 404, 'Invoice not found');
         }
 
-        // #503: two shapes from one record. The workspace (seller) fields —
-        // customer contact, seller profile, payer identity, settlement
-        // internals — only leave the server when the caller proves ownership
-        // by presenting the invoice's own seller key. Everyone else gets the
-        // public pay DTO.
-        const sellerKey = req.query.sellerPublicKey;
-        if (sellerKey !== undefined) {
-          const parsed = stellarPublicKeySchema.safeParse(sellerKey);
-          if (!parsed.success) {
-            return sendFailure(res, 400, 'sellerPublicKey must be a valid Stellar public key');
-          }
-          if (parsed.data === invoice.sellerPublicKey) {
-            return sendSuccess(res, 200, invoice);
-          }
+        // A wallet address in a public pay URL is not proof of ownership.
+        // Only the verified session's owner receives workspace/customer data.
+        if (sellerSessionFor(res)?.sellerPublicKey === invoice.sellerPublicKey) {
+          return sendSuccess(res, 200, invoice);
         }
 
         sendSuccess(res, 200, toPublicInvoiceDto(invoice));
@@ -331,23 +324,17 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
     },
 
     async getInvoices(req: Request, res: Response) {
+      const session = requireSellerContext(req, res);
+      if (!session) return;
       try {
-        const { status, sellerPublicKey, q } = req.query;
-
-        if (!sellerPublicKey) {
-          return sendFailure(res, 400, 'sellerPublicKey query parameter is required');
-        }
-        const sellerCheck = stellarPublicKeySchema.safeParse(sellerPublicKey);
-        if (!sellerCheck.success) {
-          return sendFailure(res, 400, 'sellerPublicKey must be a valid Stellar public key');
-        }
+        const { status, q } = req.query;
 
         const limit = toPositiveInt(req.query.limit, 50);
         const offset = toPositiveInt(req.query.offset, 0);
         const searchQuery = typeof q === 'string' && q.trim() ? q.trim() : undefined;
 
         const invoices = await storage.getInvoicesBySeller(
-          sellerCheck.data,
+          session.sellerPublicKey,
           status as string | undefined,
           limit,
           offset,
@@ -366,22 +353,19 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
     /**
      * Seller-only audit feed for one invoice (issue #515). The workspace
      * timeline otherwise shows status timestamps only — a rejected
-     * underpayment or foreign transaction never appears. The seller key
-     * scopes the read the same way the cancel proof does: present the
-     * invoice's own key or get nothing.
+     * underpayment or foreign transaction never appears. The verified session
+     * must belong to the invoice's seller; a public key alone grants no access.
      */
     async getPaymentEvents(req: Request, res: Response) {
+      const session = requireSellerContext(req, res);
+      if (!session) return;
       try {
         const invoice = await storage.getInvoiceById(req.params.id);
         if (!invoice) {
           return sendFailure(res, 404, 'Invoice not found');
         }
 
-        const sellerCheck = stellarPublicKeySchema.safeParse(req.query.sellerPublicKey);
-        if (!sellerCheck.success) {
-          return sendFailure(res, 400, 'sellerPublicKey query parameter is required and must be a valid Stellar public key');
-        }
-        if (sellerCheck.data !== invoice.sellerPublicKey) {
+        if (session.sellerPublicKey !== invoice.sellerPublicKey) {
           return sendFailure(res, 403, 'Forbidden: not the seller of this invoice');
         }
 
@@ -421,99 +405,16 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
     },
 
     async cancelInvoice(req: Request, res: Response): Promise<void> {
+      const session = requireSellerContext(req, res);
+      if (!session) return;
       try {
-        // Issue #517 — one proof path: the seller key, signature and message
-        // all travel in the JSON body. Query params and headers are legacy
-        // transports; when they carry a key that disagrees with the body the
-        // request is ambiguous and fails closed.
-        const bodyKeyRaw = req.body?.sellerPublicKey;
-        const queryKeyRaw = req.query?.sellerPublicKey;
-        const headerKeyRaw = req.headers?.['x-seller-public-key'];
-        const alternates = [queryKeyRaw, headerKeyRaw]
-          .flat()
-          .filter((v): v is string => typeof v === 'string' && v.trim() !== '');
-
-        let sellerPublicKey: string | undefined;
-        if (typeof bodyKeyRaw === 'string' && bodyKeyRaw.trim() !== '') {
-          const parsed = stellarPublicKeySchema.safeParse(bodyKeyRaw);
-          if (!parsed.success) {
-            return sendFailure(res, 400, 'Invalid Stellar public key format');
-          }
-          sellerPublicKey = parsed.data;
-        }
-
-        if (alternates.length > 0) {
-          if (!sellerPublicKey) {
-            return sendFailure(
-              res,
-              400,
-              'Send sellerPublicKey in the request body; query and header keys are not accepted'
-            );
-          }
-          for (const alt of alternates) {
-            const parsed = stellarPublicKeySchema.safeParse(alt);
-            if (!parsed.success || parsed.data !== sellerPublicKey) {
-              return sendFailure(
-                res,
-                400,
-                'Conflicting sellerPublicKey values between body, query, and header'
-              );
-            }
-          }
-        }
-
-        if (!sellerPublicKey) {
-          return sendFailure(
-            res,
-            401,
-            'Unauthorized: sellerPublicKey is required to cancel an invoice'
-          );
-        }
-
-        const signature =
-          typeof req.body?.signature === 'string' && req.body.signature.trim() !== ''
-            ? req.body.signature
-            : undefined;
-
-        // Signature is required in production and whenever the operator opts
-        // in; the bypass exists for local dev/tests only (documented in
-        // README — "Cancel authorization").
-        const requireSignature =
-          options.requireCancelSignature ??
-          (process.env.REQUIRE_CANCEL_SIGNATURE === 'true' ||
-            process.env.NODE_ENV === 'production');
-
-        if (requireSignature && !signature) {
-          res.status(401).json({
-            success: false,
-            code: 'UNAUTHORIZED',
-            error: 'Cancellation requires a Freighter signature over cancel:<invoiceId>',
-          });
-          return;
-        }
-
-        if (signature) {
-          const existingInvoice = await storage.getInvoiceById(req.params.id);
-          if (!existingInvoice) {
-            return sendFailure(res, 404, 'Invoice not found');
-          }
-
-          if (existingInvoice.sellerPublicKey !== sellerPublicKey) {
-            return sendFailure(res, 403, 'Signer is not the seller of this invoice');
-          }
-
-          // One canonical message — the wallet signs exactly `cancel:<id>`.
-          const isValid = verifySellerSignature(sellerPublicKey, signature, [
-            `cancel:${req.params.id}`,
-          ]);
-          if (!isValid) {
-            res.status(401).json({
-              success: false,
-              code: 'INVALID_SIGNATURE',
-              error: 'Invalid signature for cancellation',
-            });
-            return;
-          }
+        // Sessions replace the replayable cancel:<id> blob proof in every mode.
+        // The storage adapter also enforces ownership inside its mutation.
+        const sellerPublicKey = session.sellerPublicKey;
+        const existingInvoice = await storage.getInvoiceById(req.params.id);
+        if (!existingInvoice) return sendFailure(res, 404, 'Invoice not found');
+        if (existingInvoice.sellerPublicKey !== sellerPublicKey) {
+          return sendFailure(res, 403, 'Forbidden: not the seller of this invoice');
         }
 
         const invoice = await storage.cancelInvoice(req.params.id, sellerPublicKey);
@@ -843,18 +744,10 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
     },
 
     async getStats(req: Request, res: Response) {
+      const session = requireSellerContext(req, res);
+      if (!session) return;
       try {
-        const { sellerPublicKey } = req.query;
-
-        if (!sellerPublicKey) {
-          return sendFailure(res, 400, 'sellerPublicKey query parameter is required');
-        }
-        const sellerCheck = stellarPublicKeySchema.safeParse(sellerPublicKey);
-        if (!sellerCheck.success) {
-          return sendFailure(res, 400, 'sellerPublicKey must be a valid Stellar public key');
-        }
-
-        const stats = await storage.getInvoiceStats(sellerCheck.data);
+        const stats = await storage.getInvoiceStats(session.sellerPublicKey);
         sendSuccess(res, 200, stats);
       } catch (error: any) {
         emitOperationalFailure('invoice.stats');

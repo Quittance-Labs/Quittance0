@@ -29,6 +29,7 @@ import type { Application } from 'express';
 import { Account, Keypair, MuxedAccount } from '@stellar/stellar-sdk';
 import memoryStorage from '../src/storage/memory-storage';
 import { HORIZON_MAX_ATTEMPTS } from '../src/utils/horizon-client';
+import { sellerAuthEnvironment, sellerAuthHeaders } from './fixtures/seller-auth';
 
 const SELLER = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
 const PAYER = 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H';
@@ -163,6 +164,7 @@ async function createInvoice(port: number, amount = 25) {
     },
     {
       'x-forwarded-for': `203.0.113.${++createRequestSequence}`,
+      ...sellerAuthHeaders(SELLER),
       // Each helper call is a distinct create intent; identical bodies inside
       // the dedupe window would otherwise return the same invoice (#514).
       'idempotency-key': `loop-${createRequestSequence}`,
@@ -178,6 +180,7 @@ describe('invoice payment loop', () => {
   let api: http.Server;
 
   before(async () => {
+    Object.assign(process.env, sellerAuthEnvironment);
     horizon = http.createServer((req, res) => {
       const reply = horizonResponder(req.url ?? '');
       if (reply === null) {
@@ -368,7 +371,9 @@ describe('invoice payment loop', () => {
     const stored = await jsonRequest(
       port,
       'GET',
-      `/api/invoices/${invoice.id}?sellerPublicKey=${SELLER}`
+      `/api/invoices/${invoice.id}?sellerPublicKey=${SELLER}`,
+      undefined,
+      sellerAuthHeaders(SELLER)
     );
     assert.equal(stored.body.data.payerName, 'Ada Lovelace');
     assert.equal(stored.body.data.payerEmail, 'ada@example.com');
@@ -504,7 +509,9 @@ describe('invoice payment loop', () => {
     const stats = await jsonRequest(
       port,
       'GET',
-      `/api/invoices/stats?sellerPublicKey=${SELLER}`
+      `/api/invoices/stats?sellerPublicKey=${SELLER}`,
+      undefined,
+      sellerAuthHeaders(SELLER)
     );
 
     assert.equal(stats.status, 200);

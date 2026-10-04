@@ -1,3 +1,4 @@
+import { sellerSessionLocals } from './fixtures/seller-auth';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
@@ -541,6 +542,7 @@ describe('PaymentMonitorService Runtime & Multi-Invoice Watch', () => {
     };
     let createdPayload: any;
     const resCreate: any = {
+      locals: sellerSessionLocals(SELLER_KEY),
       status(code: number) {
         assert.equal(code, 201);
         return this;
@@ -559,6 +561,7 @@ describe('PaymentMonitorService Runtime & Multi-Invoice Watch', () => {
       body: { sellerPublicKey: SELLER_KEY },
     };
     const resCancel: any = {
+      locals: sellerSessionLocals(SELLER_KEY),
       status(code: number) {
         assert.equal(code, 200);
         return this;

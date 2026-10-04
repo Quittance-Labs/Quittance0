@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { type AxiosRequestConfig } from 'axios';
 import {
   apiErrorMessage,
   isApiUnavailableError,
@@ -8,6 +8,9 @@ import {
 import { resolveVerificationError } from './verification.js';
 import { resolveStellarNetwork } from '@shared/network';
 import { createBrowserRequestId } from './request-correlation-id.ts';
+import { useWalletStore } from './store';
+import { createSellerSessionManager, type SellerSessionContext } from './wallet-session';
+import { signSellerChallenge } from '@/lib/stellar';
 
 /**
  * The API origin, resolved once per build.
@@ -36,7 +39,72 @@ const api = axios.create({
   },
 });
 
-api.interceptors.request.use((config) => {
+type SellerRequestConfig = AxiosRequestConfig & {
+  __sellerPublicKey?: string;
+  __sellerContext?: SellerSessionContext;
+  __sellerToken?: string;
+  __sellerRetry?: boolean;
+  __sellerCleanup?: () => void;
+};
+
+const activeSellerRequests = new Map<AbortController, SellerSessionContext>();
+
+export const sellerSessionManager = createSellerSessionManager({
+  getWalletSession: useWalletStore.getState,
+  expectedNetwork: resolveStellarNetwork(process.env.NEXT_PUBLIC_STELLAR_NETWORK),
+  authenticate: async (wallet, assertCurrent) => {
+    const challenge = await api.get('/auth/challenge', {
+      params: { account: wallet.publicKey, network: wallet.network },
+    });
+    assertCurrent();
+    const transaction = await signSellerChallenge(challenge.data.data, wallet.publicKey!);
+    assertCurrent();
+    const response = await api.post('/auth/session', { transaction, network: wallet.network });
+    assertCurrent();
+    return response.data.data;
+  },
+});
+
+// Zustand subscriptions run in the store update, before the next React effect
+// or seller fetch. Tokens and pending issuance are invalidated synchronously.
+sellerSessionManager.sync();
+useWalletStore.subscribe(() => {
+  sellerSessionManager.sync();
+  for (const [controller, context] of activeSellerRequests) {
+    if (!sellerSessionManager.isCurrent(context)) {
+      controller.abort();
+      activeSellerRequests.delete(controller);
+    }
+  }
+});
+
+const forSeller = (sellerPublicKey?: string | null): SellerRequestConfig => ({
+  // An absent key must still authenticate against the current wallet for create.
+  __sellerPublicKey: sellerPublicKey || '',
+});
+
+api.interceptors.request.use(async (config) => {
+  const request = config as typeof config & SellerRequestConfig;
+  if (request.__sellerPublicKey !== undefined) {
+    const context = request.__sellerContext ?? sellerSessionManager.contextFor(request.__sellerPublicKey);
+    sellerSessionManager.assertCurrent(context);
+    const token = await sellerSessionManager.getToken(context);
+    sellerSessionManager.assertCurrent(context);
+    request.__sellerContext = context;
+    request.__sellerToken = token;
+    config.headers.Authorization = `Bearer ${token}`;
+    const controller = new AbortController();
+    const originalSignal = config.signal;
+    const abort = () => controller.abort();
+    if (originalSignal?.aborted) controller.abort();
+    originalSignal?.addEventListener?.('abort', abort);
+    activeSellerRequests.set(controller, context);
+    config.signal = controller.signal;
+    request.__sellerCleanup = () => {
+      activeSellerRequests.delete(controller);
+      originalSignal?.removeEventListener?.('abort', abort);
+    };
+  }
   const headers = config.headers ?? {};
   const existing =
     headers['X-Request-Id'] ||
@@ -53,9 +121,33 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    const normalized = toApiError(error);
+  (response) => {
+    const request = response.config as SellerRequestConfig;
+    request.__sellerCleanup?.();
+    const context = request.__sellerContext;
+    if (context) sellerSessionManager.assertCurrent(context);
+    return response;
+  },
+  async (error) => {
+    let failure = error;
+    try {
+      const request = error?.config as SellerRequestConfig | undefined;
+      request?.__sellerCleanup?.();
+      if (request?.__sellerContext) {
+        sellerSessionManager.assertCurrent(request.__sellerContext);
+        if (error?.response?.status === 401) {
+          sellerSessionManager.invalidate(request.__sellerContext, request.__sellerToken || '');
+          if (!request.__sellerRetry) {
+            // Reuses the original wallet epoch. A switch never retries an old
+            // seller's request using the new account's token.
+            return await api.request({ ...request, __sellerRetry: true } as SellerRequestConfig);
+          }
+        }
+      }
+    } catch (retryError) {
+      failure = retryError;
+    }
+    const normalized = toApiError(failure);
     console.error('API Error:', normalized.code, normalized.message);
     return Promise.reject(normalized);
   }
@@ -80,16 +172,16 @@ export const invoiceApi = {
     const response = await api.post('/invoices', {
       ...data,
       assetCode: normalizedAssetCode,
-    });
+    }, forSeller(data.sellerPublicKey));
     return response.data;
   },
 
   getById: async (id: string, sellerPublicKey?: string | null) => {
-    // Workspace fields (client contact, payer identity) are only returned when
-    // the caller presents the invoice's own seller key — issue #503. The pay
-    // page calls this without a key and receives the public pay DTO.
+    // The public pay page never signs in. A workspace caller earns a session;
+    // the key is an ownership assertion, not a credential.
     const response = await api.get(`/invoices/${id}`, {
       params: sellerPublicKey ? { sellerPublicKey } : undefined,
+      ...(sellerPublicKey ? forSeller(sellerPublicKey) : {}),
     });
     return response.data;
   },
@@ -103,7 +195,7 @@ export const invoiceApi = {
     offset?: number;
     q?: string;
   }) => {
-    const response = await api.get('/invoices', { params });
+    const response = await api.get('/invoices', { params, ...forSeller(params.sellerPublicKey) });
     return response.data;
   },
 
@@ -117,14 +209,14 @@ export const invoiceApi = {
   getPaymentEvents: async (id: string, sellerPublicKey: string) => {
     const response = await api.get(`/invoices/${id}/events`, {
       params: { sellerPublicKey },
+      ...forSeller(sellerPublicKey),
     });
     return response.data;
   },
 
-  // One proof path (issue #517): the seller key and the Freighter signature
-  // over `cancel:<id>` travel in the request body — never in query or header.
-  cancel: async (id: string, sellerPublicKey: string, signature?: string) => {
-    const response = await api.post(`/invoices/${id}/cancel`, { sellerPublicKey, signature });
+  // Cancellation uses the same expiring, network-bound seller session.
+  cancel: async (id: string, sellerPublicKey: string) => {
+    const response = await api.post(`/invoices/${id}/cancel`, { sellerPublicKey }, forSeller(sellerPublicKey));
     return response.data;
   },
 
@@ -143,6 +235,7 @@ export const invoiceApi = {
   getStats: async (sellerPublicKey: string) => {
     const response = await api.get('/invoices/stats', {
       params: { sellerPublicKey },
+      ...forSeller(sellerPublicKey),
     });
     return response.data;
   },

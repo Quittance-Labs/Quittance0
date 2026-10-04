@@ -166,7 +166,7 @@ Quittance supports multi-asset invoicing across native XLM and credit assets suc
 ### Seller invoice management & cancellation
 
 Sellers manage their invoices from the dashboard and detail views:
-- **Cancel Pending Invoices**: Sellers can cancel any pending invoice before payment or expiration. Cancellation uses one proof path (issue #517): the request body carries `sellerPublicKey` plus a Freighter signature over the canonical message `cancel:<invoiceId>` — the UI signs via `signBlob` before calling `POST /api/invoices/:id/cancel`. Query params and `x-seller-public-key` headers are not accepted as transports, and a value that disagrees with the body returns `400`. A foreign signer returns `403`; a missing or invalid signature returns `401`; only `PENDING` invoices can cancel. Signatures are mandatory in production (`NODE_ENV=production` or `REQUIRE_CANCEL_SIGNATURE=true`); local dev/tests keep the signature optional bypass.
+- **Cancel Pending Invoices**: Sellers can cancel a pending invoice using the same signed seller session as their dashboard. Freighter signs a five-minute SEP-10 challenge once; the API returns a bearer session lasting at most one hour. Public keys and legacy `cancel:<invoiceId>` blobs cannot authorize cancellation. A missing/expired session returns `401`; a foreign seller or conflicting body/query key returns `403`; only the existing lifecycle's cancellable states can cancel. This applies in every environment. See [seller authentication](./docs/SELLER_AUTH.md) for configuration and key rotation.
 - **Copy Pay & Share Links**: Direct quick-copy actions with toast feedback for pay URLs and invoice IDs across dashboard cards and detail pages.
 - **Proof & Receipt Navigation**: One-click jump to verified PDF payment proof and transaction details for all `PAID` invoices.
 
@@ -303,6 +303,7 @@ cd Quittance0
 cd backend
 npm i
 cp env.mvp.example .env
+# Set the seller auth values described in docs/SELLER_AUTH.md first.
 npm run dev:mvp
 ```
 
@@ -390,9 +391,12 @@ cd backend
 npm run dev          # src/server.ts (Postgres) instead of dev:mvp (in-memory)
 ```
 
-The dashboard sends the connected wallet on every call:
-`GET /api/invoices?sellerPublicKey=G...` and `GET /api/invoices/stats?sellerPublicKey=G...`
-both return `400` when the seller key is missing.
+The dashboard proves ownership of the connected Freighter account before seller
+requests. `GET /api/invoices` and `GET /api/invoices/stats` require
+`Authorization: Bearer <session>` and derive their seller from that verified
+session. A public key alone returns `401`; a supplied key that conflicts with
+the session returns `403`. [Configure seller authentication](./docs/SELLER_AUTH.md)
+before using either the MVP or Postgres dashboard.
 
 `POST /api/invoices` is idempotent (issue #514): send an `Idempotency-Key`
 header (or `idempotencyKey` body field) and a replay returns the original
@@ -403,8 +407,9 @@ inside a 2-minute window collapses onto the original row.
 `GET /api/invoices/:id` serves two shapes from one record (issue #503): anonymous
 callers — including the `/pay/:id` checkout page — receive the public pay DTO
 (amount, asset, memo, destination, status, expiry, payment fields only), while
-`GET /api/invoices/:id?sellerPublicKey=<the invoice's own seller key>` returns
-the full workspace record with client contact and payer identity. The same
+a valid bearer session belonging to the invoice seller returns the full workspace
+record with client contact and payer identity. Appending the seller's public key
+to the pay URL still returns only the public DTO. The same
 public shape is embedded in `GET /api/invoices/:id/payment-info` and returned
 by `POST /api/invoices/:id/verify`.
 
@@ -615,14 +620,15 @@ also runnable locally as `cd backend && npm run evidence:smoke`). That needs
 a funded Testnet keypair, which is exactly the kind of thing a public repo
 must not require an external contributor's PR to have:
 
-- The job's final step is gated by `env.EVIDENCE_PAYER_SECRET` and
-  `env.EVIDENCE_SELLER_PUBLIC_KEY` being non-empty. GitHub never exposes
+- The job's final step requires `env.EVIDENCE_PAYER_SECRET`,
+  `env.EVIDENCE_SELLER_PUBLIC_KEY`, and either `env.EVIDENCE_SELLER_SECRET`
+  or an unexpired `env.EVIDENCE_SELLER_SESSION_TOKEN` for seller authentication. GitHub never exposes
   repository secrets to a fork's `pull_request` context at all, so on an
   external contributor's PR these are always empty and the step is skipped
   cleanly — it is not possible for a fork PR to fail this job for lacking
   credentials it was never meant to have.
-- Where the repository's own `EVIDENCE_SELLER_PUBLIC_KEY` and
-  `EVIDENCE_PAYER_SECRET` secrets (and `EVIDENCE_API_URL` repository
+- Where the repository's own seller public key, payer secret and seller
+  authentication credential above (plus the `EVIDENCE_API_URL` repository
   variable) **are** configured — this repository's own main-branch pushes,
   or a PR from a branch within it — the step runs for real and its failure
   does block the job, the same as any other test.

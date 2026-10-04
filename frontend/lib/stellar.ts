@@ -4,7 +4,6 @@ import {
   isConnected,
   getPublicKey,
   signTransaction,
-  signBlob,
   isAllowed,
   setAllowed,
   getNetwork,
@@ -582,27 +581,88 @@ export const streamPayments = (
   return closeHandler;
 };
 
-/**
- * The one seller-proof message for cancel (issue #517): the connected wallet
- * signs exactly `cancel:<invoiceId>` — one canonical message on one canonical
- * transport (the request body), so a stale query param or header cannot
- * smuggle a different seller key past the gate.
- */
-export const CANCEL_INVOICE_MESSAGE_PREFIX = 'cancel:';
+export interface SellerChallenge {
+  transaction: string;
+  network: string;
+  networkPassphrase: string;
+  serverSigningKey: string;
+  homeDomain: string;
+  webAuthDomain: string;
+  expiresAt: number;
+}
 
-export const signInvoiceCancelMessage = async (
-  invoiceId: string
-): Promise<{ publicKey: string; signature: string }> => {
-  const session = await assertFreighterReady();
-  const message = `${CANCEL_INVOICE_MESSAGE_PREFIX}${invoiceId}`;
-  // ASCII-only message, so btoa is a safe UTF-8→base64 step here.
-  const signed = await signBlob(btoa(message), { accountToSign: session.publicKey! });
-  const signature = readResultString(signed as any, ['signedBlob', 'signature']) ||
-    (typeof signed === 'string' ? signed : null);
-  if (!signature) {
-    throw new Error('Freighter did not return a cancel signature');
+/** Sign a server-authenticated SEP-10 challenge; never submit it to Horizon. */
+export const signSellerChallenge = async (
+  challenge: SellerChallenge,
+  expectedPublicKey: string
+): Promise<string> => {
+  const refuse = (code: string, message: string): never => {
+    throw Object.assign(new Error(message), {
+      code, response: { status: 401, data: { success: false, code, error: message } },
+    });
+  };
+  if (challenge?.network !== STELLAR_NETWORK || challenge?.networkPassphrase !== NETWORK_PASSPHRASE) {
+    return refuse('AUTH_NETWORK_MISMATCH', 'The seller challenge is for a different Stellar network.');
   }
-  return { publicKey: session.publicKey!, signature };
+  let parsed: ReturnType<typeof StellarSdk.WebAuth.readChallengeTx>;
+  try {
+    if (!challenge.homeDomain || !challenge.webAuthDomain ||
+        !Number.isSafeInteger(challenge.expiresAt)) throw new Error('Invalid challenge metadata');
+    parsed = StellarSdk.WebAuth.readChallengeTx(
+      challenge.transaction, challenge.serverSigningKey, NETWORK_PASSPHRASE,
+      challenge.homeDomain, challenge.webAuthDomain
+    );
+    const maxTime = Number(parsed.tx.timeBounds?.maxTime);
+    const minTime = Number(parsed.tx.timeBounds?.minTime);
+    if (parsed.clientAccountID !== expectedPublicKey || maxTime !== challenge.expiresAt ||
+        maxTime <= Date.now() / 1000 || maxTime - minTime > 300) {
+      throw new Error('Wrong account or expired challenge');
+    }
+  } catch {
+    return refuse('AUTH_INVALID_CHALLENGE', 'The server returned an invalid or expired seller challenge.');
+  }
+
+  const readReadyWallet = async () => {
+    try {
+      return await assertFreighterReady();
+    } catch (error) {
+      return refuse('AUTH_WALLET_REQUIRED', error instanceof Error ? error.message : FREIGHTER_CONNECT_REQUIRED_MESSAGE);
+    }
+  };
+  const before = await readReadyWallet();
+  if (before.publicKey !== expectedPublicKey) {
+    return refuse('WALLET_SESSION_CHANGED', 'The connected wallet changed. Please try again.');
+  }
+  let signed: Awaited<ReturnType<typeof signTransaction>>;
+  try {
+    signed = await signTransaction(challenge.transaction, {
+      networkPassphrase: NETWORK_PASSPHRASE,
+      accountToSign: expectedPublicKey,
+    });
+  } catch {
+    return refuse('AUTH_SIGNATURE_REQUIRED', 'Approve the seller sign-in challenge in Freighter to continue.');
+  }
+  const signedTransaction = readResultString(signed, ['signedTxXdr']);
+  if (!signedTransaction) {
+    return refuse('AUTH_SIGNATURE_REQUIRED', 'Freighter did not return a signed seller challenge.');
+  }
+  const after = await readReadyWallet();
+  if (after.publicKey !== expectedPublicKey) {
+    return refuse('WALLET_SESSION_CHANGED', 'The connected wallet changed. Please try again.');
+  }
+  try {
+    const signedTx = StellarSdk.TransactionBuilder.fromXDR(signedTransaction, NETWORK_PASSPHRASE);
+    if (signedTx.hash().toString('hex') !== parsed.tx.hash().toString('hex')) {
+      throw new Error('Freighter returned a different transaction');
+    }
+    StellarSdk.WebAuth.verifyChallengeTxSigners(
+      signedTransaction, challenge.serverSigningKey, NETWORK_PASSPHRASE,
+      [expectedPublicKey], challenge.homeDomain, challenge.webAuthDomain
+    );
+  } catch {
+    return refuse('AUTH_INVALID_SIGNATURE', 'Freighter did not sign the expected seller challenge.');
+  }
+  return signedTransaction;
 };
 
 /**

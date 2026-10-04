@@ -52,11 +52,7 @@ export const isWrongNetwork = () => false;
 export const watchFreighterNetwork = () => () => {};
 export const STELLAR_NETWORK = 'TESTNET';
 export const STELLAR_PASSPHRASE = 'Test SDF Network ; September 2015';
-export const CANCEL_INVOICE_MESSAGE_PREFIX = 'cancel:';
-export const signInvoiceCancelMessage = async (invoiceId) => ({
-  publicKey: null,
-  signature: null,
-});
+export const signSellerChallenge = async () => { throw new Error('No seller challenge fixture configured'); };
 
 const stellarExports = {
   server,
@@ -79,8 +75,7 @@ const stellarExports = {
   STELLAR_PASSPHRASE,
   NETWORK_PASSPHRASE,
   NETWORK_DISPLAY_NAME,
-  CANCEL_INVOICE_MESSAGE_PREFIX,
-  signInvoiceCancelMessage,
+  signSellerChallenge,
   EXPECTED_WALLET_NETWORK,
 };
 

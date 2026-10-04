@@ -13,6 +13,7 @@ if (args.includes('--help')) {
   console.log(`Usage: npm run evidence:smoke -- [--write-evidence]
 
 Required: EVIDENCE_API_URL, EVIDENCE_SELLER_PUBLIC_KEY, EVIDENCE_PAYER_SECRET
+Seller auth: EVIDENCE_SELLER_SECRET or an unexpired EVIDENCE_SELLER_SESSION_TOKEN
 For --write-evidence: EVIDENCE_FRONTEND_URL, EVIDENCE_SOURCE_REVISION
 Optional: EVIDENCE_AMOUNT, EVIDENCE_HORIZON_URL, EVIDENCE_OUTPUT`);
   process.exit(0);
@@ -20,6 +21,9 @@ Optional: EVIDENCE_AMOUNT, EVIDENCE_HORIZON_URL, EVIDENCE_OUTPUT`);
 
 async function main() {
   const config = evidenceConfig(process.env, args);
+  let sellerSessionToken = process.env.EVIDENCE_SELLER_SESSION_TOKEN;
+  const sellerSecret = process.env.EVIDENCE_SELLER_SECRET;
+  if (!sellerSessionToken && !sellerSecret) throw new Error('Seller auth requires EVIDENCE_SELLER_SECRET or EVIDENCE_SELLER_SESSION_TOKEN (docs/SELLER_AUTH.md)');
   const payer = StellarSdk.Keypair.fromSecret(config.payerSecret);
   StellarSdk.Keypair.fromPublicKey(config.sellerPublicKey);
   if (payer.publicKey() === config.sellerPublicKey) {
@@ -32,8 +36,8 @@ async function main() {
   const send = async (route, options = {}) => {
     const response = await fetch(config.apiUrl + route, {
       signal: AbortSignal.timeout(20_000),
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
       ...options,
+      headers: { accept: 'application/json', 'content-type': 'application/json', ...options.headers },
     });
     const body = await response.json().catch(() => null);
     return { ok: response.ok, status: response.status, body };
@@ -57,10 +61,40 @@ async function main() {
     throw new Error('API readiness did not confirm ready=true');
   }
 
+  if (!sellerSessionToken) {
+    const seller = StellarSdk.Keypair.fromSecret(sellerSecret);
+    if (seller.publicKey() !== config.sellerPublicKey) throw new Error('Evidence seller secret does not match the configured public key');
+    const issued = await request('/auth/challenge?account=' + encodeURIComponent(config.sellerPublicKey) + '&network=TESTNET');
+    const challenge = issued?.data;
+    if (challenge?.network !== 'TESTNET' || challenge?.networkPassphrase !== StellarSdk.Networks.TESTNET) {
+      throw new Error('Seller challenge must use the pinned Testnet passphrase');
+    }
+    const parsed = StellarSdk.WebAuth.readChallengeTx(
+      challenge.transaction, challenge.serverSigningKey, StellarSdk.Networks.TESTNET,
+      challenge.homeDomain, challenge.webAuthDomain,
+    );
+    const minTime = Number(parsed.tx.timeBounds?.minTime);
+    const maxTime = Number(parsed.tx.timeBounds?.maxTime);
+    if (parsed.clientAccountID !== config.sellerPublicKey || maxTime !== challenge.expiresAt ||
+        maxTime <= Date.now() / 1000 || maxTime - minTime > 300) {
+      throw new Error('Seller challenge account or lifetime is invalid');
+    }
+    parsed.tx.sign(seller);
+    const authenticated = await request('/auth/session', {
+      method: 'POST', body: JSON.stringify({ transaction: parsed.tx.toXDR(), network: 'TESTNET' }),
+    });
+    if (authenticated?.data?.sellerPublicKey !== config.sellerPublicKey ||
+        authenticated?.data?.network !== 'TESTNET' || typeof authenticated?.data?.token !== 'string') {
+      throw new Error('Seller session does not match the evidence account');
+    }
+    sellerSessionToken = authenticated.data.token;
+  }
+
   await horizon.loadAccount(config.sellerPublicKey);
   const payerAccount = await horizon.loadAccount(payer.publicKey());
   const created = await request('/invoices', {
     method: 'POST',
+    headers: { authorization: `Bearer ${sellerSessionToken}` },
     body: JSON.stringify({
       amount: Number(config.amount),
       assetCode: 'XLM',
@@ -120,6 +154,7 @@ async function main() {
    */
   const unrelated = await request('/invoices', {
     method: 'POST',
+    headers: { authorization: `Bearer ${sellerSessionToken}` },
     body: JSON.stringify({
       amount: Number(config.amount),
       assetCode: 'XLM',

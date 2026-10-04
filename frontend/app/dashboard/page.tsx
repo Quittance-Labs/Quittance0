@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoiceApi } from '@/lib/api';
 import InvoiceCard from '@/components/InvoiceCard';
 import WalletConnect from '@/components/WalletConnect';
@@ -14,6 +14,7 @@ import {
   shouldClearSellerState,
   walletSessionGate,
   walletSessionKey,
+  walletSessionChanged,
 } from '@/lib/wallet-session';
 import Link from 'next/link';
 import { Loader2, Plus, TrendingUp, DollarSign, FileText, Download, AlertTriangle } from 'lucide-react';
@@ -38,16 +39,17 @@ import { DASHBOARD_RESULTS_ID, MAIN_CONTENT_ID, describeAmount, statusText } fro
 import { NETWORK_DISPLAY_NAME } from '@/lib/stellar';
 
 export default function DashboardPage() {
-  const { publicKey, connected, network, freighterAvailable, isWrongNetwork } =
+  const { publicKey, connected, network, networkPassphrase, freighterAvailable, isWrongNetwork } =
     useWalletStore();
   // One session for the whole page: the gate, the rows it may show, the stats
   // it may count and the request it may send all read from this value.
-  const session = normalizeWalletSession({
+  const session = useMemo(() => normalizeWalletSession({
     publicKey,
     connected,
     network,
+    networkPassphrase,
     freighterAvailable,
-  });
+  }), [publicKey, connected, network, networkPassphrase, freighterAvailable]);
   const gate = walletSessionGate(session, EXPECTED_WALLET_NETWORK);
   // The key is a string, so the clearing effect below depends on the account
   // rather than on a fresh session object on every render.
@@ -128,19 +130,19 @@ export default function DashboardPage() {
           invoiceApi.getStats(publicKey),
         ]);
 
-        if (!active) return;
+        if (!active || walletSessionChanged(session, useWalletStore.getState()).changed) return;
         setLoaded({
           owner: publicKey,
           invoices: invoicesResult.data,
           stats: statsResult.data[0] || {},
         });
       } catch (error) {
-        if (!active) return;
+        if (!active || walletSessionChanged(session, useWalletStore.getState()).changed) return;
         const message = apiErrorMessage(error, 'Failed to load dashboard data');
         setLoadError(message);
         toast.error(message);
       } finally {
-        if (active) setLoading(false);
+        if (active && !walletSessionChanged(session, useWalletStore.getState()).changed) setLoading(false);
       }
     })();
 
@@ -148,7 +150,7 @@ export default function DashboardPage() {
     return () => {
       active = false;
     };
-  }, [filter, gate.ready, publicKey, reloadKey, debouncedSearch]);
+  }, [filter, gate.ready, publicKey, session, reloadKey, debouncedSearch]);
 
   const handleInvoiceCancelled = (cancelledId: string) => {
     // The wallet the user acted in, not whichever one is connected when the

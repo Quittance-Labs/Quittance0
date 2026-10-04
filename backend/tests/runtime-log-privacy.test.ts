@@ -3,6 +3,7 @@ import { after, before, describe, it } from 'node:test';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { format } from 'node:util';
+import { sellerAuthEnvironment, sellerAuthHeaders } from './fixtures/seller-auth';
 
 // Capture every console channel, not just the structured logger's test sink:
 // plaintext service/cache/SDK diagnostics must obey the same privacy boundary.
@@ -37,12 +38,14 @@ function request(method: string, path: string, body?: unknown, options: {
   port?: number;
   requestId?: string;
   raw?: boolean;
+  sellerPublicKey?: string;
 } = {}): Promise<{ status: number; body: any; requestId?: string }> {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : options.raw ? String(body) : JSON.stringify(body);
     const req = http.request({ host: '127.0.0.1', port: options.port ?? port, method, path, headers: {
       ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {}),
       ...(options.requestId ? { 'x-request-id': options.requestId } : {}),
+      ...(options.sellerPublicKey ? sellerAuthHeaders(options.sellerPublicKey) : {}),
       'idempotency-key': `log-privacy-${++sequence}`,
     } }, res => {
       let raw = '';
@@ -71,6 +74,7 @@ function assertPrivate(output: string, values: string[]): void {
 
 describe('runtime log privacy at real HTTP and service boundaries', () => {
   before(async () => {
+    Object.assign(process.env, sellerAuthEnvironment);
     horizonResponder = () => ({ status: 404, body: { status: 404, title: PRIVATE_MARKER } });
     horizon = http.createServer((req, res) => {
       const { status, body } = horizonResponder(req.url ?? '');
@@ -108,7 +112,7 @@ describe('runtime log privacy at real HTTP and service boundaries', () => {
         const created = await request('POST', '/api/invoices', {
           amount: 25, assetCode: 'XLM', sellerPublicKey: SELLER,
           description: PRIVATE_MARKER, customerEmail: PRIVATE_MARKER,
-        }, { requestId });
+        }, { requestId, sellerPublicKey: SELLER });
         assert.equal(created.status, 201);
         const invoice = created.body.data.invoice;
         horizonResponder = url => {

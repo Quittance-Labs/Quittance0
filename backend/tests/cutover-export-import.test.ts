@@ -1,3 +1,4 @@
+import { sellerSessionLocals } from './fixtures/seller-auth';
 import assert from 'node:assert/strict';
 import { describe, it, beforeEach } from 'node:test';
 import { MemoryStorage } from '../src/storage/memory-storage';
@@ -490,6 +491,7 @@ describe('Cutover Export, Validation, and Transactional Import Engine', () => {
       },
     } as any;
     const resCreate = {
+      locals: sellerSessionLocals(SELLER_A),
       status(code: number) {
         createStatus = code;
         return this;

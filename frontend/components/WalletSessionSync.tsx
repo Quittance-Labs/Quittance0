@@ -10,6 +10,7 @@ import {
 } from '@/lib/stellar';
 import { useWalletStore } from '@/lib/store';
 import { sessionNetworkMatches, walletGate } from '@/lib/freighter-availability';
+import { walletSessionChanged } from '@/lib/wallet-session';
 
 const SESSION_TOAST_ID = 'wallet-session-sync';
 
@@ -22,10 +23,12 @@ export default function WalletSessionSync() {
 
   useEffect(() => {
     let active = true;
+    let revision = 0;
 
     const sync = async (announce = false) => {
+      const requestRevision = ++revision;
       const session = await readFreighterSession();
-      if (!active) return;
+      if (!active || requestRevision !== revision) return;
 
       const changed =
         previous.current.publicKey !== session.publicKey ||
@@ -51,14 +54,16 @@ export default function WalletSessionSync() {
 
       try {
         const balances = await getAccountBalance(session.publicKey);
-        if (!active) return;
+        if (!active || requestRevision !== revision ||
+            walletSessionChanged(session, useWalletStore.getState()).changed) return;
         const xlm = balances.find((balance) => balance.assetCode === 'XLM');
         syncSession({
-          ...session,
           balance: xlm ? parseFloat(xlm.balance).toFixed(2) : '0.00',
         });
       } catch {
-        syncSession({ ...session, balance: '—' });
+        if (!active || requestRevision !== revision ||
+            walletSessionChanged(session, useWalletStore.getState()).changed) return;
+        syncSession({ balance: '—' });
       }
 
       if (announce && changed) {
@@ -69,6 +74,7 @@ export default function WalletSessionSync() {
     void sync(false);
     const stopWatching = stopFreighterWalletWatcher((session) => {
       if (!active) return;
+      revision += 1;
       const changed =
         previous.current.publicKey !== session.publicKey ||
         previous.current.network !== session.network;
@@ -83,6 +89,7 @@ export default function WalletSessionSync() {
 
     return () => {
       active = false;
+      revision += 1;
       window.clearInterval(fallbackPoll);
       stopWatching();
     };

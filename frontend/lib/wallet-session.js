@@ -9,10 +9,8 @@
  * account. The answers drifted, and the drift is what "stale public key" bugs
  * are made of.
  *
- * This module is the single normaliser. It is pure - no React, no store, no
- * Freighter call - so every surface can be tested against the same session
- * values, and it delegates the "can this wallet act?" decision to walletGate
- * rather than re-deriving it.
+ * This module has no React, store or Freighter dependency. The normaliser and
+ * in-memory seller session manager share the same walletGate decision.
  */
 
 const { walletGate } = require('./freighter-availability');
@@ -109,7 +107,8 @@ function walletSessionChanged(previous, next) {
   const after = normalizeWalletSession(next);
 
   const accountChanged = before.publicKey !== after.publicKey;
-  const networkChanged = before.network !== after.network;
+  const networkChanged = before.network !== after.network ||
+    before.networkPassphrase !== after.networkPassphrase;
   const connectionChanged = before.connected !== after.connected;
 
   return {
@@ -137,7 +136,113 @@ function shouldClearSellerState(previous, next) {
   return normalizeWalletSession(previous).publicKey !== after.publicKey;
 }
 
+function sessionError(code, message, status = 401) {
+  return Object.assign(new Error(message), {
+    code, status, response: { status, data: { success: false, code, error: message } },
+  });
+}
+
+/**
+ * A bearer token belongs to one uninterrupted wallet session, not merely a
+ * public key. Epochs also fence A -> B -> A switches while Freighter is open.
+ * Nothing in this manager is written to localStorage or the persisted store.
+ *
+ * `sync` must be subscribed synchronously to wallet changes. Each operation
+ * also reads the wallet itself, so a delayed React effect cannot reuse a token.
+ * `authenticate` checks assertCurrent between its challenge/sign/redeem awaits.
+ */
+function createSellerSessionManager({ getWalletSession, authenticate, expectedNetwork, now = Date.now }) {
+  let scope;
+  let generation = 0;
+  let token = null;
+  let pending = null;
+
+  function sync() {
+    const wallet = normalizeWalletSession(getWalletSession());
+    const nextScope = JSON.stringify([
+      wallet.publicKey, wallet.connected, wallet.network,
+      wallet.networkPassphrase, wallet.freighterAvailable === false,
+    ]);
+    if (nextScope !== scope) {
+      scope = nextScope;
+      generation += 1;
+      token = null;
+      pending = null;
+    }
+    return wallet;
+  }
+
+  function contextFor(expectedPublicKey) {
+    const wallet = sync();
+    const gate = walletSessionGate(wallet, expectedNetwork);
+    if (!gate.ready) throw sessionError('AUTH_WALLET_REQUIRED', gate.message);
+    if (expectedPublicKey && expectedPublicKey !== wallet.publicKey) {
+      throw sessionError('WALLET_SESSION_CHANGED', 'The connected wallet changed. Please try again.', 409);
+    }
+    return Object.freeze({ ...wallet, generation, network: expectedNetwork });
+  }
+
+  function isCurrent(context) {
+    const wallet = sync();
+    return Boolean(context && context.generation === generation &&
+      context.publicKey === wallet.publicKey && walletSessionGate(wallet, expectedNetwork).ready);
+  }
+
+  function assertCurrent(context) {
+    if (!isCurrent(context)) {
+      throw sessionError('WALLET_SESSION_CHANGED', 'The connected wallet changed. Please try again.', 409);
+    }
+  }
+
+  function cachedToken(context) {
+    assertCurrent(context);
+    if (token && token.expiresAt * 1000 <= now()) token = null;
+    return token ? token.token : null;
+  }
+
+  async function getToken(context) {
+    const cached = cachedToken(context);
+    if (cached) return cached;
+    if (pending) return pending;
+
+    const request = Promise.resolve().then(async () => {
+      assertCurrent(context);
+      const issued = await authenticate(context, () => assertCurrent(context));
+      assertCurrent(context);
+      if (!issued || typeof issued.token !== 'string' || !issued.token ||
+          issued.sellerPublicKey !== context.publicKey || issued.network !== expectedNetwork ||
+          !Number.isSafeInteger(issued.expiresAt) || issued.expiresAt * 1000 <= now()) {
+        throw sessionError('AUTH_INVALID_SESSION', 'The server returned an invalid seller session.');
+      }
+      token = { token: issued.token, expiresAt: issued.expiresAt };
+      return token.token;
+    });
+    pending = request;
+    try {
+      return await request;
+    } finally {
+      // A stale challenge must never clear the new wallet's pending login.
+      if (pending === request) pending = null;
+    }
+  }
+
+  function invalidate(context, rejectedToken) {
+    assertCurrent(context);
+    // A late 401 for the previous token must not evict a successful refresh.
+    if (token && token.token === rejectedToken) token = null;
+  }
+
+  function clear() {
+    generation += 1;
+    token = null;
+    pending = null;
+  }
+
+  return { sync, contextFor, isCurrent, assertCurrent, getToken, cachedToken, invalidate, clear };
+}
+
 module.exports = {
+  createSellerSessionManager,
   normalizeWalletSession,
   shouldClearSellerState,
   walletSessionChanged,
