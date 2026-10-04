@@ -27,14 +27,53 @@ import {
   VERIFICATION_MESSAGES,
 } from '../../../shared/verification';
 import type { VerificationCode } from '../../../shared/verification';
-export type { VerificationCode, VerificationFailureBody } from '../../../shared/verification';
+export type {
+  VerificationCode,
+  VerificationFailureBody,
+  VerificationStage,
+  StageResult,
+} from '../../../shared/verification';
 export {
   VERIFICATION_CHECKS,
   CHECK_REJECTION_CODES,
+  VERIFICATION_STAGES,
+  STAGE_REJECTION_CODES,
   VERIFICATION_MESSAGES,
   VERIFICATION_CODES,
   messageForCode,
+  stageForCode,
 } from '../../../shared/verification';
+export {
+  fetchTransactionStage,
+  matchDestinationStage,
+  matchAssetStage,
+  matchAmountStage,
+  matchMemoStage,
+  attributeStage,
+  persistPaidStage,
+  executePaymentVerificationPipeline,
+} from './payment-verification-pipeline';
+export type {
+  FetchTransactionStageInput,
+  FetchTransactionOutput,
+  MatchDestinationStageInput,
+  MatchDestinationOutput,
+  MatchAssetStageInput,
+  MatchAssetOutput,
+  MatchAmountStageInput,
+  MatchAmountOutput,
+  MatchMemoStageInput,
+  MatchMemoOutput,
+  AttributeStageInput,
+  AttributeOutput,
+  PersistPaidStageInput,
+  PersistPaidOutput,
+  PersistPaidStorage,
+  ExecutePipelineInput,
+  VerificationPipelineSuccess,
+  VerificationPipelineFailure,
+  VerificationPipelineResult,
+} from './payment-verification-pipeline';
 
 export interface VerificationFailure {
   ok: false;

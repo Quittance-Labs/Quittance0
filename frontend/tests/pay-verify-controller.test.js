@@ -178,6 +178,11 @@ test('executePaymentVerification handles backend rejection via VERIFY_FAILED', a
   assert.equal(result.message, 'Amount mismatch');
   assert.deepEqual(events, [
     { type: 'VERIFY_STARTED', txHash: validHash },
-    { type: 'VERIFY_FAILED', error: 'Amount mismatch' },
+    {
+      type: 'VERIFY_FAILED',
+      error: 'Amount mismatch',
+      stage: null,
+      code: 'AMOUNT_MISMATCH',
+    },
   ]);
 });

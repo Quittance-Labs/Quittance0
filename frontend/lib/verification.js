@@ -13,7 +13,12 @@
 const { rejectionLabel: _rejectionLabel } = require('./verify-rejection-label.ts');
 const { isEdgeLimitError, edgeLimitMessage } = require('./edge-limit.js');
 
-const { VERIFICATION_MESSAGES } = require('../../shared/verification.ts');
+const {
+  VERIFICATION_MESSAGES,
+  VERIFICATION_STAGES,
+  STAGE_REJECTION_CODES,
+  stageForCode,
+} = require('../../shared/verification.ts');
 
 const MAX_PAYER_FIELD_LENGTH = 255;
 const PAYER_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -111,6 +116,9 @@ const resolveVerificationError = (error, fallback = 'Verification failed') => {
 
 module.exports = {
   VERIFICATION_MESSAGES,
+  VERIFICATION_STAGES,
+  STAGE_REJECTION_CODES,
+  stageForCode,
   messageForCode,
   failure,
   isValidTxHash,

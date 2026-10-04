@@ -5,6 +5,7 @@ export interface VerifyClassification {
   isApiUnavailable: boolean;
   message: string;
   code?: string;
+  stage?: string;
 }
 
 export type VerifyPaymentResult =

@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import type { VerificationCode } from '../services/payment-verification';
+import type { VerificationCode, VerificationStage } from '../services/payment-verification';
 
 // Shared response envelope used by both the MVP and the Postgres server.
 // Both servers send the same success/failure shape so clients stay
@@ -104,9 +104,16 @@ export function sendVerificationFailure(
   res: Response,
   status: number,
   code: VerificationCode,
-  error: string
+  error: string,
+  extra?: { stage?: VerificationStage; details?: Record<string, unknown> }
 ): void {
-  res.status(status).json({ success: false, code, error });
+  res.status(status).json({
+    success: false,
+    code,
+    error,
+    ...(extra?.stage ? { stage: extra.stage } : {}),
+    ...(extra?.details ? { details: extra.details } : {}),
+  });
 }
 
 /**
@@ -119,14 +126,23 @@ export interface VerificationFailureBody {
   success: false;
   code: VerificationCode;
   error: string;
+  stage?: VerificationStage;
+  details?: Record<string, unknown>;
 }
 
 /** Build a verification failure envelope with a stable code and its message. */
 export function verificationFailureBody(
   code: VerificationCode,
-  error: string
+  error: string,
+  extra?: { stage?: VerificationStage; details?: Record<string, unknown> }
 ): VerificationFailureBody {
-  return { success: false, code, error };
+  return {
+    success: false,
+    code,
+    error,
+    ...(extra?.stage ? { stage: extra.stage } : {}),
+    ...(extra?.details ? { details: extra.details } : {}),
+  };
 }
 
 export default {

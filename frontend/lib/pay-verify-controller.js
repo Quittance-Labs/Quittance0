@@ -48,7 +48,9 @@ function classifyVerifyError(error) {
   }
 
   const isApiUnavailable = isApiUnavailableError(error);
-  const code = error?.response?.data?.code;
+  const data = error?.response?.data ?? error?.cause?.response?.data ?? {};
+  const code = data.code ?? error?.code;
+  const stage = data.stage;
   const message = resolveVerificationError(
     error,
     isApiUnavailable ? apiErrorMessage(error) : 'Verification failed'
@@ -59,6 +61,7 @@ function classifyVerifyError(error) {
     isApiUnavailable,
     message,
     code,
+    stage,
   };
 }
 
@@ -122,7 +125,12 @@ async function executePaymentVerification({
     }
 
     if (typeof dispatch === 'function') {
-      dispatch({ type: 'VERIFY_FAILED', error: classification.message });
+      dispatch({
+        type: 'VERIFY_FAILED',
+        error: classification.message,
+        stage: classification.stage ?? null,
+        code: classification.code ?? null,
+      });
     }
 
     return {

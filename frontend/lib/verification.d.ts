@@ -54,3 +54,16 @@ export function checkTxHash(txHash: unknown): VerificationResult<string>;
 export function checkPayerInfo(input: PayerInfo): VerificationResult<PayerInfo>;
 
 export function resolveVerificationError(error: unknown, fallback?: string): string;
+
+export type VerificationStage =
+  | 'fetch_transaction'
+  | 'match_destination'
+  | 'match_asset'
+  | 'match_amount'
+  | 'match_memo'
+  | 'attribute'
+  | 'persist_paid';
+
+export const VERIFICATION_STAGES: readonly VerificationStage[];
+export const STAGE_REJECTION_CODES: Record<VerificationStage, readonly VerificationCode[]>;
+export function stageForCode(code: VerificationCode): VerificationStage;

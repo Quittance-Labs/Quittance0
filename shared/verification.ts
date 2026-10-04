@@ -76,12 +76,95 @@ export const CHECK_REJECTION_CODES: Record<VerificationCheck, VerificationCode> 
   asset: 'ASSET_MISMATCH',
 };
 
+/**
+ * Ordered stages of the payment verification pipeline (issue #441).
+ *
+ * fetch_transaction → match_destination → match_asset → match_amount →
+ * match_memo → attribute → persist_paid. A hard failure short-circuits.
+ */
+export const VERIFICATION_STAGES = [
+  'fetch_transaction',
+  'match_destination',
+  'match_asset',
+  'match_amount',
+  'match_memo',
+  'attribute',
+  'persist_paid',
+] as const;
+
+export type VerificationStage = (typeof VERIFICATION_STAGES)[number];
+
+/**
+ * Rejection codes each pipeline stage may produce.
+ *
+ * Existing codes are remapped onto stages; new codes are added only when a
+ * stage cannot reuse one already in VERIFICATION_MESSAGES.
+ */
+export const STAGE_REJECTION_CODES: Record<VerificationStage, readonly VerificationCode[]> = {
+  fetch_transaction: [
+    'MISSING_TX_HASH',
+    'INVALID_TX_HASH',
+    'TRANSACTION_NOT_FOUND',
+    'VERIFY_UNAVAILABLE',
+    'NO_PAYMENT_OPERATION',
+    'AMBIGUOUS_PAYMENT_OPERATION',
+    'NETWORK_MISMATCH',
+    'VERIFY_RATE_LIMIT_EXCEEDED',
+  ],
+  match_destination: ['DESTINATION_MISMATCH'],
+  match_asset: ['ASSET_MISMATCH'],
+  match_amount: ['AMOUNT_MISMATCH', 'AMOUNT_TOO_LOW', 'AMOUNT_TOO_HIGH'],
+  match_memo: ['MEMO_TYPE_MISMATCH', 'MEMO_MISMATCH'],
+  attribute: [
+    'INVALID_PAYER_NAME',
+    'INVALID_PAYER_EMAIL',
+    'PAYER_INFO_TOO_LONG',
+    'TRANSACTION_CLOSE_TIME_UNAVAILABLE',
+  ],
+  persist_paid: [
+    'INVOICE_ALREADY_PAID',
+    'INVOICE_EXPIRED',
+    'INVOICE_NOT_PENDING',
+    'TX_HASH_ALREADY_USED',
+  ],
+};
+
+const CODE_TO_STAGE = Object.fromEntries(
+  (Object.entries(STAGE_REJECTION_CODES) as [VerificationStage, readonly VerificationCode[]][])
+    .flatMap(([stage, codes]) => codes.map((code) => [code, stage]))
+) as Record<VerificationCode, VerificationStage>;
+
+/** Which pipeline stage produces a given rejection code. */
+export function stageForCode(code: VerificationCode): VerificationStage {
+  return CODE_TO_STAGE[code] ?? 'fetch_transaction';
+}
+
 /** The envelope a verification rejection is returned in. */
 export interface VerificationFailureBody {
   success: false;
   code: VerificationCode;
   error: string;
+  stage?: VerificationStage;
+  details?: Record<string, unknown>;
 }
+
+/** Individual stage result when successful. */
+export interface StageSuccessResult<T = unknown> {
+  ok: true;
+  stage: VerificationStage;
+  value: T;
+}
+
+/** Individual stage result when failed. */
+export interface StageFailureResult {
+  ok: false;
+  stage: VerificationStage;
+  code: VerificationCode;
+  error: string;
+  details?: Record<string, unknown>;
+}
+
+export type StageResult<T = unknown> = StageSuccessResult<T> | StageFailureResult;
 
 /** User-facing message for every rejection code. */
 export const VERIFICATION_MESSAGES: Record<VerificationCode, string> = {
