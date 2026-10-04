@@ -152,7 +152,7 @@ BEGIN
         'Resolve conflicts before re-running the migration.';
     END IF;
 
-    CREATE UNIQUE INDEX invoices_payment_tx_hash_unique
+    CREATE UNIQUE INDEX IF NOT EXISTS invoices_payment_tx_hash_unique
       ON invoices(payment_tx_hash)
       WHERE payment_tx_hash IS NOT NULL;
   END IF;
