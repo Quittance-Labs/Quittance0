@@ -83,7 +83,7 @@ export interface CreateInvoiceRequest {
   sellerName?: string;
   sellerEmail?: string;
   expiresInDays?: number;
-  network?: 'TESTNET' | 'PUBLIC' | string;
+  network?: 'TESTNET' | 'PUBLIC';
   idempotencyKey?: string;
 }
 
