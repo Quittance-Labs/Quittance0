@@ -394,7 +394,6 @@ export class InvoiceService {
       const row = existing.rows[0];
       if (
         sellerPublicKey &&
-        row.status === 'PENDING' &&
         row.seller_public_key !== sellerPublicKey
       ) {
         throw new Error('Unauthorized: only the seller can cancel this invoice');
