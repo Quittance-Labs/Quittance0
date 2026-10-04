@@ -1,3 +1,4 @@
+import type { WebhookStorage } from './webhook-storage';
 import { CreateInvoiceInput } from '../utils/validation';
 import type {
   LatePaymentWarningCode,
@@ -82,6 +83,8 @@ export interface MarkAsPaidOptions {
 export interface InvoiceStorage {
   /** Reported by /api/health so a running server tells you which backend it uses. */
   readonly mode: string;
+  /** Seller webhooks share this adapter's persistence and invoice transactions. */
+  readonly webhooks?: WebhookStorage;
 
   createInvoice(input: CreateInvoiceInput): Promise<StoredInvoice>;
   getInvoiceById(id: string): Promise<StoredInvoice | null>;

@@ -1,6 +1,25 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
-import stellarService from '../src/services/stellar.service';
+import { after, before, describe, it } from 'node:test';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
+
+let stellarService: typeof import('../src/services/stellar.service')['default'];
+let horizon: http.Server;
+before(async () => {
+  // The CI network is intentionally offline. A missing transaction is a real
+  // HTTP404, not a connection refusal; exercise that SDK path locally.
+  horizon = http.createServer((_req, res) => {
+    res.writeHead(404, { 'content-type': 'application/problem+json' });
+    res.end(JSON.stringify({ status: 404, title: 'Resource Missing' }));
+  });
+  await new Promise<void>(resolve => horizon.listen(0, '127.0.0.1', resolve));
+  process.env.STELLAR_HORIZON_URL = `http://127.0.0.1:${(horizon.address() as AddressInfo).port}`;
+  ({ default: stellarService } = await import('../src/services/stellar.service'));
+});
+after(async () => {
+  horizon.closeAllConnections();
+  await new Promise<void>(resolve => horizon.close(() => resolve()));
+});
 
 describe('StellarService - Horizon Read Consolidation', () => {
   it('exposes loadAccount, getBalance, verifyPayment, getTransaction, streamPayments, getRecentPayments, sendPayment', () => {

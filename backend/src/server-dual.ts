@@ -38,6 +38,7 @@ import { configuredFrontendOrigins, configuredStorageMode, corsOptions } from '.
 import { healthHandler, readinessHandler } from './health';
 import { bodyLimitErrorHandler } from './middleware/body-limit';
 import { getEdgeControlConfig } from './middleware/edge-config';
+import { startConfiguredWebhookWorker, type WebhookWorker } from './services/webhook-worker';
 import type { InvoiceStorage } from './storage/invoice-storage';
 
 dotenv.config();
@@ -74,6 +75,7 @@ paymentMonitorService.configure({
 const app: Application = express();
 const PORT = process.env.PORT || 3001;
 const maxBodyBytes = getEdgeControlConfig().maxBodyBytes;
+let webhookWorker: WebhookWorker | undefined;
 
 app.use(cors(corsOptions()));
 app.use(requestCorrelationMiddleware);
@@ -165,6 +167,8 @@ async function initialize(): Promise<void> {
  * configured one. Importing this module never starts a server on its own.
  */
 export function startServer(port: number | string = PORT) {
+  const worker = startConfiguredWebhookWorker(storage.webhooks);
+  webhookWorker = worker;
   const server = app.listen(port, async () => {
     await initialize();
     const modeLabel = storageMode === 'postgres' ? 'PostgreSQL' : 'In-Memory (MVP)';
@@ -179,6 +183,8 @@ export function startServer(port: number | string = PORT) {
     console.log(`🌐 Frontends: ${configuredFrontendOrigins().join(', ') || 'not configured'}`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
   });
+  server.once('close', () => { void worker?.stop(); });
+  server.once('error', () => { void worker?.stop(); });
   return server;
 }
 
@@ -188,6 +194,7 @@ if (/server-dual(\.[cm]?[jt]s)?$/.test(entryPoint)) {
 }
 
 process.on('SIGTERM', async () => {
+  await webhookWorker?.stop();
   paymentMonitorService.stop();
   if (storageMode === 'postgres') {
     await pool.end();
@@ -196,6 +203,7 @@ process.on('SIGTERM', async () => {
 });
 
 process.on('SIGINT', async () => {
+  await webhookWorker?.stop();
   paymentMonitorService.stop();
   if (storageMode === 'postgres') {
     await pool.end();

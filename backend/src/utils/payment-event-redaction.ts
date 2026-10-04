@@ -23,3 +23,86 @@ export function redactPaymentEventData(
   }
   return clean;
 }
+
+
+/**
+ * Webhooks cross a seller-controlled network boundary. Build a new object from
+ * approved fields, rather than relying on the internal audit feed's denylist.
+ */
+export function redactWebhookPayload(input: unknown): import('../../../shared/webhooks').WebhookPayload {
+  const object = (value: unknown): Record<string, unknown> | undefined =>
+    value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : undefined;
+  const iso = (value: unknown): string | undefined => {
+    if (typeof value !== 'string') return undefined;
+    const parsed = new Date(value);
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : undefined;
+  };
+  const data = object(input);
+  const eventTypes = [
+    'invoice.created', 'invoice.paid', 'invoice.cancelled', 'invoice.expired', 'payment.rejected',
+  ];
+  const createdAt = iso(data?.createdAt);
+  if (
+    !data || data.version !== 1 || typeof data.id !== 'string' || !data.id ||
+    typeof data.type !== 'string' || !eventTypes.includes(data.type) || !createdAt
+  ) {
+    throw new Error('Invalid webhook payload');
+  }
+  const output: Record<string, unknown> = {
+    version: 1,
+    id: data.id,
+    type: data.type,
+    createdAt,
+  };
+  const source = object(data.invoice);
+  if (source) {
+    const expiresAt = iso(source.expiresAt);
+    if (
+      typeof source.id !== 'string' || !source.id ||
+      typeof source.amount !== 'string' ||
+      typeof source.assetCode !== 'string' ||
+      typeof source.status !== 'string' ||
+      !['PENDING', 'PAID', 'CANCELLED', 'EXPIRED'].includes(source.status) ||
+      !expiresAt
+    ) {
+      throw new Error('Invalid webhook invoice');
+    }
+    const invoice: Record<string, unknown> = {
+      id: source.id,
+      amount: source.amount,
+      assetCode: source.assetCode,
+      status: source.status,
+      expiresAt,
+    };
+    if (typeof source.assetIssuer === 'string') invoice.assetIssuer = source.assetIssuer;
+    if (typeof source.paymentTxHash === 'string' && /^[a-fA-F0-9]{64}$/.test(source.paymentTxHash)) {
+      invoice.paymentTxHash = source.paymentTxHash;
+    }
+    const settledAt = iso(source.settledAt);
+    if (settledAt) invoice.settledAt = settledAt;
+    for (const key of ['settlementContext', 'priorStatus', 'latePaymentWarningCode']) {
+      const value = source[key];
+      if (typeof value === 'string' && /^[A-Z_]{1,60}$/.test(value)) {
+        invoice[key] = value;
+      }
+    }
+    output.invoice = invoice;
+  } else if (data.test !== true) {
+    throw new Error('Webhook invoice is required');
+  }
+  const sourcePayment = object(data.payment);
+  if (sourcePayment) {
+    const payment: Record<string, unknown> = {};
+    if (typeof sourcePayment.code === 'string' && /^[A-Z0-9_]{1,100}$/.test(sourcePayment.code)) {
+      payment.code = sourcePayment.code;
+    }
+    if (typeof sourcePayment.txHash === 'string' && /^[a-fA-F0-9]{64}$/.test(sourcePayment.txHash)) {
+      payment.txHash = sourcePayment.txHash;
+    }
+    if (Object.keys(payment).length > 0) output.payment = payment;
+  }
+  if (data.test === true) output.test = true;
+  return output as unknown as import('../../../shared/webhooks').WebhookPayload;
+}

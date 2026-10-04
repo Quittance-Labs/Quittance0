@@ -152,7 +152,7 @@ BEGIN
         'Resolve conflicts before re-running the migration.';
     END IF;
 
-    CREATE UNIQUE INDEX invoices_payment_tx_hash_unique
+    CREATE UNIQUE INDEX IF NOT EXISTS invoices_payment_tx_hash_unique
       ON invoices(payment_tx_hash)
       WHERE payment_tx_hash IS NOT NULL;
   END IF;
@@ -192,3 +192,182 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(255);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_seller_idempotency
   ON invoices (seller_public_key, idempotency_key)
   WHERE idempotency_key IS NOT NULL;
+
+
+-- Issue #584: seller webhooks and a transactional, durable delivery outbox.
+CREATE TABLE IF NOT EXISTS webhook_endpoints (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  seller_public_key VARCHAR(56) NOT NULL,
+  url TEXT NOT NULL CHECK (char_length(url) <= 2048),
+  events TEXT[] NOT NULL CHECK (
+    cardinality(events) BETWEEN 1 AND 5 AND
+    events <@ ARRAY[
+      'invoice.created', 'invoice.paid', 'invoice.cancelled',
+      'invoice.expired', 'payment.rejected'
+    ]::TEXT[]
+  ),
+  secret_hash VARCHAR(64) NOT NULL,
+  secret_encrypted TEXT NOT NULL,
+  previous_secret_hash VARCHAR(64),
+  previous_secret_encrypted TEXT,
+  previous_secret_expires_at TIMESTAMPTZ,
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  failure_count INTEGER NOT NULL DEFAULT 0 CHECK (failure_count >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  disabled_at TIMESTAMPTZ,
+  deleted_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_endpoints_seller
+  ON webhook_endpoints (seller_public_key, created_at, id);
+
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  endpoint_id UUID NOT NULL REFERENCES webhook_endpoints(id),
+  event_id UUID NOT NULL,
+  event_type TEXT NOT NULL CHECK (event_type IN (
+    'invoice.created', 'invoice.paid', 'invoice.cancelled',
+    'invoice.expired', 'payment.rejected'
+  )),
+  payload JSONB NOT NULL,
+  attempt INTEGER NOT NULL DEFAULT 0 CHECK (attempt >= 0),
+  next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'delivered', 'dead', 'cancelled')),
+  last_response_code INTEGER,
+  last_error_code TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ,
+  UNIQUE (endpoint_id, event_id)
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_due
+  ON webhook_deliveries (next_attempt_at, id) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_history
+  ON webhook_deliveries (endpoint_id, created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS webhook_proofs (
+  seller_public_key VARCHAR(56) NOT NULL,
+  nonce UUID NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (seller_public_key, nonce)
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_proofs_expiry ON webhook_proofs (expires_at);
+
+-- Keep the SQL boundary a whitelist too: no memo, contact, description, raw
+-- rejection text, or arbitrary event-data fields can enter the outbox.
+CREATE OR REPLACE FUNCTION invoice_webhook_payload(
+  i invoices,
+  kind TEXT,
+  event_id UUID,
+  at TIMESTAMPTZ,
+  payment JSONB DEFAULT NULL
+) RETURNS JSONB LANGUAGE SQL STABLE AS $$
+  SELECT jsonb_strip_nulls(jsonb_build_object(
+    'version', 1,
+    'id', event_id,
+    'type', kind,
+    'createdAt', at,
+    'invoice', jsonb_strip_nulls(jsonb_build_object(
+      'id', (i).id,
+      'amount', (i).amount::text,
+      'assetCode', (i).asset_code,
+      'assetIssuer', (i).asset_issuer,
+      'status', (i).status,
+      'paymentTxHash', CASE
+        WHEN (i).payment_tx_hash ~ '^[a-fA-F0-9]{64}$' THEN (i).payment_tx_hash ELSE NULL END,
+      'settledAt', (i).settled_at,
+      'settlementContext', CASE
+        WHEN (i).settlement_context ~ '^[A-Z_]{1,60}$' THEN (i).settlement_context ELSE NULL END,
+      'priorStatus', CASE
+        WHEN (i).prior_status ~ '^[A-Z_]{1,60}$' THEN (i).prior_status ELSE NULL END,
+      'latePaymentWarningCode', CASE
+        WHEN (i).late_payment_warning_code ~ '^[A-Z_]{1,60}$' THEN (i).late_payment_warning_code ELSE NULL END,
+      'expiresAt', (i).expires_at
+    )),
+    'payment', CASE WHEN payment IS NULL THEN NULL ELSE jsonb_strip_nulls(jsonb_build_object(
+      'code', CASE WHEN payment->>'code' ~ '^[A-Z0-9_]{1,100}$' THEN payment->>'code' ELSE NULL END,
+      'txHash', CASE WHEN payment->>'txHash' ~ '^[a-fA-F0-9]{64}$' THEN payment->>'txHash' ELSE NULL END
+    )) END
+  ));
+$$;
+
+-- AFTER triggers are part of the same INSERT/UPDATE statement and transaction.
+-- A failed audit or outbox insert rolls back the invoice change, including the
+-- markAsPaid CTE and lazy expiry sweeps. No HTTP request runs in this transaction.
+CREATE OR REPLACE FUNCTION invoice_webhook_outbox() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  kind TEXT;
+  v_event_id UUID := gen_random_uuid();
+  happened_at TIMESTAMPTZ := clock_timestamp();
+  event_payload JSONB;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    kind := 'invoice.created';
+  ELSE
+    IF OLD.status IS NOT DISTINCT FROM NEW.status THEN
+      RETURN NEW;
+    END IF;
+    CASE NEW.status
+      WHEN 'PAID' THEN kind := 'invoice.paid';
+      WHEN 'CANCELLED' THEN kind := 'invoice.cancelled';
+      WHEN 'EXPIRED' THEN kind := 'invoice.expired';
+      ELSE RETURN NEW;
+    END CASE;
+    IF NEW.status IN ('CANCELLED', 'EXPIRED') THEN
+      INSERT INTO payment_events (id, invoice_id, event_type, event_data, created_at)
+      VALUES (
+        v_event_id,
+        NEW.id,
+        CASE WHEN NEW.status = 'CANCELLED' THEN 'INVOICE_CANCELLED' ELSE 'INVOICE_EXPIRED' END,
+        jsonb_build_object('priorStatus', OLD.status, 'status', NEW.status),
+        happened_at
+      );
+    END IF;
+  END IF;
+  event_payload := invoice_webhook_payload(NEW, kind, v_event_id, happened_at);
+  INSERT INTO webhook_deliveries (
+    endpoint_id, event_id, event_type, payload, next_attempt_at, created_at
+  )
+  SELECT e.id, v_event_id, kind, event_payload, happened_at, happened_at
+  FROM webhook_endpoints e
+  WHERE e.seller_public_key = NEW.seller_public_key
+    AND e.enabled AND e.deleted_at IS NULL AND kind = ANY(e.events)
+  ON CONFLICT (endpoint_id, event_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS invoice_webhook_outbox_trigger ON invoices;
+CREATE TRIGGER invoice_webhook_outbox_trigger
+  AFTER INSERT OR UPDATE OF status ON invoices
+  FOR EACH ROW EXECUTE FUNCTION invoice_webhook_outbox();
+
+CREATE OR REPLACE FUNCTION rejection_webhook_outbox() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  invoice_row invoices;
+  event_payload JSONB;
+  happened_at TIMESTAMPTZ := COALESCE(NEW.created_at::timestamptz, clock_timestamp());
+BEGIN
+  IF NEW.event_type NOT IN ('PAYMENT_REJECTED', 'PARTIAL_PAYMENT') THEN
+    RETURN NEW;
+  END IF;
+  SELECT * INTO invoice_row FROM invoices WHERE id = NEW.invoice_id;
+  IF NOT FOUND THEN
+    RETURN NEW;
+  END IF;
+  event_payload := invoice_webhook_payload(
+    invoice_row, 'payment.rejected', NEW.id, happened_at, NEW.event_data
+  );
+  INSERT INTO webhook_deliveries (
+    endpoint_id, event_id, event_type, payload, next_attempt_at, created_at
+  )
+  SELECT e.id, NEW.id, 'payment.rejected', event_payload, happened_at, happened_at
+  FROM webhook_endpoints e
+  WHERE e.seller_public_key = invoice_row.seller_public_key
+    AND e.enabled AND e.deleted_at IS NULL AND 'payment.rejected' = ANY(e.events)
+  ON CONFLICT (endpoint_id, event_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS rejection_webhook_outbox_trigger ON payment_events;
+CREATE TRIGGER rejection_webhook_outbox_trigger
+  AFTER INSERT ON payment_events
+  FOR EACH ROW EXECUTE FUNCTION rejection_webhook_outbox();

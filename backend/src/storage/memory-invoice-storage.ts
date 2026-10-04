@@ -8,6 +8,10 @@ export class MemoryInvoiceStorage implements InvoiceStorage {
 
   constructor(private readonly service: InvoiceMemoryService = new InvoiceMemoryService()) {}
 
+  get webhooks() {
+    return this.service.webhooks;
+  }
+
   async createInvoice(input: CreateInvoiceInput): Promise<StoredInvoice> {
     return this.service.createInvoice(input);
   }

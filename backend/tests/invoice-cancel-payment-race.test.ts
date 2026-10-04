@@ -595,9 +595,10 @@ describe('cancel versus payment monitor attribution on memory storage', () => {
     assert.equal(stored?.paymentTxHash, undefined);
 
     const events = await invoiceService.getPaymentEvents(invoice.id);
-    assert.equal(events.length, 1);
-    assert.equal(events[0].eventType, 'PARTIAL_PAYMENT');
-    assert.equal(events[0].eventData.code, 'AMOUNT_TOO_LOW');
+    assert.equal(events.length, 2);
+    assert.equal(events[0].eventType, 'INVOICE_CANCELLED');
+    assert.equal(events[1].eventType, 'PARTIAL_PAYMENT');
+    assert.equal(events[1].eventData.code, 'AMOUNT_TOO_LOW');
   });
 });
 

@@ -137,6 +137,22 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
       .set(invoiceId, txHash, httpStatus, body)
       .catch(() => { emitOperationalFailure('cache.set'); });
 
+  // A rejected verification is acknowledged/cached only after its audit/outbox
+  // transaction commits. Otherwise the caller can retry instead of losing an event.
+  const recordRejection = async (res: Response, id: string, txHash: string, code: string): Promise<boolean> => {
+    try {
+      await storage.logPaymentEvent(id,
+        code === 'AMOUNT_TOO_LOW' || code === 'AMOUNT_MISMATCH' ? 'PARTIAL_PAYMENT' : 'PAYMENT_REJECTED',
+        { code, txHash, source: 'manual-verify' });
+      return true;
+    } catch {
+      emitOperationalFailure('invoice.events');
+      res.status(503).json({ success: false, code: 'PAYMENT_EVENT_UNAVAILABLE',
+        error: 'The payment event could not be recorded. Please retry verification.' });
+      return false;
+    }
+  };
+
   const frontendUrl = () =>
     options.frontendUrl || process.env.FRONTEND_URL || 'http://localhost:3000';
 
@@ -689,21 +705,8 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
             durationMs: Date.now() - startedAt,
           });
           const body = verificationFailureBody(verification.code, verification.error);
+          if (!await recordRejection(res, id, hashCheck.value, verification.code)) return;
           await cacheResult(id, hashCheck.value, 400, body);
-          // Issue #515: a rejected verify lands on the seller's audit feed with
-          // the same taxonomy the monitor uses, so "still PENDING" answers
-          // itself without the payer having to say so.
-          await storage.logPaymentEvent(
-            id,
-            verification.code === 'AMOUNT_TOO_LOW' || verification.code === 'AMOUNT_MISMATCH'
-              ? 'PARTIAL_PAYMENT'
-              : 'PAYMENT_REJECTED',
-            {
-              code: verification.code,
-              txHash: hashCheck.value,
-              source: 'manual-verify',
-            }
-          ).catch(() => undefined);
           return sendVerificationFailure(res, 400, verification.code, verification.error);
         }
 
@@ -774,6 +777,7 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
             durationMs: Date.now() - startedAt,
           });
             const body = verificationFailureBody(error.code, messageForCode(error.code));
+            if (!await recordRejection(res, id, hashCheck.value, error.code)) return;
             await cacheResult(id, hashCheck.value, 409, body);
             res.status(409).json(body);
             return;
