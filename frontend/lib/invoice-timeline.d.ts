@@ -24,6 +24,7 @@ export interface InvoiceTimelineInput {
   cancelledAt?: string;
   payerPublicKey?: string;
   paymentTxHash?: string;
+  settlementContext?: 'ON_TIME' | 'AFTER_EXPIRY' | 'AFTER_CANCEL';
   latePaymentWarningCode?: 'PAYMENT_RECEIVED_AFTER_EXPIRY' | 'PAYMENT_RECEIVED_AFTER_CANCEL' | null;
 }
 

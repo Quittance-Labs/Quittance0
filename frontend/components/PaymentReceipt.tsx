@@ -12,6 +12,7 @@ import { reportProofHandoff } from '@/lib/proof-handoff';
 import { canSendProofEmail, getProofMailtoRecipient, resolveInvoiceNetwork } from '@/lib/mailto-delivery';
 import { toast } from 'sonner';
 import type { PayPageInvoice } from './pay-page.types';
+import { latePaymentWarningForCode } from '../../shared/settlement';
 import { buildHorizonTxUrl, resolveExplorerNetwork } from '@/lib/explorer-tx-link';
 // The receipt renders a settled (paid / expired / cancelled) record. It shares
 // the same status vocabulary as PaymentStatus and the verification rejection
@@ -23,19 +24,7 @@ interface PaymentReceiptProps {
 }
 
 function latePaymentWarning(invoice: PayPageInvoice): { title: string; body: string } | null {
-  if (invoice.latePaymentWarningCode === 'PAYMENT_RECEIVED_AFTER_CANCEL') {
-    return {
-      title: 'Payment received after cancellation',
-      body: 'This transaction proves funds reached the seller. Contact the seller to reconcile the payment.',
-    };
-  }
-  if (invoice.latePaymentWarningCode === 'PAYMENT_RECEIVED_AFTER_EXPIRY') {
-    return {
-      title: 'Payment received after invoice expiry',
-      body: 'This transaction proves funds reached the seller after the original payment window.',
-    };
-  }
-  return null;
+  return latePaymentWarningForCode(invoice.latePaymentWarningCode);
 }
 
 export default function PaymentReceipt({ invoice, proof: proofProp }: PaymentReceiptProps) {

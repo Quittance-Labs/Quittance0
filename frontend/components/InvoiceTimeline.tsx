@@ -3,6 +3,7 @@
 import { Circle, CheckCircle2, XCircle, Clock, AlertTriangle } from 'lucide-react';
 import { formatAddress, formatDate } from '@/lib/utils';
 import { buildInvoiceTimelineEvents } from '@/lib/invoice-timeline';
+import { timelineCopyForLatePayment } from '../../shared/settlement';
 import { getTimeRemaining } from '@/lib/utils';
 import { buildHorizonTxUrl, resolveExplorerNetwork } from '@/lib/explorer-tx-link';
 import { getExplorerTransactionUrl } from '@/lib/stellar';
@@ -17,6 +18,7 @@ interface InvoiceTimelineInvoice {
   payerPublicKey?: string;
   paymentTxHash?: string;
   latePaymentWarningCode?: 'PAYMENT_RECEIVED_AFTER_EXPIRY' | 'PAYMENT_RECEIVED_AFTER_CANCEL' | null;
+  settlementContext?: 'ON_TIME' | 'AFTER_EXPIRY' | 'AFTER_CANCEL';
   network?: string;
 }
 
@@ -24,11 +26,6 @@ interface InvoiceTimelineProps {
   invoice: InvoiceTimelineInvoice;
   now?: number;
 }
-
-const LATE_WARNING_COPY: Record<string, string> = {
-  PAYMENT_RECEIVED_AFTER_EXPIRY: 'This payment arrived after the invoice had expired.',
-  PAYMENT_RECEIVED_AFTER_CANCEL: 'This payment arrived after the invoice had been cancelled.',
-};
 
 function iconFor(type: string) {
   switch (type) {
@@ -117,7 +114,7 @@ export default function InvoiceTimeline({ invoice, now }: InvoiceTimelineProps) 
                         className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"
                         aria-hidden="true"
                       />
-                      <span>{LATE_WARNING_COPY[event.lateWarningCode]}</span>
+                      <span>{timelineCopyForLatePayment(event.lateWarningCode) ?? event.lateWarningCode}</span>
                     </p>
                   )}
                 </div>

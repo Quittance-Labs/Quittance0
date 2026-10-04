@@ -1,13 +1,16 @@
 /**
  * Builds the chronological event list for the seller invoice workspace's
- * timeline (issue #454): created, awaiting-payment/expired, cancelled, and
- * paid, including the late-payment flag when payment settles after the
+ * timeline (issue #454 / #507): created, awaiting-payment/expired, cancelled,
+ * and paid, including the late-payment flag when payment settles after the
  * invoice's expiry or cancellation.
  *
  * Kept as a pure function over the invoice DTO, separate from the
  * `InvoiceTimeline` component that renders it, so the event-selection logic
  * (which events apply, in what order) is unit-testable without mounting any
  * React component.
+ *
+ * Warning codes come from the invoice DTO (set by the shared settlement
+ * classifier). Timeline does not re-derive lateness from wall clock.
  */
 
 const { hasInvoiceExpired } = require('./invoice-lifecycle.js');
@@ -43,18 +46,30 @@ function buildInvoiceTimelineEvents(invoice, now = Date.now()) {
   });
 
   // `cancelledAt` is never cleared even if a later payment settles the
-  // invoice anyway (see backend/src/domain/invoice-settlement.ts's
-  // AFTER_CANCEL path), so this checks the timestamp directly rather than
-  // `invoice.status === 'CANCELLED'`, which a late payment can overwrite.
+  // invoice anyway (see shared/settlement.ts AFTER_CANCEL), so this checks
+  // the timestamp directly rather than `invoice.status === 'CANCELLED'`,
+  // which a late payment can overwrite.
   const wasCancelled = Boolean(invoice.cancelledAt);
   const paidAt = invoice.settledAt ?? invoice.paidAt ?? null;
   const isPaid = invoice.status === 'PAID' && Boolean(paidAt);
+  const settledAfterExpiry =
+    invoice.settlementContext === 'AFTER_EXPIRY' ||
+    invoice.latePaymentWarningCode === 'PAYMENT_RECEIVED_AFTER_EXPIRY';
 
   if (wasCancelled) {
     events.push({
       type: 'cancelled',
       label: 'Invoice cancelled',
       timestamp: invoice.cancelledAt,
+    });
+  } else if (isPaid && settledAfterExpiry) {
+    // Keep the expiry milestone visible when a late payment flipped status to
+    // PAID — otherwise the timeline would jump from created → paid and hide
+    // the AFTER_EXPIRY classification the API already recorded.
+    events.push({
+      type: 'expired',
+      label: 'Invoice expired',
+      timestamp: invoice.expiresAt ?? null,
     });
   } else if (!isPaid && hasInvoiceExpired(invoice, now)) {
     events.push({

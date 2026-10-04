@@ -258,9 +258,10 @@ function paymentTransaction(overrides: {
   to: string;
   assetType?: string;
   assetCode?: string;
+  createdAt?: string;
 }) {
   return {
-    transaction: { memo: overrides.memo, created_at: new Date().toISOString() },
+    transaction: { memo: overrides.memo, created_at: overrides.createdAt ?? new Date().toISOString() },
     operations: [
       {
         type: 'payment',
@@ -681,10 +682,12 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
 
       it('keeps the verify response on the public shape', async () => {
         const created = await createInvoice({ customerEmail: 'pay@client.example' });
+        const closeTime = '2026-09-13T14:32:00Z';
         transaction = paymentTransaction({
           memo: created.memo,
           amount: '42.5000000',
           to: SELLER_A,
+          createdAt: closeTime,
         });
 
         const res = await call(
@@ -694,12 +697,43 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
             body: { txHash: TX_HASH, payerEmail: 'percy@payer.example' },
           })
         );
-        assert.equal(res.statusCode, 200);
+        assert.equal(res.statusCode, 200, JSON.stringify(res.body));
         for (const key of PII_KEYS) {
           assert.equal(res.body.data[key], undefined, `verify response leaked ${key}`);
         }
         assert.equal(res.body.data.status, 'PAID');
         assert.equal(res.body.data.paymentTxHash, TX_HASH);
+        assert.equal(res.body.data.settlementContext, 'ON_TIME');
+        assert.equal(new Date(res.body.data.settledAt).toISOString(), '2026-09-13T14:32:00.000Z');
+      });
+
+      it('refuses to mark PAID when Horizon omits transaction close time', async () => {
+        const created = await createInvoice({ customerEmail: 'pay@client.example' });
+        transaction = {
+          transaction: { memo: created.memo },
+          operations: [
+            {
+              type: 'payment',
+              from: PAYER,
+              to: SELLER_A,
+              amount: '42.5000000',
+              asset_type: 'native',
+            },
+          ],
+        };
+
+        const res = await call(
+          handlers().verifyPayment,
+          createReq({
+            params: { id: created.id },
+            body: { txHash: TX_HASH },
+          })
+        );
+        assert.equal(res.statusCode, 503, JSON.stringify(res.body));
+        assert.equal(res.body.code, 'TRANSACTION_CLOSE_TIME_UNAVAILABLE');
+        const stored = await storage.getInvoiceById(created.id);
+        assert.equal(stored?.status, 'PENDING');
+        assert.equal(Boolean(stored?.paymentTxHash), false);
       });
     });
 
