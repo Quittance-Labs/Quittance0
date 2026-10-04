@@ -508,6 +508,23 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
         assert.equal(second.body.data.paymentUrl, first.body.data.paymentUrl);
       });
 
+      it('keeps distinct explicit keys separate for the same invoice intent', async () => {
+        const body = invoiceBody();
+        const first = await call(
+          handlers().createInvoice,
+          createReq({ body, headers: { 'idempotency-key': 'form-intent-a' } })
+        );
+        const second = await call(
+          handlers().createInvoice,
+          createReq({ body, headers: { 'idempotency-key': 'form-intent-b' } })
+        );
+
+        assert.equal(first.statusCode, 201);
+        assert.equal(second.statusCode, 201);
+        assert.notEqual(second.body.data.invoice.id, first.body.data.invoice.id);
+        assert.notEqual(second.body.data.invoice.memo, first.body.data.invoice.memo);
+      });
+
       it('collapses parallel creates carrying the same key onto one invoice', async () => {
         const body = invoiceBody();
         const [a, b] = await Promise.all([

@@ -255,8 +255,9 @@ export function createInvoiceHandlers(options: InvoiceHandlerOptions): InvoiceHa
             return sendFailure(res, 400, 'Idempotency-Key header is invalid');
           }
           validatedData.idempotencyKey = headerKey;
+        } else {
+          validatedData.idempotencyKey = idempotencyKeyForCreate(validatedData);
         }
-        validatedData.idempotencyKey = idempotencyKeyForCreate(validatedData);
         emitEvent('info', 'invoice.create.started', context, {
           sellerRef: logReference(validatedData.sellerPublicKey),
           assetCode: validatedData.assetCode || 'XLM',
