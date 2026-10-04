@@ -84,8 +84,9 @@ export class SettlementTimeUnavailableError extends Error {
 
 /**
  * Parse Horizon `created_at` / ledger close time as a UTC Date.
- * Returns null for missing or unparseable values — callers must fail closed
- * rather than inventing Date.now().
+ * Strings require an ISO date-time with an explicit UTC offset. Reject local
+ * or normalized calendar values instead of letting the host timezone or Date
+ * parser invent a different instant. Date and numeric epoch inputs remain valid.
  */
 export function parseSettlementTime(value: unknown): Date | null {
   if (value instanceof Date) {
@@ -93,6 +94,20 @@ export function parseSettlementTime(value: unknown): Date | null {
   }
   if (typeof value !== 'string' && typeof value !== 'number') {
     return null;
+  }
+
+  if (typeof value === 'string') {
+    if (!/^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})$/.test(value)) {
+      return null;
+    }
+    // Validate local calendar components before applying the explicit offset.
+    // Date otherwise normalizes e.g. February 30 or 24:00 into another day.
+    const calendarText = value.slice(0, 19).toUpperCase();
+    const calendar = new Date(`${calendarText}Z`);
+    if (!Number.isFinite(calendar.getTime())
+        || calendar.toISOString().slice(0, 19) !== calendarText) {
+      return null;
+    }
   }
 
   const parsed = new Date(value);
