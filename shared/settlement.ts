@@ -122,7 +122,7 @@ export function warningForLatePayment(code: LatePaymentWarningCode): string {
 export function latePaymentWarningForCode(
   code?: string | null
 ): { title: string; body: string } | null {
-  if (!code || !(code in LATE_PAYMENT_WARNING_DEFINITIONS)) {
+  if (!code || !Object.prototype.hasOwnProperty.call(LATE_PAYMENT_WARNING_DEFINITIONS, code)) {
     return null;
   }
   const def = LATE_PAYMENT_WARNING_DEFINITIONS[code as LatePaymentWarningCode];
@@ -131,7 +131,7 @@ export function latePaymentWarningForCode(
 
 /** Timeline alert copy for a late-payment warning code. */
 export function timelineCopyForLatePayment(code?: string | null): string | null {
-  if (!code || !(code in LATE_PAYMENT_WARNING_DEFINITIONS)) {
+  if (!code || !Object.prototype.hasOwnProperty.call(LATE_PAYMENT_WARNING_DEFINITIONS, code)) {
     return null;
   }
   return LATE_PAYMENT_WARNING_DEFINITIONS[code as LatePaymentWarningCode].timelineCopy;
