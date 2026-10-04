@@ -470,6 +470,26 @@ function runDualBackendSuite(
         );
       });
 
+      it('keeps terminal invoice details private from a different seller', async () => {
+        const inv = await storage.createInvoice(baseInput(SELLER_A));
+        await storage.markAsPaid(
+          inv.id,
+          TX_HASH_1,
+          PAYER,
+          undefined,
+          { settledAt: new Date() }
+        );
+
+        await assert.rejects(
+          () => storage.cancelInvoice(inv.id, SELLER_B),
+          /[Uu]nauthorized/
+        );
+
+        const stored = await storage.getInvoiceById(inv.id);
+        assert.equal(stored?.status, 'PAID');
+        assert.equal(stored?.paymentTxHash, TX_HASH_1);
+      });
+
       it('rejects cancel for a missing invoice', async () => {
         await assert.rejects(
           () => storage.cancelInvoice('00000000-0000-4000-8000-000000000000', SELLER_A),
