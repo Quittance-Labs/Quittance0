@@ -6,6 +6,7 @@ import {
   NATIVE_ASSET_CODE,
   resolveInvoiceAsset,
 } from '../../shared/assets.ts';
+import { latePaymentWarningForCode } from '../../shared/settlement.ts';
 
 export const QUITTANCE_PROOF_VERSION = 'quittance.v1';
 
@@ -564,6 +565,8 @@ export function renderQuittanceProofHtml(proof: QuittanceProof): string {
   const isPaid = proof.status === 'PAID';
   const badgeClass = isPaid ? 'badge-paid' : proof.status === 'PENDING' ? 'badge-pending' : 'badge-other';
 
+  const latePaymentWarning = latePaymentWarningForCode(proof.verification.latePaymentWarningCode);
+
   const explorerHtml = proof.payment.explorerUrl
     ? `<a href="${escapeHtml(proof.payment.explorerUrl)}" target="_blank" rel="noopener noreferrer" class="link mono">${escapeHtml(proof.payment.explorerUrl)}</a>`
     : `<span class="value mono">None</span>`;
@@ -856,6 +859,9 @@ export function renderQuittanceProofHtml(proof: QuittanceProof): string {
       <div class="field" style="margin-top:8px;">
         <div class="label">Late Payment Warning</div>
         <div class="value mono">${escapeHtml(proof.verification.latePaymentWarningCode)}</div>
+        ${latePaymentWarning ? `
+        <div class="value" style="margin-top:4px;font-weight:700;">${escapeHtml(latePaymentWarning.title)}</div>
+        <div class="value" style="margin-top:2px;">${escapeHtml(latePaymentWarning.body)}</div>` : ''}
       </div>` : ''}
       <div class="field" style="margin-top:8px;">
         <div class="label">Transaction Hash</div>
@@ -891,6 +897,8 @@ export function createQuittanceProofPdf(
   if (!Ctor) {
     throw new Error('jsPDF constructor must be provided or available on globalThis.jsPDF');
   }
+
+  const latePaymentWarning = latePaymentWarningForCode(proof.verification.latePaymentWarningCode);
 
   const doc = new Ctor({
     orientation: 'portrait',
@@ -970,6 +978,10 @@ export function createQuittanceProofPdf(
   writeField(`Settlement Context: ${proof.verification.settlementContext || 'N/A'}`);
   if (proof.verification.latePaymentWarningCode) {
     writeField(`Warning: ${proof.verification.latePaymentWarningCode}`);
+    if (latePaymentWarning) {
+      writeField(`Warning Title: ${latePaymentWarning.title}`);
+      writeField(`Warning Details: ${latePaymentWarning.body}`);
+    }
   }
   y += 3;
   writeField(`Issued At (UTC): ${proof.issuedAt}`);
