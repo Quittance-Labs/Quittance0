@@ -49,8 +49,15 @@ test('literal true and supported legacy payloads retain the same normalized data
     assert.equal(envelope.success, true, parse.name);
     const legacy = Array.isArray(data) ? { data } : data;
     assert.deepEqual(parse(legacy), envelope, parse.name);
-    for (const input of [null, false, 'false', 0, []]) {
+    for (const input of [null, false, 'false', 0]) {
       assert.equal(parse(input).success, false, parse.name);
+    }
+    if (parse === contract.parseListInvoicesResponse) {
+      assert.deepEqual(parse([invoice]), envelope);
+      assert.deepEqual(parse([]), parse({ success: true, data: [] }));
+      assert.equal(parse([{ ...invoice, amount: 0 }]).success, false);
+    } else {
+      assert.equal(parse([]).success, false, parse.name);
     }
   }
 });

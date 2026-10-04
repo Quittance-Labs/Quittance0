@@ -397,15 +397,14 @@ export function parseGetInvoiceResponse(
 export function parseListInvoicesResponse(
   input: unknown
 ): ContractResult<ListInvoicesResponse> {
+  if (Array.isArray(input)) {
+    return parseListInvoicesResponse({ success: true, data: input });
+  }
   if (!isSuccessfulResponse(input)) {
     return { success: false, error: 'List response must be an object' };
   }
 
-  const list = Array.isArray(input.data)
-    ? input.data
-    : Array.isArray(input)
-      ? input
-      : null;
+  const list = Array.isArray(input.data) ? input.data : null;
 
   if (!list) {
     return { success: false, error: 'List response must contain an array in data' };
