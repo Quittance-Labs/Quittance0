@@ -32,4 +32,25 @@ describe('shared settlement contract', () => {
     assert.equal(new backend.SettlementTimeUnavailableError().code, 'TRANSACTION_CLOSE_TIME_UNAVAILABLE');
     assert.equal(new shared.SettlementTimeUnavailableError().code, 'TRANSACTION_CLOSE_TIME_UNAVAILABLE');
   });
+
+  it('returns no receipt warning for unknown or inherited names', () => {
+    for (const code of [undefined, null, '', 'UNKNOWN', 'constructor', 'toString', '__proto__']) {
+      assert.equal(shared.latePaymentWarningForCode(code), null, String(code));
+    }
+    for (const definition of Object.values(shared.LATE_PAYMENT_WARNING_DEFINITIONS)) {
+      assert.deepEqual(shared.latePaymentWarningForCode(definition.code), {
+        title: definition.title,
+        body: definition.body,
+      });
+    }
+  });
+
+  it('returns no timeline copy for unknown or inherited names', () => {
+    for (const code of [undefined, null, '', 'UNKNOWN', 'constructor', 'toString', '__proto__']) {
+      assert.equal(shared.timelineCopyForLatePayment(code), null, String(code));
+    }
+    for (const definition of Object.values(shared.LATE_PAYMENT_WARNING_DEFINITIONS)) {
+      assert.equal(shared.timelineCopyForLatePayment(definition.code), definition.timelineCopy);
+    }
+  });
 });
