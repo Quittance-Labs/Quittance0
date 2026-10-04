@@ -223,21 +223,27 @@ describe('Invoice persistence on Postgres', { skip: DATABASE_URL ? false : 'DATA
     }
   });
 
-  it('refuses to mark a PENDING invoice as PAID after its expiresAt elapses', async () => {
+  it('records a matched late payment after expiry as PAID', async () => {
     const pool = new Pool({ connectionString: DATABASE_URL });
     const service = new InvoiceService(pool);
 
     try {
       const created = await service.createInvoice(createInput(SELLER_A, { amount: 5, expiresInDays: 1 }));
-      await pool.query("UPDATE invoices SET expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1", [created.id]);
+      const settledAt = new Date();
+      const expiresAt = new Date(settledAt.getTime() - 60_000);
+      const txHash = 'b'.repeat(64);
+      await pool.query('UPDATE invoices SET expires_at = $2 WHERE id = $1', [created.id, expiresAt]);
 
-      await assert.rejects(
-        () => service.markAsPaid(created.id, 'b'.repeat(64), PAYER, undefined, { settledAt: new Date() }),
-        /Invoice not found, expired, or already processed/
-      );
+      await service.markAsPaid(created.id, txHash, PAYER, undefined, { settledAt });
 
       const fetched = await service.getInvoiceById(created.id);
-      assert.equal(fetched?.status, 'EXPIRED');
+      assert.ok(fetched);
+      assert.equal(fetched.status, 'PAID');
+      assert.equal(fetched.settlementContext, 'AFTER_EXPIRY');
+      assert.equal(fetched.latePaymentWarningCode, 'PAYMENT_RECEIVED_AFTER_EXPIRY');
+      assert.equal(fetched.paymentTxHash, txHash);
+      assert.equal(fetched.settledAt?.toISOString(), settledAt.toISOString());
+      assert.equal(fetched.expiresAt.toISOString(), expiresAt.toISOString());
     } finally {
       await pool.end();
     }
