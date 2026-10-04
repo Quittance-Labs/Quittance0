@@ -15,11 +15,14 @@
 //                            transiently (outage / 429 also surface here); a
 //                            long negative TTL would turn a retry into a
 //                            permanent block.
-//   - transient-state codes -> never cached at all.
+//   - transient-state codes -> never cached at all. A get() that finds a
+//                            previously written VERIFY_UNAVAILABLE (or other
+//                            NEVER_CACHE code) drops it instead of replaying.
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { Redis } from 'ioredis';
 import { createRedisClient } from '../config/redis';
 import { PUBLIC_INVOICE_FIELDS } from '../../../shared/invoice';
+import { emitEvent, logReference, emitOperationalFailure, operationalLogContext } from '../observability/log-events';
 
 const VERIFIED_TTL_SECONDS = 259200; // 72 hours (invoice expiry window)
 const NOT_FOUND_TTL_SECONDS = 60; // short: indexing lag must not wedge a valid hash
@@ -83,7 +86,7 @@ export class VerificationCache {
       try {
         this.redis = await createRedisClient();
       } catch (error) {
-        console.warn('[VerifyCache] Redis unavailable, using memory fallback');
+        emitOperationalFailure('cache.connect', 'warn');
         this.redis = null;
       }
     }
@@ -105,17 +108,32 @@ export class VerificationCache {
           const entry: CachedVerification = JSON.parse(cached);
           // Redis expires keys natively; expiresAt still guards entries that
           // were written with a longer TTL under an older policy.
-          return entry.expiresAt > this.now() ? publicCacheEntry(entry) : null;
+          if (entry.expiresAt <= this.now()) {
+            await client.del(key);
+            return null;
+          }
+          // Issue #556: never replay VERIFY_UNAVAILABLE (or other transient
+          // codes) even if an older build wrote them into the cache.
+          if (entry.body?.code && NEVER_CACHE_CODES.has(entry.body.code)) {
+            await client.del(key);
+            return null;
+          }
+          return publicCacheEntry(entry);
         }
       }
     } catch (error) {
-      console.warn('[VerifyCache] Redis get failed, trying memory:', error);
+      emitOperationalFailure('cache.get', 'warn');
     }
 
     // Fallback to memory
     const entry = this.memoryCache.get(key);
     if (!entry) return null;
     if (entry.expiresAt <= this.now()) {
+      this.memoryCache.delete(key);
+      return null;
+    }
+    // Drop stale VERIFY_UNAVAILABLE (and siblings) cached before this policy.
+    if (entry.body?.code && NEVER_CACHE_CODES.has(entry.body.code)) {
       this.memoryCache.delete(key);
       return null;
     }
@@ -141,7 +159,7 @@ export class VerificationCache {
         await client.setex(key, ttl, JSON.stringify(cached));
       }
     } catch (error) {
-      console.warn('[VerifyCache] Redis set failed, using memory:', error);
+      emitOperationalFailure('cache.set', 'warn');
     }
 
     // Always store in memory as backup
@@ -163,7 +181,7 @@ export class VerificationCache {
         if (keys.length) await client.del(...keys);
       }
     } catch (error) {
-      console.warn('[VerifyCache] Redis clear failed:', error);
+      emitOperationalFailure('cache.clear', 'warn');
     }
   }
 
@@ -203,12 +221,16 @@ export function createVerifyCacheMiddleware(cache: VerificationCache): RequestHa
         if (!cached) {
           return next();
         }
-        console.log(`[VerifyCache] Cache hit for invoice ${invoiceId}, txHash ${txHash}`);
+        emitEvent('info', 'payment.verify.cached', operationalLogContext(), {
+          invoiceRef: logReference(invoiceId),
+          txRef: logReference(txHash),
+          httpStatus: cached.httpStatus,
+        });
         // Replay the exact response the first attempt produced.
         res.status(cached.httpStatus).json({ ...cached.body, cached: true });
       })
       .catch(error => {
-        console.error('[VerifyCache] Check failed:', error);
+        emitOperationalFailure('cache.verify');
         // Fail open: proceed to handler if cache check breaks
         next();
       });
@@ -230,7 +252,7 @@ export async function cacheVerificationResult(
   try {
     await verificationCache.set(invoiceId, txHash, httpStatus, body);
   } catch (error) {
-    console.error('[VerifyCache] Failed to cache result:', error);
+    emitOperationalFailure('cache.set');
     // Non-fatal: verification still completed, just won't be cached
   }
 }

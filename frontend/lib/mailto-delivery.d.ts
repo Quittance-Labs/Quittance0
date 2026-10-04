@@ -1,3 +1,5 @@
+import type { QuittanceProof } from './quittance-proof';
+
 export interface InvoiceMailtoInput {
   id: string;
   amount: number | string;
@@ -18,15 +20,25 @@ export interface InvoiceMailtoInput {
   sellerPublicKey?: string;
   payerPublicKey?: string;
   paymentTxHash?: string;
+  network?: string | null;
 }
 
 export function isValidEmailFormat(email?: string | null): boolean;
 export function resolvePayUrl(invoiceId: string, baseUrl?: string): string;
+export function resolveInvoiceNetwork(invoice?: { network?: string | null } | null): 'testnet' | 'public';
 export function canSendInvoiceEmail(invoice?: InvoiceMailtoInput | null): boolean;
 export function getInvoiceMailtoRecipient(invoice?: InvoiceMailtoInput | null): string;
 export function canSendProofEmail(invoice?: InvoiceMailtoInput | null): boolean;
 export function getProofMailtoRecipient(invoice?: InvoiceMailtoInput | null): string;
 export function buildInvoiceMailto(invoice: InvoiceMailtoInput, baseUrl?: string): string;
-export function buildProofMailto(invoice: InvoiceMailtoInput, baseUrl?: string): string;
+export function buildProofMailto(
+  invoiceOrProof: InvoiceMailtoInput | QuittanceProof,
+  baseUrl?: string,
+  recipientOverride?: string
+): string;
 export function openInvoiceMailto(invoice: InvoiceMailtoInput, baseUrl?: string): string;
-export function openProofMailto(invoice: InvoiceMailtoInput, baseUrl?: string): string;
+export function openProofMailto(
+  invoiceOrProof: InvoiceMailtoInput | QuittanceProof,
+  baseUrl?: string,
+  recipientOverride?: string
+): string;

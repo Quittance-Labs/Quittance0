@@ -8,7 +8,7 @@ import {
 import { resolveVerificationError } from './verification.js';
 import { resolveStellarNetwork } from '@shared/network';
 import { SELLER_READ_MAX_AGE_MS } from '@shared/seller-read-proof';
-import { assertFreighterReady, signSellerReadMessage } from './stellar';
+import { createBrowserRequestId } from './request-correlation-id.ts';
 
 /**
  * The API origin, resolved once per build.
@@ -37,6 +37,22 @@ const api = axios.create({
   },
 });
 
+api.interceptors.request.use((config) => {
+  const headers = config.headers ?? {};
+  const existing =
+    headers['X-Request-Id'] ||
+    headers['x-request-id'] ||
+    headers['X-Correlation-Id'] ||
+    headers['x-correlation-id'];
+  if (!existing) {
+    const id = createBrowserRequestId();
+    headers['X-Request-Id'] = id;
+    headers['X-Correlation-Id'] = id;
+  }
+  config.headers = headers;
+  return config;
+});
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -52,6 +68,7 @@ const pendingSellerReadProofs = new Map<string, Promise<SellerReadProof>>();
 
 /** A proof is short-lived, scoped to one route, and never put in a URL. */
 async function sellerReadHeaders(scope: string, sellerPublicKey: string) {
+  const { assertFreighterReady, signSellerReadMessage } = await import('@/lib/stellar');
   const session = await assertFreighterReady();
   if (session.publicKey !== sellerPublicKey) {
     throw new Error('Connect the invoice seller wallet to view workspace details');
@@ -124,6 +141,7 @@ export const invoiceApi = {
     status?: string;
     limit?: number;
     offset?: number;
+    q?: string;
   }) => {
     const headers = await sellerReadHeaders('invoices', params.sellerPublicKey);
     const response = await api.get('/invoices', { params, headers });

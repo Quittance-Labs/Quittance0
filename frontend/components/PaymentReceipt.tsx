@@ -5,7 +5,11 @@ import { canonicalAmount } from '@/lib/stroop-amount';
 import { describeAmount } from '@/lib/a11y';
 import { Check, Download, ExternalLink, FileText, Mail } from 'lucide-react';
 import AssetLogo from './AssetLogo';
+import { formatAssetLabel } from '@/lib/asset-code-display';
 import { openInvoicePDF, emailPaymentProof } from '@/lib/export';
+import { buildQuittanceProof, type QuittanceProof } from '@/lib/quittance-proof';
+import { reportProofHandoff } from '@/lib/proof-handoff';
+import { isValidEmailFormat, resolveInvoiceNetwork } from '@/lib/mailto-delivery';
 import { toast } from 'sonner';
 import type { PayPageInvoice } from './pay-page.types';
 import { buildHorizonTxUrl, resolveExplorerNetwork } from '@/lib/explorer-tx-link';
@@ -15,6 +19,9 @@ import { buildHorizonTxUrl, resolveExplorerNetwork } from '@/lib/explorer-tx-lin
 
 interface PaymentReceiptProps {
   invoice: PayPageInvoice;
+  proof?: QuittanceProof;
+  /** Supplied only by the seller workspace after its access check. */
+  proofEmailRecipient?: string;
 }
 
 function latePaymentWarning(invoice: PayPageInvoice): { title: string; body: string } | null {
@@ -33,16 +40,23 @@ function latePaymentWarning(invoice: PayPageInvoice): { title: string; body: str
   return null;
 }
 
-export default function PaymentReceipt({ invoice }: PaymentReceiptProps) {
+export default function PaymentReceipt({ invoice, proof: proofProp, proofEmailRecipient }: PaymentReceiptProps) {
+  const proof = proofProp ?? (() => {
+    const result = buildQuittanceProof(invoice as any, {
+      network: resolveInvoiceNetwork(invoice as any),
+    });
+    return result.ok ? result.proof : null;
+  })();
+
   const warning = latePaymentWarning(invoice);
   const handleDownloadPDF = () => {
-    openInvoicePDF(invoice as any);
+    openInvoicePDF((proof ?? invoice) as any);
     toast.success('Opening payment proof');
   };
 
   const handleEmailProof = () => {
     try {
-      emailPaymentProof(invoice as any);
+      emailPaymentProof((proof ?? invoice) as any, undefined, proofRecipient);
       toast.success('Opening email client');
     } catch (err: any) {
       toast.error(err?.message || 'No recipient email on this invoice');
@@ -56,31 +70,31 @@ export default function PaymentReceipt({ invoice }: PaymentReceiptProps) {
           PAYMENT RECEIPT
 ═══════════════════════════════════════
 
-Invoice ID: ${invoice.id}
-Status: ${invoice.status}
-Payment Date: ${formatDate(invoice.settledAt || invoice.paidAt || invoice.createdAt)}
+Invoice ID: ${displayInvoiceId}
+Status: ${displayStatus}
+Payment Date: ${settledDate ? formatDate(settledDate) : ''}
 ${warning ? `Warning: ${warning.title}. ${warning.body}` : ''}
 
 ───────────────────────────────────────
 PAYMENT DETAILS
 ───────────────────────────────────────
 
-Amount Paid: ${canonicalAmount(invoice.amount) ?? formatAmount(invoice.amount, 7)} ${invoice.assetCode}
+Amount Paid: ${displayAmount} ${displayAssetLabel}
 
 ───────────────────────────────────────
 TRANSACTION DETAILS
 ───────────────────────────────────────
 
 Transaction Hash:
-${invoice.paymentTxHash}
+${txHash || ''}
 
 From (Payer):
 On-chain counterparty (see transaction)
 
 To (Recipient):
-${invoice.sellerPublicKey}
+${sellerKey}
 
-Memo: ${invoice.memo}
+Memo: ${memoValue || ''}
 
 ───────────────────────────────────────
 Powered by Quittance
@@ -92,18 +106,35 @@ Stellar Blockchain Payment System
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `receipt-${invoice.id}.txt`;
+    a.download = `receipt-${displayInvoiceId}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    void reportProofHandoff(invoice.id, { proofFormat: 'text', handoff: 'download' });
   };
 
-  const activeAssetCode = invoice.assetCode || 'XLM';
-  const amountLabel = describeAmount(
-    canonicalAmount(invoice.amount) ?? formatAmount(invoice.amount, 7),
-    activeAssetCode
-  );
+  const displayInvoiceId = proof ? proof.invoiceId : invoice.id;
+  const displayStatus = proof ? proof.status : invoice.status;
+  const displayAssetCode = proof ? proof.payment.asset.code : (invoice.assetCode || 'XLM');
+  const displayAmount = proof ? proof.payment.amount : (canonicalAmount(invoice.amount) ?? formatAmount(invoice.amount, 7));
+  const settledDate = proof ? proof.settledAt : (invoice.settledAt || invoice.paidAt);
+  const txHash = proof ? proof.payment.txHash : invoice.paymentTxHash;
+  const sellerKey = proof ? proof.seller : invoice.sellerPublicKey;
+  const memoValue = proof ? proof.payment.memo : invoice.memo;
+  const explorerUrl = (proof && proof.payment.explorerUrl)
+    ? proof.payment.explorerUrl
+    : buildHorizonTxUrl(
+        invoice.paymentTxHash,
+        resolveExplorerNetwork(invoice)
+      );
+
+  const displayAssetLabel = formatAssetLabel({
+    assetCode: displayAssetCode,
+    assetIssuer: proof ? proof.payment.asset.issuer ?? undefined : invoice.assetIssuer,
+  });
+  const amountLabel = describeAmount(displayAmount, displayAssetLabel);
+
   /*
    * The explorer link has to follow the network the payment was made on. A
    * hardcoded 'public' sent a testnet seller to a mainnet page that can never
@@ -111,14 +142,10 @@ Stellar Blockchain Payment System
    * a real transaction id, so the row is only rendered when there is
    * something to link to.
    */
-  const explorerUrl = buildHorizonTxUrl(
-    invoice.paymentTxHash,
-    resolveExplorerNetwork(invoice)
-  );
-  // Public pay DTOs never carry client email (#559); emailing proof stays
-  // on the seller workspace where the wallet-gated DTO still has contact.
-  const canEmail = false;
-  const proofRecipient = '';
+  // Public DTOs never supply contact. The access-checked seller caller passes
+  // its delivery recipient separately from the canonical proof document.
+  const proofRecipient = proofEmailRecipient?.trim() || '';
+  const canEmail = displayStatus === 'PAID' && isValidEmailFormat(proofRecipient);
   const emailReasonId = 'receipt-email-reason';
 
   return (
@@ -163,13 +190,13 @@ Stellar Blockchain Payment System
             role="group"
             aria-label={`Amount paid: ${amountLabel}`}
           >
-            <AssetLogo code={invoice.assetCode} size={36} showName={false} decorative />
+            <AssetLogo code={displayAssetCode} size={36} showName={false} decorative />
             <div aria-hidden="true">
               <p className="text-4xl font-bold text-green-700">
-                {canonicalAmount(invoice.amount) ?? formatAmount(invoice.amount, 7)}
+                {displayAmount}
               </p>
               <p className="text-lg font-semibold text-green-700 mt-1">
-                {invoice.assetCode}
+                {displayAssetLabel}
               </p>
             </div>
           </div>
@@ -179,13 +206,13 @@ Stellar Blockchain Payment System
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-gray-50 rounded-lg p-4">
             <p className="text-xs text-gray-600 mb-1">Invoice ID</p>
-            <p className="text-sm font-mono text-gray-900 break-all">{invoice.id}</p>
+            <p className="text-sm font-mono text-gray-900 break-all">{displayInvoiceId}</p>
           </div>
 
           <div className="bg-gray-50 rounded-lg p-4">
             <p className="text-xs text-gray-600 mb-1">Payment Date</p>
             <p className="text-sm text-gray-900">
-              {formatDate(invoice.settledAt || invoice.paidAt || invoice.createdAt)}
+              {settledDate ? formatDate(settledDate) : ''}
             </p>
           </div>
         </div>
@@ -194,27 +221,29 @@ Stellar Blockchain Payment System
 
       </div>
 
+      {txHash ? (
       <div className="border-t pt-6 mb-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Transaction Details</h3>
         
         <div className="space-y-3">
           <div className="bg-gray-50 rounded-lg p-4">
             <p className="text-xs text-gray-600 mb-1">Transaction Hash</p>
-            <p className="text-xs font-mono text-gray-900 break-all">{invoice.paymentTxHash}</p>
+            <p className="text-xs font-mono text-gray-900 break-all">{txHash}</p>
           </div>
 
 
           <div className="bg-gray-50 rounded-lg p-4">
             <p className="text-xs text-gray-600 mb-1">To (Recipient Address)</p>
-            <p className="text-xs font-mono text-gray-900 break-all">{invoice.sellerPublicKey}</p>
+            <p className="text-xs font-mono text-gray-900 break-all">{sellerKey}</p>
           </div>
 
           <div className="bg-gray-50 rounded-lg p-4">
             <p className="text-xs text-gray-600 mb-1">Memo</p>
-            <p className="text-sm font-mono text-gray-900">{invoice.memo}</p>
+            <p className="text-sm font-mono text-gray-900">{memoValue}</p>
           </div>
         </div>
       </div>
+      ) : null}
 
       <div className="border-t pt-6 space-y-3 print:hidden">
         <button
@@ -242,7 +271,9 @@ Stellar Blockchain Payment System
         </button>
         {!canEmail && (
           <p id={emailReasonId} className="field-hint text-center">
-            Emailing proof is available from the seller workspace after connecting the invoice wallet.
+            {proofEmailRecipient === undefined
+              ? 'This public receipt has no client email. Connect the invoice wallet in the seller workspace to email proof.'
+              : 'No client email is recorded for this invoice.'}
           </p>
         )}
 

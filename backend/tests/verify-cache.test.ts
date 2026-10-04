@@ -34,7 +34,7 @@ function request(
 ): Promise<HttpResponse> {
   return new Promise((resolve, reject) => {
     let payload: Buffer | undefined;
-    const headers: Record<string, string | number> = {};
+    const headers: Record<string, string | number> = { connection: 'close' };
     if (body !== undefined) {
       payload = Buffer.from(JSON.stringify(body));
       headers['content-type'] = 'application/json';
@@ -120,6 +120,21 @@ describe('VerificationCache', () => {
   it('never caches transient service states', async () => {
     const cache = new VerificationCache();
     await cache.set('inv-1', TX_HASH_A, 503, { success: false, code: 'VERIFY_UNAVAILABLE' });
+    assert.equal(await cache.get('inv-1', TX_HASH_A), null);
+  });
+
+  it('drops a previously cached VERIFY_UNAVAILABLE instead of replaying it', async () => {
+    const cache = new VerificationCache();
+    const key = 'verify:inv-1:' + TX_HASH_A;
+    (cache as any).memoryCache.set(key, {
+      invoiceId: 'inv-1',
+      txHash: TX_HASH_A,
+      httpStatus: 503,
+      body: { success: false, code: 'VERIFY_UNAVAILABLE' },
+      expiresAt: Date.now() + 60_000,
+    });
+
+    assert.equal(await cache.get('inv-1', TX_HASH_A), null);
     assert.equal(await cache.get('inv-1', TX_HASH_A), null);
   });
 
@@ -346,6 +361,7 @@ describe('verify cache end to end', () => {
   });
 
   after(async () => {
+    (server as any)?.closeAllConnections?.();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
@@ -512,6 +528,7 @@ describe('verify cache end to end', () => {
       assert.equal(saw429, true);
       assert.equal(horizonCalls.length, 1);
     } finally {
+      (floodServer as any)?.closeAllConnections?.();
       await new Promise<void>((resolve) => floodServer.close(() => resolve()));
     }
   });

@@ -152,19 +152,17 @@ export const PAYMENT_URI_CASES: PaymentUriCase[] = [
     },
   },
   {
-    name: 'XLM with an issuer is silently downgraded to a native payment',
-    why: 'Invoice creation refuses this pair outright. The formatter accepts it and drops the issuer, which turns a credit asset into a native payment without saying so.',
-    status: 'gap',
-    followUp: 'Throw for a native code carrying an issuer, mirroring the rule in createInvoiceSchema.',
+    name: 'XLM with an issuer is refused before emitting a payment URI',
+    why: 'Invoice creation refuses this pair outright. The formatter applies the same policy so it cannot silently replace an issued asset with native XLM.',
+    status: 'conformant',
     input: {
       destination: VALID_DESTINATION,
       amount: '25.0000000',
       asset: { code: 'XLM', issuer: VALID_ASSET_ISSUER },
     },
     expected: {
-      kind: 'uri',
-      uri: `web+stellar:pay?destination=${VALID_DESTINATION}&amount=25.0000000`,
-      params: { destination: VALID_DESTINATION, amount: '25.0000000' },
+      kind: 'throws',
+      message: 'XLM is the native asset and must not carry an issuer',
     },
   },
   {
@@ -190,4 +188,3 @@ export const PAYMENT_URI_CASES: PaymentUriCase[] = [
     expected: { kind: 'throws', message: 'amount must be a positive number' },
   },
 ];
-

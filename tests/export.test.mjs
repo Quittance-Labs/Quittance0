@@ -20,6 +20,7 @@ const {
   escapeHtml,
   generateInvoicePDF,
   generateQuittanceProofPDF,
+  openInvoicePDF,
   buildQuittanceProof,
   isQuittanceProof,
   buildInvoiceMailto,
@@ -36,7 +37,7 @@ test('escapeHtml encodes characters that can create HTML markup or attributes', 
   );
 });
 
-test('generateInvoicePDF renders user-supplied proof fields as literal text', () => {
+test('generateInvoicePDF escapes permitted proof fields and omits private metadata', () => {
   const invoice = {
     id: 'invoice-<id>',
     amount: 25,
@@ -52,7 +53,7 @@ test('generateInvoicePDF renders user-supplied proof fields as literal text', ()
     createdAt: '2026-07-25T10:00:00.000Z',
     expiresAt: '2026-08-25T10:00:00.000Z',
     paidAt: '2026-07-25T11:00:00.000Z',
-    memo: 'Memo <memo>',
+    memo: 'Memo <memo> <script>globalThis.compromised = true</script> and <b>bold</b>',
     sellerPublicKey: 'GSELLER<seller-key>',
     payerPublicKey: 'GPAYER<payer-key>',
     paymentTxHash: 'hash<transaction-hash>',
@@ -63,13 +64,6 @@ test('generateInvoicePDF renders user-supplied proof fields as literal text', ()
   for (const value of [
     invoice.id,
     invoice.assetCode,
-    invoice.description,
-    invoice.customerName,
-    invoice.customerEmail,
-    invoice.sellerName,
-    invoice.sellerEmail,
-    invoice.payerName,
-    invoice.payerEmail,
     invoice.memo,
     invoice.sellerPublicKey,
     invoice.payerPublicKey,
@@ -77,6 +71,19 @@ test('generateInvoicePDF renders user-supplied proof fields as literal text', ()
   ]) {
     assert.ok(html.includes(escapeHtml(value)));
     assert.ok(!html.includes(value));
+  }
+
+  for (const value of [
+    invoice.description,
+    invoice.customerName,
+    invoice.customerEmail,
+    invoice.sellerName,
+    invoice.sellerEmail,
+    invoice.payerName,
+    invoice.payerEmail,
+  ]) {
+    assert.ok(!html.includes(value));
+    assert.ok(!html.includes(escapeHtml(value)));
   }
 
   assert.ok(html.includes('&lt;script&gt;globalThis.compromised = true&lt;/script&gt;'));
@@ -291,3 +298,109 @@ test('generateInvoicePDF and generateQuittanceProofPDF handle canonical Quittanc
   assert.ok(!htmlFromInvoicePdf.includes('undefined'));
 });
 
+function capturePrintWindows(t) {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const windows = [];
+  globalThis.window = {
+    open(...args) {
+      const output = { args, html: '', closed: false };
+      windows.push(output);
+      return {
+        document: {
+          write(html) { output.html += html; },
+          close() { output.closed = true; },
+        },
+      };
+    },
+  };
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, 'window', previous);
+    else delete globalThis.window;
+  });
+  t.mock.timers.enable({ apis: ['Date'], now: PROOF_FIXED_NOW.valueOf() });
+  return windows;
+}
+
+test('raw invoice and receipt proof print the same canonical document', (t) => {
+  const windows = capturePrintWindows(t);
+  const result = buildQuittanceProof(proofPaidInvoice, {
+    network: PROOF_NETWORK,
+    now: PROOF_FIXED_NOW,
+  });
+  assert.equal(result.ok, true);
+  withNetwork('TESTNET', () => {
+    openInvoicePDF({ ...proofPaidInvoice, customerEmail: 'private@example.invalid' });
+    openInvoicePDF(result.proof);
+  });
+  assert.equal(windows.length, 2);
+  for (const output of windows) {
+    assert.deepEqual(output.args, ['', '_blank', 'width=800,height=600']);
+    assert.equal(output.closed, true);
+    assert.equal(output.html, generateQuittanceProofPDF(result.proof));
+    assert.ok(output.html.includes(proofPaidInvoice.assetIssuer));
+    assert.ok(!output.html.includes('private@example.invalid'));
+  }
+});
+
+for (const [configured, invoiceNetwork, expected] of [
+  ['TESTNET', undefined, 'testnet'],
+  ['PUBLIC', undefined, 'public'],
+  ['TESTNET', 'PUBLIC', 'public'],
+  ['PUBLIC', 'testnet', 'testnet'],
+]) {
+  test(`invoice print keeps network ${expected} with config ${configured} and override ${invoiceNetwork}`, (t) => {
+    const windows = capturePrintWindows(t);
+    const invoice = { ...proofPaidInvoice, network: invoiceNetwork };
+    const result = buildQuittanceProof(invoice, { network: expected, now: PROOF_FIXED_NOW });
+    assert.equal(result.ok, true);
+    withNetwork(configured, () => openInvoicePDF(invoice));
+    assert.equal(windows[0].html, generateQuittanceProofPDF(result.proof));
+  });
+}
+
+test('prebuilt proof print preserves its network and generation time', (t) => {
+  const windows = capturePrintWindows(t);
+  const result = buildQuittanceProof(proofPaidInvoice, {
+    network: 'public',
+    now: new Date('2026-09-14T00:00:00.000Z'),
+  });
+  assert.equal(result.ok, true);
+  withNetwork('TESTNET', () => openInvoicePDF(result.proof));
+  assert.equal(windows[0].html, generateQuittanceProofPDF(result.proof));
+});
+
+for (const status of ['PENDING', 'EXPIRED', 'CANCELLED']) {
+  test(`unpaid raw ${status} invoice is rejected before opening a print window`, (t) => {
+    const windows = capturePrintWindows(t);
+    assert.throws(() => openInvoicePDF({ ...proofPendingInvoice, status }), /paid/);
+    assert.equal(windows.length, 0);
+  });
+}
+
+test('a prebuilt unpaid document remains printable without a transaction claim', (t) => {
+  const windows = capturePrintWindows(t);
+  const result = buildQuittanceProof(proofPendingInvoice, {
+    network: PROOF_NETWORK,
+    now: PROOF_FIXED_NOW,
+  });
+  assert.equal(result.ok, true);
+  openInvoicePDF(result.proof);
+  assert.equal(windows[0].html, generateQuittanceProofPDF(result.proof));
+  assert.ok(!windows[0].html.includes('stellar.expert'));
+  assert.ok(windows[0].html.includes('Not settled'));
+});
+
+for (const [field, value] of [
+  ['paymentTxHash', 'malformed'],
+  ['amount', '12.12345678'],
+  ['sellerPublicKey', ''],
+]) {
+  test(`invalid paid ${field} cannot fall back to a legacy print document`, (t) => {
+    const windows = capturePrintWindows(t);
+    const invoice = { ...proofPaidInvoice, [field]: value };
+    const result = buildQuittanceProof(invoice, { network: PROOF_NETWORK });
+    assert.equal(result.ok, false);
+    assert.throws(() => openInvoicePDF(invoice), { message: result.message });
+    assert.equal(windows.length, 0);
+  });
+}

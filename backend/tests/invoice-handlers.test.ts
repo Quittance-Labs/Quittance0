@@ -732,18 +732,11 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
 
       it('keeps the verify response on the public shape', async () => {
         const created = await createInvoice({ customerEmail: 'pay@client.example' });
-        transaction = {
-          transaction: { memo: created.memo },
-          operations: [
-            {
-              type: 'payment',
-              from: PAYER,
-              to: SELLER_A,
-              amount: '42.5000000',
-              asset_type: 'native',
-            },
-          ],
-        };
+        transaction = paymentTransaction({
+          memo: created.memo,
+          amount: '42.5000000',
+          to: SELLER_A,
+        });
 
         const res = await call(
           handlers().verifyPayment,
@@ -777,10 +770,19 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       );
       assert.match(res.body.data.qrCode, /^data:image\/png;base64,/);
       assert.match(res.body.data.stellarQrCode, /^data:image\/png;base64,/);
-      // The XLM URI fits the QR budget, so the code encodes it directly and
-      // the payer still sees the full SEP-0007 string as copyable text.
+      // One pay-link artifact (issue #557): Testnet URIs carry
+      // network_passphrase from the shared resolver, which pushes a typical
+      // XLM+memo URI over the QR budget — the image falls back to the HTTPS
+      // pay link while stellarUri keeps the full SEP-0007 string.
       assert.match(res.body.data.stellarUri, /^web\+stellar:pay\?/);
-      assert.equal(res.body.data.stellarQrEncodesUri, true);
+      assert.match(res.body.data.stellarUri, /network_passphrase=/);
+      assert.equal(
+        res.body.data.copyValue,
+        res.body.data.stellarQrEncodesUri
+          ? res.body.data.stellarUri
+          : res.body.data.paymentUrl
+      );
+      assert.ok(res.body.data.networkPassphrase);
       assert.equal(res.body.data.statusPollingIntervalMs, 3000);
       assert.equal(res.body.data.paymentAvailable, true);
     });
@@ -797,6 +799,8 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       assert.equal(res.statusCode, 201);
       assert.equal(res.body.data.invoice.amount, 0.0000001);
       assert.match(res.body.data.stellarQrCode, /^data:image\/png;base64,/);
+      assert.match(res.body.data.stellarUri, /amount=0\.0000001/);
+      assert.equal(res.body.data.stellarUri.includes('1e-7'), false);
     });
 
     it('falls back to the HTTPS pay link when a USDC URI exceeds the QR budget (#510)', async () => {
@@ -810,6 +814,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       assert.equal(res.statusCode, 201);
       const data = res.body.data;
       assert.equal(data.stellarQrEncodesUri, false);
+      assert.equal(data.copyValue, data.paymentUrl);
       assert.match(data.stellarQrCode, /^data:image\/png;base64,/);
       // The full SEP-0007 URI — issuer and memo intact — is still returned
       // for copy / open-in-wallet even though the QR encodes the pay link.
@@ -1307,6 +1312,7 @@ describe('shared invoice router', () => {
       'GET /invoices/:id/payment-info',
       'POST /invoices/:id/cancel',
       'POST /invoices/:id/verify',
+      'POST /invoices/:id/proof-handoff',
       'POST /invoices/:id/simulate-payment',
     ];
 

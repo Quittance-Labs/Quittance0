@@ -21,7 +21,11 @@ describe('structured log event contract', () => {
       'payment.verify.rejected',
       'invoice.paid',
       'proof.downloaded',
+      'proof.handoff',
       'horizon.request.failed',
+      'http.request.completed',
+      'operation.failed',
+      'payment.verify.cached',
     ]);
   });
 

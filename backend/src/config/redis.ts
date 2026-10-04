@@ -1,3 +1,4 @@
+import { emitOperationalFailure } from '../observability/log-events';
 import Redis from 'ioredis';
 import dotenv from 'dotenv';
 
@@ -11,7 +12,7 @@ function buildRedisClient(): Redis {
     enableOfflineQueue: false,
     maxRetriesPerRequest: 1,
     retryStrategy(times) {
-      if (times > 1) return null;
+      if (process.env.NODE_ENV === 'test' || times > 1) return null;
       return Math.min(times * 50, 200);
     },
   });
@@ -21,7 +22,7 @@ function buildRedisClient(): Redis {
   });
 
   client.on('error', (err) => {
-    console.error('❌ Redis error:', err);
+    emitOperationalFailure('redis.connection');
   });
 
   return client;

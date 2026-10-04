@@ -2,6 +2,7 @@ import { format } from 'date-fns';
 import { canonicalAmount } from './stroop-amount.js';
 import { formatUtcDate, formatUtcDateTime } from './utc-format.js';
 import { formatProofTimestamp } from './proof-timestamp.ts';
+import { reportProofHandoff } from './proof-handoff.ts';
 import {
   assertPaymentProofAvailable,
   canExportPaymentProof,
@@ -446,11 +447,26 @@ export function generateQuittanceProofPDF(proof: QuittanceProof): string {
  * @param invoiceOrProof - Invoice record or canonical QuittanceProof model.
  */
 export function openInvoicePDF(invoiceOrProof: Invoice | QuittanceProof) {
-  const pdfContent = generateInvoicePDF(invoiceOrProof);
+  let proof: QuittanceProof;
+  if (isQuittanceProof(invoiceOrProof)) {
+    proof = invoiceOrProof;
+  } else {
+    assertPaymentProofAvailable(invoiceOrProof);
+    const result = buildQuittanceProof(invoiceOrProof, {
+      network: resolveExplorerNetwork(invoiceOrProof),
+    });
+    if (!result.ok) throw new Error(result.message);
+    proof = result.proof;
+  }
+  const pdfContent = renderQuittanceProofHtml(proof);
   const printWindow = window.open('', '_blank', 'width=800,height=600');
   if (printWindow) {
     printWindow.document.write(pdfContent);
     printWindow.document.close();
+    void reportProofHandoff(
+      isQuittanceProof(invoiceOrProof) ? invoiceOrProof.invoiceId : invoiceOrProof.id,
+      { proofFormat: 'pdf', handoff: 'print-window' }
+    );
     printWindow.onload = () => {
       setTimeout(() => {
         printWindow.print();
@@ -463,6 +479,10 @@ export function shareInvoiceByEmail(invoice: Invoice, baseUrl?: string): string 
   return openInvoiceMailto(invoice, baseUrl);
 }
 
-export function emailPaymentProof(invoice: Invoice, baseUrl?: string): string {
-  return openProofMailto(invoice, baseUrl);
+export function emailPaymentProof(
+  invoiceOrProof: Invoice | QuittanceProof,
+  baseUrl?: string,
+  recipientOverride?: string
+): string {
+  return openProofMailto(invoiceOrProof, baseUrl, recipientOverride);
 }

@@ -65,7 +65,14 @@ function primeApi(invoice) {
   bundle.resetResponses();
   bundle.setResponse(`/invoices/${invoice.id}`, { data: invoice });
   bundle.setResponse(`/invoices/${invoice.id}/payment-info`, {
-    data: { paymentUrl: `https://quittance.test/pay/${invoice.id}` },
+    data: {
+      paymentUrl: `https://quittance.test/pay/${invoice.id}`,
+      stellarUri: `web+stellar:pay?destination=${invoice.sellerPublicKey}&amount=125.5000000&memo=${invoice.memo}&memo_type=MEMO_TEXT`,
+      copyValue: `https://quittance.test/pay/${invoice.id}`,
+      stellarQrEncodesUri: false,
+      stellarQrCode: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      paymentAvailable: invoice.status === 'PENDING',
+    },
   });
 }
 
@@ -246,6 +253,29 @@ test('a paid invoice without an address says why the proof cannot be sent', asyn
     const reasonId = button.getAttribute('aria-describedby');
     assert.ok(reasonId, 'the unavailable control gave no reason');
     assert.match(container.querySelector(`#${reasonId}`).textContent, /no client email/i);
+  } finally {
+    unmount();
+  }
+});
+
+test('a public receipt cannot enable proof email from injected invoice contact', async () => {
+  const invoice = invoiceFixture({
+    status: 'PAID',
+    paymentTxHash: TX_HASH,
+    paidAt: '2026-03-02T12:30:00.000Z',
+  });
+  const { container, unmount } = await render(
+    React.createElement(bundle.PaymentReceipt, { invoice })
+  );
+
+  try {
+    const button = container.querySelector('button[aria-label="Email Proof"]');
+    assert.ok(button);
+    assert.equal(button.getAttribute('aria-disabled'), 'true');
+    assert.match(container.textContent, /seller workspace/i);
+    for (const identity of [invoice.customerName, invoice.customerEmail, invoice.sellerEmail]) {
+      assert.ok(!container.textContent.includes(identity), `public receipt exposed ${identity}`);
+    }
   } finally {
     unmount();
   }
