@@ -386,6 +386,8 @@ export function parseGetInvoiceResponse(
 
 /**
  * Validates that an API response adheres to the ListInvoicesResponse contract.
+ * Legacy responses may omit pagination. Supplied metadata must be complete
+ * and valid rather than silently replacing malformed values with page totals.
  */
 export function parseListInvoicesResponse(
   input: unknown
@@ -418,18 +420,28 @@ export function parseListInvoicesResponse(
     offset: 0,
     total: invoices.length,
   };
-  if (isObject(input.pagination)) {
+  if (Object.prototype.hasOwnProperty.call(input, 'pagination')) {
+    if (!isObject(input.pagination)) {
+      return { success: false, error: 'List pagination must be an object' };
+    }
+    for (const field of ['limit', 'offset', 'total'] as const) {
+      const value = input.pagination[field];
+      if (
+        !Object.prototype.hasOwnProperty.call(input.pagination, field) ||
+        typeof value !== 'number' ||
+        !Number.isSafeInteger(value) ||
+        value < 0
+      ) {
+        return {
+          success: false,
+          error: `List pagination.${field} must be a non-negative safe integer`,
+        };
+      }
+    }
     pagination = {
-      limit:
-        typeof input.pagination.limit === 'number'
-          ? input.pagination.limit
-          : invoices.length,
-      offset:
-        typeof input.pagination.offset === 'number' ? input.pagination.offset : 0,
-      total:
-        typeof input.pagination.total === 'number'
-          ? input.pagination.total
-          : invoices.length,
+      limit: input.pagination.limit as number,
+      offset: input.pagination.offset as number,
+      total: input.pagination.total as number,
     };
   }
 
@@ -1105,10 +1117,11 @@ export const INVOICE_OPENAPI_SPEC = {
           },
           pagination: {
             type: 'object',
+            required: ['limit', 'offset', 'total'],
             properties: {
-              limit: { type: 'integer' },
-              offset: { type: 'integer' },
-              total: { type: 'integer' },
+              limit: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+              offset: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+              total: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
             },
           },
         },
