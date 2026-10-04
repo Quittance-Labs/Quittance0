@@ -7,7 +7,15 @@ import { formatDate } from '@/lib/utils';
 interface PaymentEvent {
   id: string;
   eventType: string;
-  eventData?: { code?: string; txHash?: string; source?: string } | null;
+  eventData?: {
+    code?: string;
+    txHash?: string;
+    source?: string;
+    balanceId?: string;
+    amount?: string;
+    asset?: string;
+    predicate?: unknown;
+  } | null;
   createdAt: string;
 }
 
@@ -15,6 +23,7 @@ const EVENT_LABELS: Record<string, string> = {
   PAYMENT_CONFIRMED: 'Payment confirmed',
   PAYMENT_REJECTED: 'Payment rejected',
   PARTIAL_PAYMENT: 'Partial payment received',
+  CLAIMABLE_BALANCE_RECEIVED: 'Claimable balance received',
 };
 
 /**
@@ -61,6 +70,22 @@ export default function PaymentEventsFeed({
                 <p className="text-sm font-medium text-gray-900">
                   {EVENT_LABELS[event.eventType] ?? event.eventType}
                 </p>
+                {event.eventType === 'CLAIMABLE_BALANCE_RECEIVED' && (
+                  <div className="mt-1 text-xs text-amber-800">
+                    {event.eventData?.amount && event.eventData?.asset && (
+                      <p className="break-all">
+                        {event.eventData.amount} {event.eventData.asset === 'native' ? 'XLM' : event.eventData.asset}
+                      </p>
+                    )}
+                    {event.eventData?.balanceId && (
+                      <p className="font-mono break-all">Balance {event.eventData.balanceId}</p>
+                    )}
+                    <p className="mt-1">
+                      Claim this balance in a compatible Stellar wallet when its claim conditions allow.
+                      The invoice remains pending until a qualifying payment is verified.
+                    </p>
+                  </div>
+                )}
                 {event.eventData?.code && (
                   <p className="text-xs text-gray-500 font-mono mt-0.5">{event.eventData.code}</p>
                 )}

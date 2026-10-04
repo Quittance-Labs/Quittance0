@@ -454,6 +454,7 @@ export class InvoiceService {
     const query = `
       INSERT INTO payment_events (invoice_id, event_type, event_data)
       VALUES ($1, $2, $3)
+      ON CONFLICT DO NOTHING
     `;
 
     await this.db.query(query, [invoiceId, eventType, JSON.stringify(eventData)]);

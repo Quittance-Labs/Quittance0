@@ -10,6 +10,7 @@ import type {
 } from '../src/services/payment-monitor-checkpoint';
 import type { StoredInvoice } from '../src/storage/invoice-storage';
 import { PaymentClaimError } from '../src/domain/payment-attribution';
+import { withPaymentTransactions } from './fixtures/payment-page-source';
 
 const SELLER_KEY = 'GAA5INZB2GO3FJN4VXJYJSSIQXN4EKQTZWTR6R566TR3IMTXHSUDORLI';
 const PAYER_KEY = 'GBZXN7PIRZGNMHGA72UDEL52OQK6ICNJPF37ACNO42P7J7W4TX225656';
@@ -118,7 +119,7 @@ describe('PaymentMonitorService Runtime & Multi-Invoice Watch', () => {
       },
     };
 
-    const source: PaymentPageSource = {
+    const source: PaymentPageSource = withPaymentTransactions({
       async getLatestPaymentCursor() {
         return '100';
       },
@@ -142,7 +143,7 @@ describe('PaymentMonitorService Runtime & Multi-Invoice Watch', () => {
           },
         ];
       },
-    };
+    });
 
     const monitor = new PaymentMonitorService({
       account: SELLER_KEY,
@@ -191,7 +192,7 @@ describe('PaymentMonitorService Runtime & Multi-Invoice Watch', () => {
       },
     };
 
-    const source: PaymentPageSource = {
+    const source: PaymentPageSource = withPaymentTransactions({
       async getLatestPaymentCursor() {
         return '200';
       },
@@ -215,7 +216,7 @@ describe('PaymentMonitorService Runtime & Multi-Invoice Watch', () => {
           },
         ];
       },
-    };
+    });
 
     const monitor = new PaymentMonitorService({
       account: SELLER_KEY,
@@ -261,7 +262,7 @@ describe('PaymentMonitorService Runtime & Multi-Invoice Watch', () => {
       },
     };
 
-    const source: PaymentPageSource = {
+    const source: PaymentPageSource = withPaymentTransactions({
       async getLatestPaymentCursor() {
         return '300';
       },
@@ -285,7 +286,7 @@ describe('PaymentMonitorService Runtime & Multi-Invoice Watch', () => {
           },
         ];
       },
-    };
+    });
 
     const monitor = new PaymentMonitorService({
       account: SELLER_KEY,
@@ -324,7 +325,7 @@ describe('PaymentMonitorService Runtime & Multi-Invoice Watch', () => {
       },
     };
 
-    const source: PaymentPageSource = {
+    const source: PaymentPageSource = withPaymentTransactions({
       async getLatestPaymentCursor() {
         return '400';
       },
@@ -348,7 +349,7 @@ describe('PaymentMonitorService Runtime & Multi-Invoice Watch', () => {
           },
         ];
       },
-    };
+    });
 
     const monitor = new PaymentMonitorService({
       account: SELLER_KEY,
@@ -369,14 +370,14 @@ describe('PaymentMonitorService Runtime & Multi-Invoice Watch', () => {
 
   it('exposes status metrics including watchedCount, processedTotal, and lagSeconds', async () => {
     const checkpoints = new TestCheckpointStore('500');
-    const source: PaymentPageSource = {
+    const source: PaymentPageSource = withPaymentTransactions({
       async getLatestPaymentCursor() {
         return '500';
       },
       async getPaymentsPage() {
         return [];
       },
-    };
+    });
     const monitor = new PaymentMonitorService({
       account: SELLER_KEY,
       source,
@@ -420,7 +421,7 @@ describe('PaymentMonitorService Runtime & Multi-Invoice Watch', () => {
     };
 
     let pageDelivered = false;
-    const source: PaymentPageSource = {
+    const source: PaymentPageSource = withPaymentTransactions({
       async getLatestPaymentCursor() {
         return '600';
       },
@@ -448,7 +449,7 @@ describe('PaymentMonitorService Runtime & Multi-Invoice Watch', () => {
         }
         return [];
       },
-    };
+    });
 
     // First instance runs and settles
     const instance1 = new PaymentMonitorService({

@@ -192,3 +192,8 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(255);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_seller_idempotency
   ON invoices (seller_public_key, idempotency_key)
   WHERE idempotency_key IS NOT NULL;
+
+-- Replaying a monitor cursor must not duplicate the same pending claim hint.
+CREATE UNIQUE INDEX IF NOT EXISTS payment_events_claimable_balance_unique
+ON payment_events (invoice_id, (event_data->>'balanceId'))
+WHERE event_type = 'CLAIMABLE_BALANCE_RECEIVED';

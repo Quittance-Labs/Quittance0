@@ -1,3 +1,5 @@
+// Path-payment rows below are synthetic verifier examples using legacy dest_* aliases.
+// Exact, unchanged Horizon path-payment receipts are in monitor-testnet-receipts.json.
 import {
   VerifyPaymentInput,
   ExpectedPayment,

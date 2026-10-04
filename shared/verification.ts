@@ -48,6 +48,7 @@ export type VerificationCode =
   | 'TRANSACTION_CLOSE_TIME_UNAVAILABLE'
   | 'VERIFY_UNAVAILABLE'
   | 'NO_PAYMENT_OPERATION'
+  | 'UNSUPPORTED_PAYMENT_OPERATION'
   | 'AMBIGUOUS_PAYMENT_OPERATION'
   | 'MEMO_TYPE_MISMATCH'
   | 'MEMO_MISMATCH'
@@ -98,6 +99,7 @@ export const VERIFICATION_MESSAGES: Record<VerificationCode, string> = {
   TRANSACTION_CLOSE_TIME_UNAVAILABLE: 'Transaction close time is unavailable; try verification again later',
   VERIFY_UNAVAILABLE: 'Verification is temporarily unavailable; try again within 30 seconds',
   NO_PAYMENT_OPERATION: 'No payment operation found in transaction',
+  UNSUPPORTED_PAYMENT_OPERATION: 'Account creation or merge cannot settle an invoice',
   AMBIGUOUS_PAYMENT_OPERATION: 'Transaction contains more than one payment to the invoice destination',
   MEMO_TYPE_MISMATCH: 'Payment memo type is not a text memo',
   MEMO_MISMATCH: 'Memo mismatch',

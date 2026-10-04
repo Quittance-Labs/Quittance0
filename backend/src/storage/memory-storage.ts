@@ -234,6 +234,9 @@ class MemoryStorage {
    * Records a payment lifecycle audit event in memory.
    */
   logPaymentEvent(invoiceId: string, eventType: string, eventData: any): void {
+    if (eventType === 'CLAIMABLE_BALANCE_RECEIVED' && eventData?.balanceId
+        && this.paymentEvents.some((event) => event.invoiceId === invoiceId
+          && event.eventType === eventType && event.eventData?.balanceId === eventData.balanceId)) return;
     this.paymentEvents.push({
       id: uuidv4(),
       invoiceId,

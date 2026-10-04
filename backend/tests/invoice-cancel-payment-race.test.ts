@@ -1,3 +1,4 @@
+import { withPaymentTransactions } from './fixtures/payment-page-source';
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 import type { Request, Response } from 'express';
@@ -504,7 +505,7 @@ class MemoryCheckpointStore implements PaymentMonitorCheckpointStore {
 }
 
 function monitorSource(createdAt: string, overrides: { amount?: string } = {}): PaymentPageSource {
-  return {
+  return withPaymentTransactions({
     async getLatestPaymentCursor() {
       return 'cursor-0';
     },
@@ -528,7 +529,7 @@ function monitorSource(createdAt: string, overrides: { amount?: string } = {}): 
         },
       ];
     },
-  };
+  });
 }
 
 describe('cancel versus payment monitor attribution on memory storage', () => {
