@@ -1,3 +1,5 @@
+import type { Pool } from 'pg';
+import { PostgresWebhookStorage } from '../storage/postgres-webhook-storage';
 import { emitOperationalFailure } from '../observability/log-events';
 import { v4 as uuidv4 } from 'uuid';
 import { InvoiceIdCollisionError, MemoCollisionError } from '../domain/payment-attribution';
@@ -64,7 +66,13 @@ export interface Invoice {
 }
 
 export class InvoiceService {
-  constructor(private readonly db: Queryable = pool) {}
+  readonly webhooks?: PostgresWebhookStorage;
+
+  constructor(private readonly db: Queryable = pool) {
+    if (typeof (db as Partial<Pool>).connect === 'function') {
+      this.webhooks = new PostgresWebhookStorage(db as Pool);
+    }
+  }
 
   /**
    * Create a new invoice for the seller wallet supplied by the request

@@ -32,6 +32,10 @@ export class InvoiceMemoryService {
     private readonly nextId: () => string = generatePublicInvoiceId
   ) {}
 
+  get webhooks() {
+    return this.storage.webhooks;
+  }
+
   async createInvoice(input: CreateInvoiceInput): Promise<StoredInvoice> {
     if (!input.sellerPublicKey) {
       throw new Error('Seller public key is required');

@@ -1,4 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
+import { MemoryWebhookStorage } from './memory-webhook-storage';
+import { invoiceWebhookPayload } from './webhook-storage';
 import { calculateInvoiceStats } from './invoice-stats';
 import type { InvoiceStats } from './invoice-stats';
 import { isPendingInvoiceExpired } from '../domain/invoice-expiry';
@@ -30,6 +32,8 @@ class MemoryStorage {
   // Which invoice each transaction hash settled; see domain/payment-attribution.ts.
   private readonly paymentClaims = new PaymentClaimIndex();
   private paymentEvents: MemoryPaymentEvent[] = [];
+
+  constructor(readonly webhooks: MemoryWebhookStorage = new MemoryWebhookStorage()) {}
 
   createInvoice(data: Partial<Invoice>): Invoice {
     const invoice: Invoice = {
@@ -65,6 +69,10 @@ class MemoryStorage {
       throw new InvoiceIdCollisionError(invoice.id);
     }
 
+    const enqueue = this.webhooks.prepareEvent(
+      invoice.sellerPublicKey,
+      invoiceWebhookPayload('invoice.created', invoice, uuidv4(), invoice.createdAt)
+    );
     this.invoices.set(invoice.id, invoice);
     this.invoicesByMemo.set(invoice.memo, invoice.id);
     if (invoice.idempotencyKey) {
@@ -74,6 +82,7 @@ class MemoryStorage {
       );
     }
 
+    enqueue();
     return invoice;
   }
 
@@ -116,9 +125,54 @@ class MemoryStorage {
     if (!invoice) return undefined;
 
     const updated = { ...invoice, ...updates };
-    this.invoices.set(id, updated);
-
+    const commit = this.prepareInvoiceChange(invoice, updated);
+    commit();
     return updated;
+  }
+
+  /**
+   * Prepare the audit and delivery rows before changing invoice state. The
+   * returned synchronous commit contains no validation, randomness, or I/O.
+   */
+  private prepareInvoiceChange(
+    previous: Invoice,
+    updated: Invoice,
+    paidData?: Record<string, unknown>
+  ): () => void {
+    if (
+      previous.status === updated.status ||
+      !['PAID', 'CANCELLED', 'EXPIRED'].includes(updated.status)
+    ) {
+      return () => { this.invoices.set(updated.id, updated); };
+    }
+    const eventTypes = {
+      PAID: ['invoice.paid', 'PAYMENT_CONFIRMED'],
+      CANCELLED: ['invoice.cancelled', 'INVOICE_CANCELLED'],
+      EXPIRED: ['invoice.expired', 'INVOICE_EXPIRED'],
+    } as const;
+    const [webhookType, auditType] = eventTypes[updated.status as keyof typeof eventTypes];
+    const at = updated.status === 'PAID'
+      ? updated.paidAt ?? new Date()
+      : updated.status === 'CANCELLED'
+        ? updated.cancelledAt ?? new Date()
+        : new Date();
+    const eventId = uuidv4();
+    const payload = invoiceWebhookPayload(webhookType, updated, eventId, at);
+    const enqueue = this.webhooks.prepareEvent(updated.sellerPublicKey, payload);
+    const audit: MemoryPaymentEvent = {
+      id: eventId,
+      invoiceId: updated.id,
+      eventType: auditType,
+      eventData: updated.status === 'PAID'
+        ? paidData ?? {}
+        : { priorStatus: previous.status, status: updated.status },
+      createdAt: at,
+    };
+    return () => {
+      this.invoices.set(updated.id, updated);
+      this.paymentEvents.push(audit);
+      enqueue();
+    };
   }
 
   // Cancel invoice
@@ -155,17 +209,8 @@ class MemoryStorage {
     // Settlement time must come from the ledger close time; never invent one.
     const settlement = settlementFieldsForInvoice(invoice, options.settledAt);
 
-    // One transaction settles one invoice. The claim below reads and records in
-    // the same synchronous step, so a second caller holding the same hash gets a
-    // decision here rather than a second PAID transition. A replay against this
-    // same invoice falls back to the "already processed" contract above.
-    const decision = this.paymentClaims.claim(txHash, id, now);
-    if (decision.kind === 'conflict') {
-      throw new PaymentClaimError(txHash, id, decision.claim.invoiceId);
-    }
-    if (decision.kind === 'replay') return undefined;
-
-    const updated = this.updateInvoice(id, {
+    const updated: Invoice = {
+      ...invoice,
       status: 'PAID',
       paymentTxHash: txHash,
       payerPublicKey,
@@ -177,19 +222,25 @@ class MemoryStorage {
       settlementContext: settlement.settlementContext,
       priorStatus: settlement.priorStatus,
       latePaymentWarningCode: settlement.latePaymentWarningCode,
+    };
+    const commit = this.prepareInvoiceChange(invoice, updated, {
+      txHash,
+      payerPublicKey,
+      settledAt: settlement.settledAt.toISOString(),
+      settlementContext: settlement.settlementContext,
+      priorStatus: settlement.priorStatus,
+      latePaymentWarningCode: settlement.latePaymentWarningCode,
+      ...(options.destinationMuxedId ? { destinationMuxedId: options.destinationMuxedId } : {}),
     });
 
-    if (updated) {
-      this.logPaymentEvent(id, 'PAYMENT_CONFIRMED', {
-        txHash,
-        payerPublicKey,
-        settledAt: settlement.settledAt.toISOString(),
-        settlementContext: settlement.settlementContext,
-        priorStatus: settlement.priorStatus,
-        latePaymentWarningCode: settlement.latePaymentWarningCode,
-        ...(options.destinationMuxedId ? { destinationMuxedId: options.destinationMuxedId } : {}),
-      });
+    // Prepare everything that can reject before claiming the transaction.
+    // One synchronous commit then records the claim, invoice, audit and outbox.
+    const decision = this.paymentClaims.claim(txHash, id, now);
+    if (decision.kind === 'conflict') {
+      throw new PaymentClaimError(txHash, id, decision.claim.invoiceId);
     }
+    if (decision.kind === 'replay') return undefined;
+    commit();
 
     return updated;
   }
@@ -214,14 +265,15 @@ class MemoryStorage {
 
   // Mark expired invoices
   markExpiredInvoices(now: Date = new Date()): number {
-    let count = 0;
-
+    const commits: Array<() => void> = [];
     this.invoices.forEach((invoice) => {
       if (isPendingInvoiceExpired(invoice, now)) {
-        invoice.status = 'EXPIRED';
-        count++;
+        commits.push(this.prepareInvoiceChange(invoice, { ...invoice, status: 'EXPIRED' }));
       }
     });
+    // A failed preparation leaves the entire sweep unchanged.
+    for (const commit of commits) commit();
+    const count = commits.length;
 
     if (count > 0) {
       console.log(`⏰ Marked ${count} invoices as expired`);
@@ -234,13 +286,22 @@ class MemoryStorage {
    * Records a payment lifecycle audit event in memory.
    */
   logPaymentEvent(invoiceId: string, eventType: string, eventData: any): void {
-    this.paymentEvents.push({
+    const event: MemoryPaymentEvent = {
       id: uuidv4(),
       invoiceId,
       eventType,
       eventData,
       createdAt: new Date(),
-    });
+    };
+    const invoice = this.invoices.get(invoiceId);
+    const enqueue = invoice && (eventType === 'PAYMENT_REJECTED' || eventType === 'PARTIAL_PAYMENT')
+      ? this.webhooks.prepareEvent(
+          invoice.sellerPublicKey,
+          invoiceWebhookPayload('payment.rejected', invoice, event.id, event.createdAt, eventData)
+        )
+      : undefined;
+    this.paymentEvents.push(event);
+    enqueue?.();
   }
 
   /**
@@ -260,6 +321,7 @@ class MemoryStorage {
     this.invoicesByIdempotencyKey.clear();
     this.paymentClaims.clear();
     this.paymentEvents = [];
+    this.webhooks.clear();
     console.log('🗑️ Memory storage cleared');
   }
 

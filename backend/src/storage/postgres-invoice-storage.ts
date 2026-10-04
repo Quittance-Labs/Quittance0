@@ -19,6 +19,10 @@ export class PostgresInvoiceStorage implements InvoiceStorage {
 
   constructor(private readonly service: InvoiceService = invoiceService) {}
 
+  get webhooks() {
+    return this.service.webhooks;
+  }
+
   async createInvoice(input: CreateInvoiceInput): Promise<StoredInvoice> {
     return this.service.createInvoice(input);
   }
