@@ -12,6 +12,14 @@
 
 import { IDENTITY_INVOICE_KEY_PATTERN } from '../../../shared/invoice';
 
+function redactPaymentEventValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactPaymentEventValue);
+  if (value && typeof value === 'object') {
+    return redactPaymentEventData(value as Record<string, unknown>);
+  }
+  return value;
+}
+
 export function redactPaymentEventData(
   data: Record<string, unknown> | null | undefined
 ): Record<string, unknown> | null {
@@ -19,10 +27,7 @@ export function redactPaymentEventData(
   const clean: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data)) {
     if (IDENTITY_INVOICE_KEY_PATTERN.test(key)) continue;
-    clean[key] =
-      value && typeof value === 'object' && !Array.isArray(value)
-        ? redactPaymentEventData(value as Record<string, unknown>)
-        : value;
+    clean[key] = redactPaymentEventValue(value);
   }
   return clean;
 }
