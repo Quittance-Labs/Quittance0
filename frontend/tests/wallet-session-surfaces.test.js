@@ -425,3 +425,23 @@ test('a disconnect mid-form keeps the draft and reconnects create without a relo
 
   getDom().window.sessionStorage.clear();
 });
+
+for (const shape of ['row array', 'object']) {
+  test(`dashboard preserves partial seller stats from a ${shape} response`, async () => {
+    walletOnTestnet(ALICE);
+    primeFor([invoice('inv_alice', ALICE, 11.11)]);
+    const stats = { total_invoices: 321, paid_invoices: 123, pending_invoices: 198 };
+    bundle.setResponse('/invoices/stats', { data: shape === 'row array' ? [stats] : stats });
+
+    const { container, unmount } = await render(React.createElement(bundle.DashboardPage));
+    try {
+      await settle();
+      for (const value of [321, 123, 198]) {
+        assert.match(container.textContent, new RegExp(String(value)));
+      }
+      assert.doesNotMatch(container.textContent, /Quittance API is unreachable/);
+    } finally {
+      unmount();
+    }
+  });
+}

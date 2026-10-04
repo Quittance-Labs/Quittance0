@@ -9,6 +9,20 @@ import { resolveVerificationError } from './verification.js';
 import { resolveStellarNetwork } from '@shared/network';
 import { createBrowserRequestId } from './request-correlation-id.ts';
 
+import type {
+  ApiSuccess,
+  InvoiceStatsDto,
+  CancelInvoiceResponse,
+  CreateInvoiceRequest,
+  CreateInvoiceResponse,
+  GetInvoiceResponse,
+  GetStatsResponse,
+  ListInvoicesQuery,
+  ListInvoicesResponse,
+  PaymentInfoResponse,
+  VerifyPaymentResponse,
+} from '../../shared/invoice-contract';
+
 /**
  * The API origin, resolved once per build.
  *
@@ -61,57 +75,41 @@ api.interceptors.response.use(
   }
 );
 
+// Keep shared response types without making schema drift a runtime page gate.
+// Contract tests validate the strict parsers; rolling client/server versions may
+// omit optional fields or add new ones. Transport and server failures still
+// reject through the interceptor above; request validation is unchanged.
 export const invoiceApi = {
-  create: async (data: {
-    amount: number;
-    assetCode?: string;
-    assetIssuer?: string;
-    description?: string;
-    customerName?: string;
-    customerEmail?: string;
-    expiresInDays: number;
-    sellerPublicKey?: string;
-    sellerName?: string;
-    sellerEmail?: string;
-    network?: string;
-    idempotencyKey?: string;
-  }) => {
+  create: async (data: CreateInvoiceRequest): Promise<CreateInvoiceResponse> => {
     const normalizedAssetCode = data.assetCode ? data.assetCode.toUpperCase() : 'XLM';
-    const response = await api.post('/invoices', {
+    const response = await api.post<CreateInvoiceResponse>('/invoices', {
       ...data,
       assetCode: normalizedAssetCode,
     });
     return response.data;
   },
-
-  getById: async (id: string, sellerPublicKey?: string | null) => {
+  getById: async (
+    id: string,
+    sellerPublicKey?: string | null
+  ): Promise<GetInvoiceResponse> => {
     // Workspace fields (client contact, payer identity) are only returned when
     // the caller presents the invoice's own seller key — issue #503. The pay
     // page calls this without a key and receives the public pay DTO.
-    const response = await api.get(`/invoices/${id}`, {
+    const response = await api.get<GetInvoiceResponse>(`/invoices/${id}`, {
       params: sellerPublicKey ? { sellerPublicKey } : undefined,
     });
     return response.data;
   },
-
   // Invoice history is scoped to the connected Freighter wallet, so the seller
   // key is required for list and stats calls.
-  getAll: async (params: {
-    sellerPublicKey: string;
-    status?: string;
-    limit?: number;
-    offset?: number;
-    q?: string;
-  }) => {
-    const response = await api.get('/invoices', { params });
+  getAll: async (params: ListInvoicesQuery): Promise<ListInvoicesResponse> => {
+    const response = await api.get<ListInvoicesResponse>('/invoices', { params });
     return response.data;
   },
-
-  getPaymentInfo: async (id: string) => {
-    const response = await api.get(`/invoices/${id}/payment-info`);
+  getPaymentInfo: async (id: string): Promise<PaymentInfoResponse> => {
+    const response = await api.get<PaymentInfoResponse>(`/invoices/${id}/payment-info`);
     return response.data;
   },
-
   // Seller-only audit feed (issue #515): rejected verifies and monitor
   // rejections for this invoice. Requires the invoice's own seller key.
   getPaymentEvents: async (id: string, sellerPublicKey: string) => {
@@ -123,29 +121,41 @@ export const invoiceApi = {
 
   // One proof path (issue #517): the seller key and the Freighter signature
   // over `cancel:<id>` travel in the request body — never in query or header.
-  cancel: async (id: string, sellerPublicKey: string, signature?: string) => {
-    const response = await api.post(`/invoices/${id}/cancel`, { sellerPublicKey, signature });
+  cancel: async (
+    id: string,
+    sellerPublicKey: string,
+    signature?: string
+  ): Promise<CancelInvoiceResponse> => {
+    const response = await api.post<CancelInvoiceResponse>(`/invoices/${id}/cancel`, {
+      sellerPublicKey,
+      signature,
+    });
     return response.data;
   },
-
-  verify: async (id: string, txHash: string, payerInfo?: { payerName?: string; payerEmail?: string }) => {
-    const response = await api.post(`/invoices/${id}/verify`, {
+  verify: async (
+    id: string,
+    txHash: string,
+    payerInfo?: { payerName?: string; payerEmail?: string }
+  ): Promise<VerifyPaymentResponse> => {
+    const response = await api.post<VerifyPaymentResponse>(`/invoices/${id}/verify`, {
       txHash,
       // Lets the server reject a payment submitted from the wrong wallet network.
       // Resolved through the shared contract so the client sends the canonical
       // 'TESTNET' | 'PUBLIC' name rather than a raw env string (issue #511).
       network: resolveStellarNetwork(process.env.NEXT_PUBLIC_STELLAR_NETWORK),
-      ...payerInfo
+      ...payerInfo,
     });
     return response.data;
   },
-
-  getStats: async (sellerPublicKey: string) => {
-    const response = await api.get('/invoices/stats', {
+  getStats: async (sellerPublicKey: string): Promise<GetStatsResponse> => {
+    const response = await api.get<GetStatsResponse | ApiSuccess<InvoiceStatsDto[]>>('/invoices/stats', {
       params: { sellerPublicKey },
     });
-    return response.data;
-  },
+    // Storage currently wraps stats in a one-row array. Keep the client's
+    // object shape without rejecting older partial responses or losing fields.
+    const body = response.data;
+    return Array.isArray(body.data) ? { ...body, data: body.data[0] } : body as GetStatsResponse;
+  }
 };
 
 // Stellar APIs

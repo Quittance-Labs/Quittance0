@@ -1,13 +1,10 @@
+import type { InvoiceDto } from '../../shared/invoice';
 import type { WalletGateResult } from './freighter-availability';
 
 export type PayStatus = 'idle' | 'paying' | 'verifying' | 'paid' | 'error' | 'expired';
 
-export interface PayInvoice {
-  status: string;
-  expiresAt?: string | Date;
-  paymentTxHash?: string | null;
-  [key: string]: unknown;
-}
+/** Pay-page invoice: the shared wire DTO (issue #446). */
+export type PayInvoice = InvoiceDto;
 
 export interface PaymentState {
   status: PayStatus;

@@ -1,3 +1,4 @@
+import type { InvoiceDto } from '../../shared/invoice';
 import { format } from 'date-fns';
 import { canonicalAmount } from './stroop-amount.js';
 import { formatUtcDate, formatUtcDateTime } from './utc-format.js';
@@ -63,34 +64,8 @@ export function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => HTML_ESCAPE_CHARACTERS[character]);
 }
 
-interface Invoice {
-  id: string;
-  amount: number;
-  assetCode: string;
-  assetIssuer?: string;
-  description?: string;
-  customerName?: string;
-  customerEmail?: string;
-  sellerName?: string;
-  sellerEmail?: string;
-  payerName?: string;
-  payerEmail?: string;
-  status: string;
-  createdAt: string;
-  expiresAt: string;
-  paidAt?: string;
-  cancelledAt?: string;
-  settledAt?: string;
-  settlementContext?: 'ON_TIME' | 'AFTER_EXPIRY' | 'AFTER_CANCEL';
-  priorStatus?: string;
-  latePaymentWarningCode?: 'PAYMENT_RECEIVED_AFTER_EXPIRY' | 'PAYMENT_RECEIVED_AFTER_CANCEL';
-  memo: string;
-  sellerPublicKey: string;
-  payerPublicKey?: string;
-  paymentTxHash?: string;
-}
 
-function latePaymentWarning(invoice: Invoice): { title: string; body: string } | null {
+function latePaymentWarning(invoice: InvoiceDto): { title: string; body: string } | null {
   if (invoice.latePaymentWarningCode === 'PAYMENT_RECEIVED_AFTER_CANCEL') {
     return {
       title: 'Payment received after cancellation',
@@ -106,7 +81,7 @@ function latePaymentWarning(invoice: Invoice): { title: string; body: string } |
   return null;
 }
 
-export function generateInvoiceCSV(invoices: Invoice[]): string {
+export function generateInvoiceCSV(invoices: InvoiceDto[]): string {
   const headers = [
     'Invoice ID',
     'Date',
@@ -153,7 +128,7 @@ export function generateInvoiceCSV(invoices: Invoice[]): string {
   return csvContent;
 }
 
-export function downloadInvoiceCSV(invoices: Invoice[], filename?: string) {
+export function downloadInvoiceCSV(invoices: InvoiceDto[], filename?: string) {
   const csv = generateInvoiceCSV(invoices);
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
@@ -176,7 +151,7 @@ export function downloadInvoiceCSV(invoices: Invoice[], filename?: string) {
  * @param invoiceOrProof - Invoice record or canonical QuittanceProof model.
  * @returns HTML document string for display or PDF printing.
  */
-export function generateInvoicePDF(invoiceOrProof: Invoice | QuittanceProof): string {
+export function generateInvoicePDF(invoiceOrProof: InvoiceDto | QuittanceProof): string {
   if (isQuittanceProof(invoiceOrProof)) {
     return renderQuittanceProofHtml(invoiceOrProof);
   }
@@ -463,7 +438,7 @@ export function generateQuittanceProofPDF(proof: QuittanceProof): string {
  *
  * @param invoiceOrProof - Invoice record or canonical QuittanceProof model.
  */
-export function openInvoicePDF(invoiceOrProof: Invoice | QuittanceProof) {
+export function openInvoicePDF(invoiceOrProof: InvoiceDto | QuittanceProof) {
   let proof: QuittanceProof;
   if (isQuittanceProof(invoiceOrProof)) {
     proof = invoiceOrProof;
@@ -492,12 +467,12 @@ export function openInvoicePDF(invoiceOrProof: Invoice | QuittanceProof) {
   }
 }
 
-export function shareInvoiceByEmail(invoice: Invoice, baseUrl?: string): string {
+export function shareInvoiceByEmail(invoice: InvoiceDto, baseUrl?: string): string {
   return openInvoiceMailto(invoice, baseUrl);
 }
 
 export function emailPaymentProof(
-  invoiceOrProof: Invoice | QuittanceProof,
+  invoiceOrProof: InvoiceDto | QuittanceProof,
   baseUrl?: string,
   recipientOverride?: string
 ): string {
