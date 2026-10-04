@@ -220,6 +220,11 @@ function isObject(val: unknown): val is Record<string, unknown> {
   return typeof val === 'object' && val !== null && !Array.isArray(val);
 }
 
+/** Legacy payloads may omit success; a supplied discriminant must be true. */
+function isSuccessfulResponse(input: unknown): input is Record<string, unknown> {
+  return isObject(input) && (!('success' in input) || input.success === true);
+}
+
 /**
  * Validates whether an unknown value conforms to the InvoiceDto contract.
  */
@@ -317,7 +322,7 @@ function unwrapInvoiceTarget(raw: Record<string, unknown>): Record<string, unkno
 export function parseCreateInvoiceResponse(
   input: unknown
 ): ContractResult<CreateInvoiceResponse> {
-  if (!isObject(input) || input.success === false) {
+  if (!isSuccessfulResponse(input)) {
     return { success: false, error: 'Create response must be an object' };
   }
 
@@ -366,7 +371,7 @@ export function parseCreateInvoiceResponse(
 export function parseGetInvoiceResponse(
   input: unknown
 ): ContractResult<GetInvoiceResponse> {
-  if (!isObject(input) || input.success === false) {
+  if (!isSuccessfulResponse(input)) {
     return { success: false, error: 'Get response must be an object' };
   }
 
@@ -392,7 +397,7 @@ export function parseGetInvoiceResponse(
 export function parseListInvoicesResponse(
   input: unknown
 ): ContractResult<ListInvoicesResponse> {
-  if (!isObject(input) || input.success === false) {
+  if (!isSuccessfulResponse(input)) {
     return { success: false, error: 'List response must be an object' };
   }
 
@@ -461,7 +466,7 @@ export function parseListInvoicesResponse(
 export function parsePaymentInfoResponse(
   input: unknown
 ): ContractResult<PaymentInfoResponse> {
-  if (!isObject(input) || input.success === false) {
+  if (!isSuccessfulResponse(input)) {
     return { success: false, error: 'Payment info response must be an object' };
   }
 
@@ -516,7 +521,7 @@ export function parsePaymentInfoResponse(
 export function parseCancelInvoiceResponse(
   input: unknown
 ): ContractResult<CancelInvoiceResponse> {
-  if (!isObject(input) || input.success === false) {
+  if (!isSuccessfulResponse(input)) {
     return { success: false, error: 'Cancel response must be an object' };
   }
 
@@ -540,7 +545,7 @@ export function parseCancelInvoiceResponse(
 export function parseVerifyPaymentResponse(
   input: unknown
 ): ContractResult<VerifyPaymentResponse> {
-  if (!isObject(input) || input.success === false) {
+  if (!isSuccessfulResponse(input)) {
     return { success: false, error: 'Verify response must be an object' };
   }
 
