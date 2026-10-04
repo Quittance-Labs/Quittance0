@@ -476,9 +476,9 @@ describe('Cutover Export, Validation, and Transactional Import Engine', () => {
     process.env.CUTOVER_DRAIN_MODE = 'true';
     assert.equal(cutoverDrainMode(), true);
 
-    const handlers = createInvoiceHandlers(
-      new MemoryInvoiceStorage(new InvoiceMemoryService(memory))
-    );
+    const handlers = createInvoiceHandlers({
+      storage: new MemoryInvoiceStorage(new InvoiceMemoryService(memory)),
+    });
 
     let createStatus = 0;
     let createBody: any = null;

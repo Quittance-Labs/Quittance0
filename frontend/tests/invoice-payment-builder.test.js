@@ -197,16 +197,6 @@ module.exports = {
 };
 `;
 
-// @/lib/assets stub
-const ASSETS_STUB_SRC = `
-'use strict';
-const STELLAR_ASSETS = [
-  { code: 'XLM', name: 'Stellar Lumens', decimals: 7 },
-  { code: 'USDC', name: 'USD Coin', issuer: '${USDC_ISSUER}', decimals: 7 },
-];
-module.exports = { STELLAR_ASSETS };
-`;
-
 // @/lib/freighter-availability stub
 const FREIGHTER_AVAIL_STUB_SRC = `
 'use strict';
@@ -228,7 +218,6 @@ const STUB_FILES = {
   [path.join(STUBS_DIR, '_ipb-stellar-sdk.js')]: SDK_STUB_SRC,
   [path.join(STUBS_DIR, '_ipb-freighter-api.js')]: FREIGHTER_API_STUB_SRC,
   [path.join(STUBS_DIR, '_ipb-stellar-lib.js')]: STELLAR_LIB_STUB_SRC,
-  [path.join(STUBS_DIR, '_ipb-assets.js')]: ASSETS_STUB_SRC,
   [path.join(STUBS_DIR, '_ipb-freighter-avail.js')]: FREIGHTER_AVAIL_STUB_SRC,
 };
 for (const [file, src] of Object.entries(STUB_FILES)) fs.writeFileSync(file, src);
@@ -252,7 +241,6 @@ try {
       '@stellar/stellar-sdk':       p('_ipb-stellar-sdk.js'),
       '@stellar/freighter-api':     p('_ipb-freighter-api.js'),
       '@/lib/stellar':              p('_ipb-stellar-lib.js'),
-      '@/lib/assets':               p('_ipb-assets.js'),
       '@/lib/freighter-availability': p('_ipb-freighter-avail.js'),
     },
     tsconfig: path.join(ROOT, 'tsconfig.json'),

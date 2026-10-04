@@ -108,16 +108,15 @@ describe('payment URI — the gaps, proven against the SDK', () => {
     assert.throws(() => Keypair.fromPublicKey(MUXED_DESTINATION));
   });
 
-  it('drops the issuer from an XLM-labelled credit asset without saying so', () => {
-    const result = formatQrPaymentPayload({
+  it('refuses an XLM-labelled credit asset instead of replacing it with native XLM', () => {
+    const credit = new Asset('XLM', VALID_DESTINATION);
+    assert.equal(credit.isNative(), false);
+    assert.equal(credit.getIssuer(), VALID_DESTINATION);
+    assert.throws(() => formatQrPaymentPayload({
       destination: VALID_DESTINATION,
       amount: '25',
       asset: { code: 'XLM', issuer: VALID_DESTINATION },
-    });
-
-    assert.equal('asset_code' in result.params, false);
-    assert.equal('asset_issuer' in result.params, false);
-    assert.equal(result.uri, `web+stellar:pay?destination=${VALID_DESTINATION}&amount=25.0000000`);
+    }), /XLM is the native asset and must not carry an issuer/);
   });
 });
 
@@ -134,15 +133,13 @@ describe('payment URI — keeping the gap list honest', () => {
     }
   });
 
-  it('holds two gaps, so adding or closing one is a deliberate edit', () => {
+  it('holds one remaining gap, so adding or closing one is a deliberate edit', () => {
     assert.deepEqual(
       GAPS.map((c) => c.name),
       [
-        'XLM with an issuer is silently downgraded to a native payment',
         'a muxed account destination is refused',
       ],
       'the gap list changed: update docs/PAYMENT-URI.md in the same commit'
     );
   });
 });
-

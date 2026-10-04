@@ -218,6 +218,99 @@ test('disconnecting hides the seller rows and asks for a wallet', async () => {
   }
 });
 
+
+test('renders zero-invoice state when wallet has no invoices', async () => {
+  walletOnTestnet(ALICE);
+  primeFor([]);
+
+  const { container, unmount } = await render(React.createElement(bundle.DashboardPage));
+  try {
+    await settle();
+    assert.match(container.textContent, /No Invoices Yet/);
+    assert.match(container.textContent, /Create Invoice/);
+  } finally {
+    unmount();
+  }
+});
+
+test('renders status filtered-empty state when no invoices match filter', async () => {
+  walletOnTestnet(ALICE);
+  primeFor([invoice('inv_alice', ALICE, 11.11)]);
+
+  const { container, unmount } = await render(React.createElement(bundle.DashboardPage));
+  try {
+    await settle();
+    assert.match(container.textContent, /11\.11/);
+
+    // Keep stats so hasAnyInvoices stays true while the filtered list is empty.
+    bundle.setResponse('/invoices', { data: [] });
+    const paidButton = Array.from(container.querySelectorAll('button')).find(
+      (btn) => btn.textContent && btn.textContent.includes('Paid')
+    );
+    assert.ok(paidButton, 'Paid filter button found');
+    paidButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await settle();
+
+    assert.match(container.textContent, /No paid Invoices/);
+    assert.match(container.textContent, /Show All Invoices/);
+  } finally {
+    unmount();
+  }
+});
+
+test('renders search filtered-empty state when search produces no matches', async () => {
+  walletOnTestnet(ALICE);
+  primeFor([invoice('inv_alice', ALICE, 11.11)]);
+
+  const { container, unmount } = await render(React.createElement(bundle.DashboardPage));
+  try {
+    await settle();
+    assert.match(container.textContent, /11\.11/);
+
+    const searchInput =
+      container.querySelector('input[type="search"]') ||
+      container.querySelector('input[placeholder*="Search"]');
+    assert.ok(searchInput, 'search input exists');
+
+    setInputValue(searchInput, 'NO_MATCH_XYZ');
+    await settle();
+
+    assert.match(container.textContent, /No Matching Invoices/);
+    assert.match(container.textContent, /Clear Search/);
+  } finally {
+    unmount();
+  }
+});
+
+test('switching wallets clears previous rows before the next fetch resolves', async () => {
+  walletOnTestnet(ALICE);
+  primeFor([invoice('inv_alice', ALICE, 11.11)]);
+
+  const { container, unmount } = await render(React.createElement(bundle.DashboardPage));
+  try {
+    await settle();
+    assert.match(container.textContent, /11\.11/, "the first seller's row is on screen");
+
+    // Leave the next seller's response unset so the fetch cannot repopulate yet.
+    bundle.resetResponses();
+    bundle.setResponse('/invoices/stats', {
+      data: [{ total_invoices: 0, paid_invoices: 0, pending_invoices: 0 }],
+    });
+    // Intentionally no /invoices response yet — the previous wallet rows must
+    // still disappear on the session change itself.
+    bundle.useWalletStore.setState({ publicKey: BOB });
+    await settle();
+
+    assert.doesNotMatch(
+      container.textContent,
+      /11\.11/,
+      "the previous seller's row must not remain authoritative after the switch"
+    );
+  } finally {
+    unmount();
+  }
+});
+
 test('a typed create draft comes back after the form remounts', async () => {
   walletOnTestnet(ALICE);
 

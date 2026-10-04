@@ -399,6 +399,7 @@ function runManualVerifySuite(name: string, createStorage: () => InvoiceStorage)
       );
 
       assert.equal(cancelled.statusCode, 400);
+      assert.equal(cancelled.body.code, 'INVOICE_ALREADY_PAID');
       const stored = await storage.getInvoiceById(invoice.id);
       assert.equal(stored?.status, 'PAID');
       assert.equal(stored?.paymentTxHash, TX_HASH);
