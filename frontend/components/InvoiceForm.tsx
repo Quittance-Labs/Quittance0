@@ -10,7 +10,7 @@ import { NETWORK_DISPLAY_NAME } from '@/lib/stellar';
 import { showFreighterWrongNetworkPrompt } from './FreighterInstallPrompt';
 import AssetLogo from './AssetLogo';
 import ApiErrorState from './ApiErrorState';
-import { walletSessionGate } from '@/lib/wallet-session';
+import { normalizeWalletSession, walletSessionChanged, walletSessionGate } from '@/lib/wallet-session';
 import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
 import { showFreighterInstallPrompt } from './FreighterInstallPrompt';
 import { parseAmountInput } from '@/lib/parse-amount-input';
@@ -28,7 +28,6 @@ interface InvoiceFormProps {
 }
 
 export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps) {
-  const { publicKey, connected, network, freighterAvailable } = useWalletStore();
   const [loading, setLoading] = useState(false);
   // The page renders this form only while the wallet gate is ready, so a
   // Freighter disconnect unmounts it. The draft is read once on mount so the
@@ -92,15 +91,21 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const sellerWallet = userWallet || publicKey || undefined;
+    const wallet = normalizeWalletSession(useWalletStore.getState());
+    const sellerWallet = wallet.publicKey || undefined;
     // The session module normalises the store first, so a store that claims
     // connected without a public key cannot enable the submit button.
     const gate = walletSessionGate(
-      { freighterAvailable, connected, publicKey: sellerWallet, network },
+      wallet,
       EXPECTED_WALLET_NETWORK
     );
     if (!gate.ready) {
       showFreighterInstallPrompt(gate);
+      return;
+    }
+
+    if (userWallet && userWallet !== sellerWallet) {
+      toast.error('The connected wallet changed. Please try again.');
       return;
     }
 
@@ -160,6 +165,7 @@ export default function InvoiceForm({ onSuccess, userWallet }: InvoiceFormProps)
         idempotencyKey: idempotencyKeyRef.current,
       });
 
+      if (walletSessionChanged(wallet, useWalletStore.getState()).changed) return;
       toast.success('Invoice created');
       idempotencyKeyRef.current = crypto.randomUUID();
       onSuccess?.(result.data);

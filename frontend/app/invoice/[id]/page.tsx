@@ -26,9 +26,10 @@ import InvoiceTimeline from '@/components/InvoiceTimeline';
 import PaymentEventsFeed from '@/components/PaymentEventsFeed';
 import { invoiceSharePath } from '@/lib/invoice-share-path';
 import { shareInvoiceByEmail } from '@/lib/export';
-import { EXPECTED_WALLET_NETWORK, signInvoiceCancelMessage } from '@/lib/stellar';
+import { EXPECTED_WALLET_NETWORK } from '@/lib/stellar';
 import { walletGate } from '@/lib/freighter-availability';
 import { copyWithFeedback } from '@/lib/clipboard-feedback';
+import { normalizeWalletSession, walletSessionChanged, walletSessionKey } from '@/lib/wallet-session';
 
 export default function InvoiceDetailPage() {
   const params = useParams();
@@ -36,7 +37,6 @@ export default function InvoiceDetailPage() {
   const id = params.id as string;
   const {
     publicKey,
-    publicKey: storePublicKey,
     connected,
     network,
     networkPassphrase,
@@ -50,7 +50,8 @@ export default function InvoiceDetailPage() {
   );
   const userWallet = gate.ready ? publicKey : null;
 
-  const [invoice, setInvoice] = useState<any>(null);
+  const [loadedInvoice, setInvoice] = useState<any>(null);
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -58,26 +59,35 @@ export default function InvoiceDetailPage() {
   // Cancelling reloads the invoice and swaps the status panel out from under
   // the button that was just pressed, so focus has to be moved deliberately.
   const statusPanelRef = useRef<HTMLDivElement>(null);
+  const loadRevision = useRef(0);
 
   useEffect(() => {
     const timer = window.setInterval(() => setLifecycleNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
 
-  // Declared before loadInvoice so the loader can present it as the workspace
-  // credential — the seller-scoped GET returns contact fields only to the
-  // invoice's own wallet (issue #503). When the wallet connects or switches,
-  // the load effect re-runs and picks up the richer shape.
-  const activeWallet = userWallet || (connected ? storePublicKey : null);
+  const activeWallet = userWallet;
+  const scope = `${id}:${activeWallet ? walletSessionKey({ publicKey, network }) : 'public'}:${networkPassphrase || ''}`;
+  // A wallet or route switch hides the previous workspace during this render,
+  // before the effect has had a chance to clear or replace its stored record.
+  const invoice = loadedScope === scope ? loadedInvoice : null;
 
   const loadInvoice = useCallback(async () => {
+    const revision = ++loadRevision.current;
+    const wallet = normalizeWalletSession(useWalletStore.getState());
+    const isCurrent = () => revision === loadRevision.current &&
+      !walletSessionChanged(wallet, useWalletStore.getState()).changed;
     setLoadError(null);
+    setInvoice(null);
+    setPaymentInfo(null);
+    setLoading(true);
     try {
       const [invoiceResult, paymentResult] = await Promise.allSettled([
         invoiceApi.getById(id, activeWallet),
         invoiceApi.getPaymentInfo(id),
       ]);
 
+      if (!isCurrent()) return;
       if (invoiceResult.status === 'rejected') throw invoiceResult.reason;
       setInvoice(invoiceResult.value.data);
       if (paymentResult.status === 'fulfilled') {
@@ -86,17 +96,22 @@ export default function InvoiceDetailPage() {
         setLoadError(apiErrorMessage(paymentResult.reason));
       }
     } catch (error) {
+      if (!isCurrent()) return;
       const message = apiErrorMessage(error, 'Failed to load invoice');
       if (isApiUnavailableError(error)) setLoadError(message);
       toast.error(message);
       console.error(error);
     } finally {
-      setLoading(false);
+      if (isCurrent()) {
+        setLoadedScope(scope);
+        setLoading(false);
+      }
     }
-  }, [id, activeWallet]);
+  }, [id, activeWallet, scope]);
 
   useEffect(() => {
     void loadInvoice();
+    return () => { loadRevision.current += 1; };
   }, [loadInvoice]);
 
   /**
@@ -161,9 +176,8 @@ export default function InvoiceDetailPage() {
   const handleCancel = async () => {
     if (!window.confirm('Cancel this invoice?')) return;
     try {
-      // Wallet proves ownership by signing `cancel:<id>` (issue #517).
-      const proof = await signInvoiceCancelMessage(id);
-      await invoiceApi.cancel(id, proof.publicKey, proof.signature);
+      if (!activeWallet) throw new Error('Connect the seller wallet to cancel this invoice.');
+      await invoiceApi.cancel(id, activeWallet);
       toast.success('Invoice cancelled');
       await loadInvoice();
       /*
@@ -180,7 +194,7 @@ export default function InvoiceDetailPage() {
     }
   };
 
-  if (loading) {
+  if (loading || loadedScope !== scope) {
     return (
       <main
         id={MAIN_CONTENT_ID}

@@ -12,6 +12,7 @@ import { requestCorrelationMiddleware } from '../src/utils/request-correlation-i
 import { requestLoggingMiddleware } from '../src/observability/request-logging';
 import { logReference, setLogSink, type StructuredLogRecord } from '../src/observability/log-events';
 import { defaultLimiterStore } from '../src/middleware/rate-limit';
+import { sellerAuthEnvironment, sellerAuthHeaders } from './fixtures/seller-auth';
 
 const SELLER = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
 const PAYER = 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H';
@@ -30,6 +31,7 @@ describe('mounted browser proof handoff observation', () => {
   const consoleMethods = { log: console.log, warn: console.warn, error: console.error };
 
   beforeEach(async () => {
+    Object.assign(process.env, sellerAuthEnvironment);
     fingerprintKey = process.env.LOG_FINGERPRINT_KEY;
     process.env.LOG_FINGERPRINT_KEY = 'proof-handoff-test-key';
     records = [];
@@ -92,7 +94,7 @@ describe('mounted browser proof handoff observation', () => {
   }
 
   it('correlates the HTTP create, verified payment and observed handoff using stored references', async () => {
-    const created = await request('/invoices', { amount: 25, assetCode: 'XLM', sellerPublicKey: SELLER, expiresInDays: 1 });
+    const created = await request('/invoices', { amount: 25, assetCode: 'XLM', sellerPublicKey: SELLER, expiresInDays: 1 }, sellerAuthHeaders(SELLER));
     assert.equal(created.status, 201);
     const invoice = created.body.data.invoice;
     memo = invoice.memo;

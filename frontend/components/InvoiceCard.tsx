@@ -14,7 +14,6 @@ import { canSendProofEmail } from '@/lib/mailto-delivery';
 import { effectiveInvoiceStatus } from '@/lib/invoice-lifecycle';
 import { describeAmount, statusBadgeLabel, statusText } from '@/lib/a11y';
 import { invoiceApi } from '@/lib/api';
-import { signInvoiceCancelMessage } from '@/lib/stellar';
 
 interface Invoice {
   id: string;
@@ -78,10 +77,8 @@ export default function InvoiceCard({ invoice, userWallet, onCancel }: InvoiceCa
     if (!window.confirm('Cancel this invoice?')) return;
     setCancelling(true);
     try {
-      // Wallet proves ownership by signing `cancel:<id>` (issue #517); the
-      // backend verifies the signature against the invoice's seller key.
-      const proof = await signInvoiceCancelMessage(invoice.id);
-      await invoiceApi.cancel(invoice.id, proof.publicKey, proof.signature);
+      if (!userWallet) throw new Error('Connect the seller wallet to cancel this invoice.');
+      await invoiceApi.cancel(invoice.id, userWallet);
       toast.success('Invoice cancelled');
       onCancel?.(invoice.id);
     } catch (error) {

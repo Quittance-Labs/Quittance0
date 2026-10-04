@@ -1,10 +1,113 @@
 // Mock API - Backend olmadan UI test için
 
 import { PUBLIC_INVOICE_FIELDS } from '@shared/invoice';
+import { Keypair, Transaction, WebAuth } from '@stellar/stellar-sdk';
+import { NETWORK_PASSPHRASE, STELLAR_NETWORK, signSellerChallenge } from './stellar';
+import { createSellerSessionManager, type SellerSessionToken } from './wallet-session';
+import { useWalletStore } from './store';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const MIN_EXPIRY_DAYS = 1;
 const MAX_EXPIRY_DAYS = 30;
+
+// This module simulates both sides for local UI demos only. Its ephemeral key
+// and opaque tokens are never a production credential or a persisted account.
+const mockSigningKey = Keypair.random();
+const mockDomain = 'quittance.mock';
+const challenges = new Map<string, { account: string; expiresAt: number }>();
+const sessions = new Map<string, SellerSessionToken>();
+const authError = (code: string, message: string, status = 401): never => {
+  throw Object.assign(new Error(message), {
+    code, response: { status, data: { success: false, code, error: message } },
+  });
+};
+const publicInvoice = (invoice: any) => Object.fromEntries(
+  PUBLIC_INVOICE_FIELDS.filter((key) => invoice[key] !== undefined).map((key) => [key, invoice[key]])
+);
+
+export const mockAuthApi = {
+  getChallenge: async (account: string, network: string) => {
+    if (network !== STELLAR_NETWORK) authError('AUTH_NETWORK_MISMATCH', 'Wrong Stellar network.');
+    const transaction = WebAuth.buildChallengeTx(
+      mockSigningKey, account, mockDomain, 300, NETWORK_PASSPHRASE, mockDomain
+    );
+    const tx = new Transaction(transaction, NETWORK_PASSPHRASE);
+    const expiresAt = Number(tx.timeBounds?.maxTime);
+    for (const [hash, challenge] of challenges) {
+      if (challenge.expiresAt * 1000 <= Date.now()) challenges.delete(hash);
+    }
+    challenges.set(tx.hash().toString('hex'), { account, expiresAt });
+    return { success: true, data: {
+      transaction, network, networkPassphrase: NETWORK_PASSPHRASE,
+      serverSigningKey: mockSigningKey.publicKey(), homeDomain: mockDomain,
+      webAuthDomain: mockDomain, expiresAt,
+    } };
+  },
+  createSession: async ({ transaction, network }: { transaction: string; network: string }) => {
+    if (network !== STELLAR_NETWORK) authError('AUTH_NETWORK_MISMATCH', 'Wrong Stellar network.');
+    let hash: string;
+    try {
+      hash = new Transaction(transaction, NETWORK_PASSPHRASE).hash().toString('hex');
+    } catch {
+      return authError('AUTH_INVALID_CHALLENGE', 'Invalid seller challenge.');
+    }
+    const challenge = challenges.get(hash);
+    if (!challenge) return authError('AUTH_CHALLENGE_REPLAYED', 'Challenge is unknown or already used.');
+    if (challenge.expiresAt * 1000 <= Date.now()) {
+      challenges.delete(hash);
+      return authError('AUTH_CHALLENGE_EXPIRED', 'Seller challenge expired.');
+    }
+    try {
+      WebAuth.verifyChallengeTxSigners(transaction, mockSigningKey.publicKey(), NETWORK_PASSPHRASE,
+        [challenge.account], mockDomain, mockDomain);
+    } catch {
+      return authError('AUTH_INVALID_SIGNATURE', 'The seller must sign this challenge.');
+    }
+    challenges.delete(hash);
+    const token = crypto.randomUUID();
+    const data = { token, sellerPublicKey: challenge.account, network, expiresAt: Math.floor(Date.now() / 1000) + 3600 };
+    sessions.set(token, data);
+    return { success: true, data };
+  },
+};
+
+const mockSellerSessions = createSellerSessionManager({
+  getWalletSession: useWalletStore.getState,
+  expectedNetwork: STELLAR_NETWORK,
+  authenticate: async (wallet, assertCurrent) => {
+    const challenge = await mockAuthApi.getChallenge(wallet.publicKey!, wallet.network!);
+    assertCurrent();
+    const transaction = await signSellerChallenge(challenge.data, wallet.publicKey!);
+    assertCurrent();
+    const response = await mockAuthApi.createSession({ transaction, network: wallet.network! });
+    assertCurrent();
+    return response.data;
+  },
+});
+mockSellerSessions.sync();
+useWalletStore.subscribe(() => mockSellerSessions.sync());
+
+async function requireMockSeller(sellerPublicKey?: string | null, delayMs = 500) {
+  const context = mockSellerSessions.contextFor(sellerPublicKey);
+  const token = await mockSellerSessions.getToken(context);
+  await delay(delayMs);
+  mockSellerSessions.assertCurrent(context);
+  const session = sessions.get(token);
+  if (!session || session.expiresAt * 1000 <= Date.now()) {
+    return authError('AUTH_SESSION_EXPIRED', 'Seller session expired.');
+  }
+  if (sellerPublicKey && sellerPublicKey !== session.sellerPublicKey) {
+    return authError('AUTH_SELLER_MISMATCH', 'The seller does not match the session.', 403);
+  }
+  return session;
+}
+
+function requireMockOwner(invoice: any, session: SellerSessionToken) {
+  if (!invoice) throw new Error('Invoice not found');
+  if (invoice.sellerPublicKey !== session.sellerPublicKey) {
+    authError('AUTH_SELLER_MISMATCH', 'This invoice belongs to another seller.', 403);
+  }
+}
 
 // Mock invoice data
 const mockInvoices = [
@@ -86,7 +189,10 @@ function payableMockInvoice(invoice: any) {
 
 export const mockInvoiceApi = {
   create: async (data: any) => {
-    await delay(1000); // Simulate network delay
+    const session = await requireMockSeller(data.sellerPublicKey, 1000);
+    if (data.network && data.network !== session.network) {
+      authError('AUTH_NETWORK_MISMATCH', 'Wrong Stellar network.', 403);
+    }
     const expiresInDays = data.expiresInDays ?? 7;
     if (!Number.isInteger(expiresInDays) || expiresInDays < MIN_EXPIRY_DAYS || expiresInDays > MAX_EXPIRY_DAYS) {
       throw new Error('Invoice expiry must be an integer between 1 and 30 days');
@@ -97,7 +203,8 @@ export const mockInvoiceApi = {
       ...data,
       status: 'PENDING',
       memo: `INV-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
-      sellerPublicKey: 'GABC123EXAMPLE456789',
+      sellerPublicKey: session.sellerPublicKey,
+      network: session.network,
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString(),
     };
@@ -122,7 +229,8 @@ export const mockInvoiceApi = {
   },
 
   getById: async (id: string, sellerPublicKey?: string | null) => {
-    await delay(500);
+    const session = sellerPublicKey ? await requireMockSeller(sellerPublicKey) : null;
+    if (!session) await delay(500);
     expirePendingInvoices();
     const invoice = mockInvoices.find(inv => inv.id === id);
     
@@ -130,15 +238,10 @@ export const mockInvoiceApi = {
       throw new Error('Invoice not found');
     }
 
-    // Mirrors the backend split (#503): workspace fields only for the seller.
-    if (sellerPublicKey !== invoice.sellerPublicKey) {
-      const publicDto: Record<string, unknown> = {};
-      for (const key of PUBLIC_INVOICE_FIELDS) {
-        if ((invoice as any)[key] !== undefined) publicDto[key] = (invoice as any)[key];
-      }
+    if (!session || session.sellerPublicKey !== invoice.sellerPublicKey) {
       return {
         success: true,
-        data: publicDto,
+        data: publicInvoice(invoice),
       };
     }
 
@@ -149,9 +252,9 @@ export const mockInvoiceApi = {
   },
 
   getAll: async (params?: any) => {
-    await delay(700);
+    const session = await requireMockSeller(params?.sellerPublicKey, 700);
     expirePendingInvoices();
-    let filtered = [...mockInvoices];
+    let filtered = mockInvoices.filter((invoice) => invoice.sellerPublicKey === session.sellerPublicKey);
 
     if (params?.status && params.status !== 'ALL') {
       filtered = filtered.filter(inv => inv.status === params.status);
@@ -190,15 +293,21 @@ export const mockInvoiceApi = {
         stellarUri: undefined,
         copyValue: paymentUrl,
         stellarQrEncodesUri: false,
-        invoice,
+        invoice: publicInvoice(invoice),
       },
     };
   },
 
-  cancel: async (id: string) => {
-    await delay(500);
+  getPaymentEvents: async (id: string, sellerPublicKey: string) => {
+    const session = await requireMockSeller(sellerPublicKey);
+    requireMockOwner(mockInvoices.find((invoice) => invoice.id === id), session);
+    return { success: true, data: [] };
+  },
+
+  cancel: async (id: string, sellerPublicKey: string) => {
+    const session = await requireMockSeller(sellerPublicKey);
     const invoice = mockInvoices.find(inv => inv.id === id);
-    
+    requireMockOwner(invoice, session);
     payableMockInvoice(invoice);
     if (invoice) {
       invoice.status = 'CANCELLED';
@@ -223,14 +332,15 @@ export const mockInvoiceApi = {
 
     return {
       success: true,
-      data: invoice,
+      data: publicInvoice(invoice),
     };
   },
 
-  getStats: async () => {
-    await delay(500);
+  getStats: async (sellerPublicKey: string) => {
+    const session = await requireMockSeller(sellerPublicKey);
     expirePendingInvoices();
-    const revenueByAsset = mockInvoices
+    const sellerInvoices = mockInvoices.filter((invoice) => invoice.sellerPublicKey === session.sellerPublicKey);
+    const revenueByAsset = sellerInvoices
       .filter(invoice => invoice.status === 'PAID')
       .reduce<Record<string, number>>((revenue, invoice) => {
         revenue[invoice.assetCode] = (revenue[invoice.assetCode] || 0) + invoice.amount;
@@ -238,11 +348,11 @@ export const mockInvoiceApi = {
       }, {});
 
     const stats = {
-      total_invoices: mockInvoices.length,
-      paid_invoices: mockInvoices.filter(inv => inv.status === 'PAID').length,
-      pending_invoices: mockInvoices.filter(inv => inv.status === 'PENDING').length,
-      actionable_invoices: mockInvoices.filter(inv => inv.status === 'PENDING').length,
-      expired_invoices: mockInvoices.filter(inv => inv.status === 'EXPIRED').length,
+      total_invoices: sellerInvoices.length,
+      paid_invoices: sellerInvoices.filter(inv => inv.status === 'PAID').length,
+      pending_invoices: sellerInvoices.filter(inv => inv.status === 'PENDING').length,
+      actionable_invoices: sellerInvoices.filter(inv => inv.status === 'PENDING').length,
+      expired_invoices: sellerInvoices.filter(inv => inv.status === 'EXPIRED').length,
       revenue_by_asset: revenueByAsset,
     };
 
