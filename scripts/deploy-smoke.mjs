@@ -5,13 +5,16 @@ if (!configured) {
 }
 
 const baseUrl = configured.replace(/\/+$/, '');
-const sellerPublicKey = 'G' + 'A'.repeat(55);
+const sellerSessionToken = process.env.DEPLOY_SELLER_SESSION_TOKEN;
+if (!sellerSessionToken) {
+  throw new Error('DEPLOY_SELLER_SESSION_TOKEN is required; obtain a seller session with the signed challenge flow in docs/SELLER_AUTH.md');
+}
 
 async function request(path, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
     signal: AbortSignal.timeout(20_000),
-    headers: { accept: 'application/json', 'content-type': 'application/json' },
     ...options,
+    headers: { accept: 'application/json', 'content-type': 'application/json', ...options.headers },
   });
   const body = await response.json().catch(() => null);
   if (!response.ok) {
@@ -30,11 +33,11 @@ if (readiness.status !== 'ready' || readiness.ready !== true) {
 
 const created = await request('/invoices', {
   method: 'POST',
+  headers: { authorization: `Bearer ${sellerSessionToken}` },
   body: JSON.stringify({
     amount: 0.0000001,
     assetCode: 'XLM',
     description: `Deploy smoke ${new Date().toISOString()}`,
-    sellerPublicKey,
   }),
 });
 const invoice = created?.data?.invoice;

@@ -125,6 +125,8 @@ jobs:
       EVIDENCE_API_URL: ${{ vars.EVIDENCE_API_URL }}
       EVIDENCE_SELLER_PUBLIC_KEY: ${{ secrets.EVIDENCE_SELLER_PUBLIC_KEY }}
       EVIDENCE_PAYER_SECRET: ${{ secrets.EVIDENCE_PAYER_SECRET }}
+      EVIDENCE_SELLER_SECRET: ${{ secrets.EVIDENCE_SELLER_SECRET }}
+      EVIDENCE_SELLER_SESSION_TOKEN: ${{ secrets.EVIDENCE_SELLER_SESSION_TOKEN }}
       EVIDENCE_NETWORK: TESTNET
 
     steps:
@@ -150,5 +152,5 @@ jobs:
       # secrets are configured (this repo's main-branch pushes, or a PR
       # from a branch within it).
       - name: Run Testnet evidence smoke (create -> pay -> verify)
-        if: ${{ env.EVIDENCE_PAYER_SECRET != '' && env.EVIDENCE_SELLER_PUBLIC_KEY != '' }}
+        if: ${{ env.EVIDENCE_PAYER_SECRET != '' && env.EVIDENCE_SELLER_PUBLIC_KEY != '' && (env.EVIDENCE_SELLER_SECRET != '' || env.EVIDENCE_SELLER_SESSION_TOKEN != '') }}
         run: npm run evidence:smoke

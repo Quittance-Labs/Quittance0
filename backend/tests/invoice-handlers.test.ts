@@ -1,3 +1,4 @@
+import { sellerSessionLocals } from './fixtures/seller-auth';
 import assert from 'node:assert/strict';
 import { describe, it, beforeEach } from 'node:test';
 import type { Request, Response } from 'express';
@@ -24,6 +25,7 @@ function createRes(): FakeResponse & Response {
   const res: any = {
     statusCode: 200,
     body: undefined,
+    setHeader() {},
     status(code: number) {
       res.statusCode = code;
       return res;
@@ -36,12 +38,15 @@ function createRes(): FakeResponse & Response {
   return res;
 }
 
-function createReq(init: { body?: any; params?: any; query?: any; headers?: any } = {}): Request {
+// Adapter tests start after the auth middleware. Explicit null models an
+// anonymous request; the separate mounted auth suite exercises cryptography.
+function createReq(init: { body?: any; params?: any; query?: any; headers?: any; sessionSeller?: string | null } = {}): Request {
   return {
     body: init.body || {},
     params: init.params || {},
     query: init.query || {},
     headers: init.headers || {},
+    fixtureSeller: init.sessionSeller === null ? undefined : init.sessionSeller ?? init.body?.sellerPublicKey ?? init.query?.sellerPublicKey,
   } as unknown as Request;
 }
 
@@ -50,6 +55,7 @@ async function call(
   req: Request
 ): Promise<FakeResponse> {
   const res = createRes();
+  res.locals = sellerSessionLocals((req as any).fixtureSeller);
   await handler(req, res);
   return res;
 }
@@ -445,18 +451,18 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
         assert.equal(res.statusCode, 403);
       });
 
-      it('requires a valid seller key — 400 when missing or malformed', async () => {
+      it('requires an authenticated seller context for the event feed', async () => {
         const invoice = await createInvoice();
         const missing = await call(
           handlers().getPaymentEvents,
           createReq({ params: { id: invoice.id } })
         );
-        assert.equal(missing.statusCode, 400);
+        assert.equal(missing.statusCode, 401);
         const bad = await call(
           handlers().getPaymentEvents,
-          createReq({ params: { id: invoice.id }, query: { sellerPublicKey: 'nope' } })
+          createReq({ params: { id: invoice.id }, query: { sellerPublicKey: 'nope' }, sessionSeller: null })
         );
-        assert.equal(bad.statusCode, 400);
+        assert.equal(bad.statusCode, 401);
       });
 
       it('redacts identity-shaped keys from event payloads', async () => {
@@ -652,14 +658,15 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
         assert.equal(res.body.data.customerName, 'Client Co');
       });
 
-      it('rejects a malformed sellerPublicKey hint with 400', async () => {
+      it('ignores an unauthenticated malformed seller hint and returns the public shape', async () => {
         const created = await createInvoice();
 
         const res = await call(
           handlers().getInvoice,
           createReq({ params: { id: created.id }, query: { sellerPublicKey: 'not-a-wallet' } })
         );
-        assert.equal(res.statusCode, 400);
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.body.data.customerEmail, undefined);
       });
 
       it('keeps the payment-info payload on the public shape', async () => {
@@ -837,10 +844,10 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
     it('rejects an invoice with an invalid seller wallet', async () => {
       const res = await call(
         handlers().createInvoice,
-        createReq({ body: invoiceBody({ sellerPublicKey: 'not-a-wallet' }) })
+        createReq({ body: invoiceBody({ sellerPublicKey: 'not-a-wallet' }), sessionSeller: SELLER_A })
       );
 
-      assert.equal(res.statusCode, 400);
+      assert.equal(res.statusCode, 403);
       assert.equal(res.body.success, false);
       assert.equal(typeof res.body.error, 'string');
     });
@@ -983,11 +990,11 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       assert.deepEqual(res.body.pagination, { limit: 50, offset: 0, total: 1 });
     });
 
-    it('requires a wallet when listing invoices', async () => {
+    it('requires a verified session when listing invoices', async () => {
       const res = await call(handlers().getInvoices, createReq());
 
-      assert.equal(res.statusCode, 400);
-      assert.equal(res.body.error, 'sellerPublicKey query parameter is required');
+      assert.equal(res.statusCode, 401);
+      assert.equal(res.body.code, 'AUTH_SESSION_REQUIRED');
     });
 
     it('cancels a pending invoice once', async () => {
@@ -1028,24 +1035,23 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       );
       assert.equal(res.statusCode, 403);
       assert.equal(res.body.success, false);
-      assert.match(res.body.error, /unauthorized/i);
+      assert.match(res.body.error, /not the seller/i);
     });
 
-    it('rejects invalid sellerPublicKey format on cancel (400)', async () => {
+    it('rejects a malformed cancel key that disagrees with the session (403)', async () => {
       const invoice = await createInvoice();
 
       const res = await call(
         handlers().cancelInvoice,
-        createReq({ params: { id: invoice.id }, body: { sellerPublicKey: 'not-a-valid-stellar-key' } })
+        createReq({ params: { id: invoice.id }, body: { sellerPublicKey: 'not-a-valid-stellar-key' }, sessionSeller: SELLER_A })
       );
-      assert.equal(res.statusCode, 400);
+      assert.equal(res.statusCode, 403);
       assert.equal(res.body.success, false);
     });
 
-    // Issue #517 — one proof path: seller key, signature and message all live
-    // in the JSON body. Query params and headers are legacy transports; a
-    // disagreeing duplicate fails closed instead of smuggling a second key.
-    it('rejects cancel when body and query seller keys disagree (400)', async () => {
+    // A declared body/query/header key cannot replace or disagree with the
+    // identity installed by the seller-session middleware.
+    it('rejects cancel when body and query seller keys disagree (403)', async () => {
       const invoice = await createInvoice();
 
       const res = await call(
@@ -1056,11 +1062,11 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
           query: { sellerPublicKey: SELLER_B },
         })
       );
-      assert.equal(res.statusCode, 400);
-      assert.match(res.body.error, /conflicting/i);
+      assert.equal(res.statusCode, 403);
+      assert.match(res.body.error, /does not match/i);
     });
 
-    it('rejects cancel when body and header seller keys disagree (400)', async () => {
+    it('rejects cancel when body and header seller keys disagree (403)', async () => {
       const invoice = await createInvoice();
 
       const res = await call(
@@ -1071,18 +1077,18 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
           headers: { 'x-seller-public-key': SELLER_B },
         })
       );
-      assert.equal(res.statusCode, 400);
-      assert.match(res.body.error, /conflicting/i);
+      assert.equal(res.statusCode, 403);
+      assert.match(res.body.error, /does not match/i);
     });
 
-    it('rejects a query-only seller key — the body is the one transport (400)', async () => {
+    it('rejects an unsigned query-only seller key (401)', async () => {
       const invoice = await createInvoice();
 
       const res = await call(
         handlers().cancelInvoice,
-        createReq({ params: { id: invoice.id }, query: { sellerPublicKey: SELLER_A } })
+        createReq({ params: { id: invoice.id }, query: { sellerPublicKey: SELLER_A }, sessionSeller: null })
       );
-      assert.equal(res.statusCode, 400);
+      assert.equal(res.statusCode, 401);
     });
 
     it('tolerates a duplicate query key that agrees with the body', async () => {
@@ -1100,7 +1106,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       assert.equal(res.body.data.status, 'CANCELLED');
     });
 
-    it('requires a signature when requireCancelSignature is set (401)', async () => {
+    it('requires a session even when the legacy signature option is set (401)', async () => {
       const invoice = await createInvoice();
 
       const res = await call(
@@ -1111,18 +1117,17 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
           stellar: { getTransaction: async () => transaction },
           requireCancelSignature: true,
         }).cancelInvoice,
-        createReq({ params: { id: invoice.id }, body: { sellerPublicKey: SELLER_A } })
+        createReq({ params: { id: invoice.id }, body: { sellerPublicKey: SELLER_A }, sessionSeller: null })
       );
       assert.equal(res.statusCode, 401);
-      assert.equal(res.body.code, 'UNAUTHORIZED');
+      assert.equal(res.body.code, 'AUTH_SESSION_REQUIRED');
     });
 
-    it('cancels PENDING with a valid cancel:<id> signature', async () => {
+    it('cancels PENDING with an authenticated owner session', async () => {
       const { Keypair } = await import('@stellar/stellar-sdk');
       const keypair = Keypair.random();
       const seller = keypair.publicKey();
       const invoice = await createInvoice({ sellerPublicKey: seller });
-      const signature = keypair.sign(Buffer.from(`cancel:${invoice.id}`)).toString('base64');
 
       const res = await call(
         createInvoiceHandlers({
@@ -1134,14 +1139,14 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
         }).cancelInvoice,
         createReq({
           params: { id: invoice.id },
-          body: { sellerPublicKey: seller, signature },
+          body: { sellerPublicKey: seller },
         })
       );
       assert.equal(res.statusCode, 200);
       assert.equal(res.body.data.status, 'CANCELLED');
     });
 
-    it('rejects a signature over a different message (401)', async () => {
+    it('does not exchange a legacy cancel blob for a session (401)', async () => {
       const { Keypair } = await import('@stellar/stellar-sdk');
       const keypair = Keypair.random();
       const seller = keypair.publicKey();
@@ -1160,17 +1165,17 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
         createReq({
           params: { id: invoice.id },
           body: { sellerPublicKey: seller, signature },
+          sessionSeller: null,
         })
       );
       assert.equal(res.statusCode, 401);
-      assert.equal(res.body.code, 'INVALID_SIGNATURE');
+      assert.equal(res.body.code, 'AUTH_SESSION_REQUIRED');
     });
 
-    it('rejects a foreign signer even with a valid signature (403)', async () => {
+    it('rejects a foreign authenticated seller (403)', async () => {
       const { Keypair } = await import('@stellar/stellar-sdk');
       const foreign = Keypair.random();
       const invoice = await createInvoice();
-      const signature = foreign.sign(Buffer.from(`cancel:${invoice.id}`)).toString('base64');
 
       const res = await call(
         createInvoiceHandlers({
@@ -1182,7 +1187,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
         }).cancelInvoice,
         createReq({
           params: { id: invoice.id },
-          body: { sellerPublicKey: foreign.publicKey(), signature },
+          body: { sellerPublicKey: foreign.publicKey() },
         })
       );
       assert.equal(res.statusCode, 403);

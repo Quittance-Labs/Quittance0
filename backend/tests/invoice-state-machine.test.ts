@@ -1,3 +1,4 @@
+import { sellerSessionLocals } from './fixtures/seller-auth';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
@@ -17,7 +18,7 @@ const SELLER_KEY = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
 const PAYER_KEY = 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H';
 
 function createMockResponse(): any {
-  const res: any = { statusCode: 200, body: null };
+  const res: any = { statusCode: 200, body: null, locals: sellerSessionLocals(SELLER_KEY), setHeader() {} };
   res.status = (code: number) => {
     res.statusCode = code;
     return res;

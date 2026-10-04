@@ -1,3 +1,4 @@
+import { sellerAuthEnvironment, sellerAuthHeaders } from './fixtures/seller-auth';
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import type { AddressInfo } from 'node:net';
@@ -10,6 +11,7 @@ describe('deployed MVP smoke contract', () => {
   let baseUrl: string;
 
   before(async () => {
+    Object.assign(process.env, sellerAuthEnvironment);
     process.env.NODE_ENV = 'production';
     process.env.FRONTEND_URL = 'https://quittance.example';
     process.env.FRONTEND_URLS = 'https://preview.quittance.example';
@@ -49,10 +51,10 @@ describe('deployed MVP smoke contract', () => {
     assert.equal((await denied.json() as any).code, 'CORS_ORIGIN_DENIED');
   });
 
-  it('creates and reads an invoice through the public HTTP contract', async () => {
+  it('creates with a seller session and reads through the public pay contract', async () => {
     const createdResponse = await fetch(`${baseUrl}/api/invoices`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', origin: 'https://quittance.example' },
+      headers: { 'content-type': 'application/json', origin: 'https://quittance.example', ...sellerAuthHeaders(SELLER) },
       body: JSON.stringify({
         amount: 1,
         assetCode: 'XLM',

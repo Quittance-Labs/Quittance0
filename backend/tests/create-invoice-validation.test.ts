@@ -1,3 +1,4 @@
+import { sellerSessionLocals } from './fixtures/seller-auth';
 /**
  * Issue #436 - one rule set for the create path.
  *
@@ -34,7 +35,7 @@ function payload(overrides: Record<string, unknown> = {}): Record<string, unknow
 }
 
 function createRes(): any {
-  const res: any = { statusCode: 200, body: null };
+  const res: any = { statusCode: 200, body: null, locals: sellerSessionLocals(SELLER), setHeader() {} };
   res.status = (code: number) => {
     res.statusCode = code;
     return res;

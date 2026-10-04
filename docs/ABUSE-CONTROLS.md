@@ -1,5 +1,10 @@
 # Abuse controls for the public pay and verify endpoints
 
+> Seller authentication update (#586): cancellation and seller reads now require
+> the expiring SEP-10 session described in [SELLER_AUTH.md](./SELLER_AUTH.md).
+> Public-key-only reads, `cancel:<id>` blob signatures, and the development
+> signature bypass in the historical examples below have been removed.
+
 Status: implemented for the public edge (issues #383 / #450). The ranking
 below is historical context for *why* the controls exist; the live wiring is
 documented under "Middleware order" and driven by env (see edge-control

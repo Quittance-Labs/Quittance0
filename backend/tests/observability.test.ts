@@ -1,3 +1,4 @@
+import { sellerSessionLocals } from './fixtures/seller-auth';
 import assert from 'node:assert/strict';
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import type { Request, Response, NextFunction } from 'express';
@@ -32,6 +33,7 @@ interface FakeResponse extends Response {
 
 function createRes(): FakeResponse {
   const res: any = {
+    locals: sellerSessionLocals(SELLER),
     statusCode: 200,
     body: undefined,
     headers: {},
