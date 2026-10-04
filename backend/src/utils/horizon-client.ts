@@ -14,6 +14,38 @@
 //   distinct outage signal — never something that could be read as a
 //   transaction-level rejection (missing tx, memo mismatch, ...)
 
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { Horizon, NetworkError } from '@stellar/stellar-sdk';
+
+interface HorizonHttpMetadata {
+  status: number;
+  retryAfterMs?: number;
+}
+
+interface HorizonAttempt {
+  failure?: HorizonHttpMetadata & { body: unknown };
+}
+
+const horizonAttempts = new AsyncLocalStorage<HorizonAttempt>();
+const sdkHttpErrors = new WeakMap<Error, HorizonHttpMetadata>();
+
+// The SDK's NetworkError preserves response.data but discards the HTTP status
+// and headers. Observe its public Axios client before that wrapping occurs.
+// Each attempt owns its metadata, including when an older timed-out request
+// finishes during a retry. Calls outside horizonCall are left unchanged.
+Horizon.AxiosClient.interceptors.response.use(undefined, (error: unknown) => {
+  const attempt = horizonAttempts.getStore();
+  const response = (error as { response?: { status?: unknown; data?: unknown } } | null)?.response;
+  if (attempt && typeof response?.status === 'number') {
+    attempt.failure = {
+      status: response.status,
+      retryAfterMs: retryAfterOf(error),
+      body: response.data,
+    };
+  }
+  throw error;
+});
+
 /** Maximum Horizon calls in flight at once, shared by verify and monitor. */
 export const HORIZON_MAX_CONCURRENT = 4;
 
@@ -54,6 +86,8 @@ class HorizonTimeout extends Error {
 
 /** HTTP status carried by a thrown error, across SDK and fetch shapes. */
 export function horizonErrorStatus(error: unknown): number | undefined {
+  const observed = error instanceof Error ? sdkHttpErrors.get(error) : undefined;
+  if (observed) return observed.status;
   const err = error as any;
   return (
     err?.response?.status ??
@@ -72,23 +106,52 @@ const NETWORK_ERROR_CODES = new Set([
   'EAI_AGAIN',
 ]);
 
+/**
+ * Named Horizon failure classes (issue #556). Verify and the monitor call this
+ * before comparing memo, destination, or amount so a timeout or 429 never
+ * becomes MEMO_MISMATCH / AMOUNT_MISMATCH / DESTINATION_MISMATCH.
+ */
+export type HorizonFailureClass =
+  | 'timeout'
+  | 'rate_limited'
+  | 'server_error'
+  | 'connection';
+
+/**
+ * Classify a thrown error into one Horizon outage class, or null when the
+ * failure is not an outage (404, ordinary bugs, semantic verification rejects).
+ */
+export function classifyHorizonFailure(error: unknown): HorizonFailureClass | null {
+  if (error instanceof HorizonTimeout) return 'timeout';
+  if (error instanceof HorizonUnavailableError) {
+    if (error.status === 429) return 'rate_limited';
+    if (error.status !== undefined && error.status >= 500) return 'server_error';
+    return error.status === undefined ? 'connection' : 'server_error';
+  }
+
+  const status = horizonErrorStatus(error);
+  if (status === 429) return 'rate_limited';
+  if (status !== undefined && status >= 500) return 'server_error';
+  if (status !== undefined) return null;
+
+  const err = error as any;
+  if (!(error instanceof Error)) return null;
+  // The Stellar SDK rethrows transport failures as Error(error.message),
+  // discarding code/request metadata. Recognize the transport spellings it
+  // preserves so a reset/refusal cannot become a cached transaction 404.
+  const code = err.code ?? /^(?:connect|read|write|getaddrinfo) ([A-Z_]+)\b/.exec(err.message)?.[1];
+  if (err.name === 'HorizonTimeout' || code === 'ETIMEDOUT' || code === 'ECONNABORTED') {
+    return 'timeout';
+  }
+  if (NETWORK_ERROR_CODES.has(code) || err.message === 'socket hang up') return 'connection';
+  if (err?.request !== undefined && err?.response === undefined) return 'connection';
+  if (error instanceof TypeError) return 'connection';
+  return null;
+}
+
 /** Whether a thrown error came from an overloaded or unreachable Horizon. */
 export function isHorizonUnavailable(error: unknown): boolean {
-  if (error instanceof HorizonUnavailableError) return true;
-  if (error instanceof HorizonTimeout) return true;
-  const status = horizonErrorStatus(error);
-  if (status !== undefined) {
-    return status === 429 || status >= 500;
-  }
-  // No status means the request never got a response. That is only an outage
-  // when the failure is actually transport-shaped — fetch's TypeError, an
-  // axios request with no response, or a known network errno — never an
-  // ordinary bug in the callback.
-  const err = error as any;
-  if (!(error instanceof Error)) return false;
-  if (NETWORK_ERROR_CODES.has(err?.code)) return true;
-  if (err?.request !== undefined && err?.response === undefined) return true;
-  return error instanceof TypeError;
+  return classifyHorizonFailure(error) !== null;
 }
 
 /**
@@ -106,6 +169,8 @@ export function parseRetryAfterMs(value: unknown, now = Date.now()): number | un
 
 /** Retry-After carried by a thrown error, if the server sent one. */
 function retryAfterOf(error: unknown): number | undefined {
+  const observed = error instanceof Error ? sdkHttpErrors.get(error) : undefined;
+  if (observed) return observed.retryAfterMs;
   const err = error as any;
   const headers = err?.response?.headers ?? err?.headers;
   if (!headers) return undefined;
@@ -173,14 +238,24 @@ export async function horizonCall<T>(
     let lastRetryAfter: number | undefined;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       let timer: ReturnType<typeof setTimeout> | undefined;
+      const context: HorizonAttempt = {};
       try {
         return await Promise.race([
-          fn(),
+          horizonAttempts.run(context, fn),
           new Promise<never>((_, reject) => {
             timer = setTimeout(() => reject(new HorizonTimeout(timeoutMs)), timeoutMs);
           }),
         ]);
       } catch (error) {
+        const response = context.failure;
+        if (response && error instanceof NetworkError && error.getResponse() === response.body) {
+          // Keep the SDK error and payload intact. Only matching SDK errors
+          // receive the observed metadata; unrelated callback bugs do not.
+          sdkHttpErrors.set(error, {
+            status: response.status,
+            retryAfterMs: response.retryAfterMs,
+          });
+        }
         lastError = error;
         if (!isHorizonUnavailable(error)) {
           throw error;

@@ -1,3 +1,4 @@
+import { emitOperationalFailure } from '../observability/log-events';
 import { v4 as uuidv4 } from 'uuid';
 import { InvoiceIdCollisionError, MemoCollisionError } from '../domain/payment-attribution';
 import { pool } from '../config/database';
@@ -6,6 +7,10 @@ import { CreateInvoiceInput } from '../utils/validation';
 import type { InvoiceStats } from '../storage/invoice-stats';
 import { calculateInvoiceExpiry } from '../domain/invoice-expiry';
 import { PaymentClaimError } from '../domain/payment-attribution';
+import {
+  IllegalStateTransitionError,
+  assertLegalInvoiceTransition,
+} from '../domain/invoice-lifecycle';
 import {
   SettlementTimeUnavailableError,
   cancelConflictForStatus,
@@ -125,7 +130,6 @@ export class InvoiceService {
           }
           return this.mapRowToInvoice(existing.rows[0]);
         }
-        console.log('✅ Invoice created:', result.rows[0].id);
         return this.mapRowToInvoice(result.rows[0]);
       } catch (error: any) {
         if (error?.code === '23505') {
@@ -134,7 +138,7 @@ export class InvoiceService {
           if (attempt === 0) continue;
           throw new InvoiceIdCollisionError(id);
         }
-        console.error('Error creating invoice:', error);
+        emitOperationalFailure('invoice.create');
         throw new Error(`Failed to create invoice: ${error.message}`);
       }
     }
@@ -249,17 +253,33 @@ export class InvoiceService {
 
       if (result.rows.length === 0) {
         const existing = await this.db.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
-        if (existing.rows.length > 0 && !settledAt) {
+        if (existing.rows.length === 0) {
+          throw new Error('Invoice not found');
+        }
+        const fromStatus = existing.rows[0].status as
+          | 'PENDING'
+          | 'PAID'
+          | 'EXPIRED'
+          | 'CANCELLED';
+        if (fromStatus === 'PAID') {
+          throw new IllegalStateTransitionError('PAID', 'PAID');
+        }
+        if (!settledAt) {
           throw new SettlementTimeUnavailableError();
         }
+        // Canonical machine: illegal transitions get stable codes; a legal
+        // transition that still missed the row stays the generic race error.
+        assertLegalInvoiceTransition(fromStatus, 'PAID', { settledAt });
         throw new Error('Invoice not found, expired, or already processed');
       }
 
-      console.log('✅ Invoice marked as paid:', invoiceId);
 
       return this.mapRowToInvoice(result.rows[0]);
     } catch (error: any) {
-      if (error instanceof SettlementTimeUnavailableError) {
+      if (
+        error instanceof SettlementTimeUnavailableError ||
+        error instanceof IllegalStateTransitionError
+      ) {
         throw error;
       }
       // Durable form of the payment claim lock (issue #501): the partial
@@ -278,7 +298,7 @@ export class InvoiceService {
         }
         throw new PaymentClaimError(txHash, invoiceId, holderId);
       }
-      console.error('Error marking invoice as paid:', error);
+      emitOperationalFailure('invoice.markPaid');
       throw new Error(`Failed to update invoice: ${error.message}`);
     }
   }
@@ -290,7 +310,8 @@ export class InvoiceService {
     sellerPublicKey: string,
     status?: string,
     limit: number = 50,
-    offset: number = 0
+    offset: number = 0,
+    q?: string
   ): Promise<Invoice[]> {
     if (!sellerPublicKey) {
       throw new Error('Seller public key is required');
@@ -302,8 +323,21 @@ export class InvoiceService {
     const params: any[] = [sellerPublicKey];
 
     if (status) {
-      query += ' AND status = $2';
       params.push(status);
+      query += ` AND status = $${params.length}`;
+    }
+
+    // Match the memory adapter's literal, case-insensitive search over the
+    // same nonempty fields. A substring search keeps %, _ and backslashes
+    // literal and preserves terms spanning adjacent fields. The seller and
+    // status predicates remain outside this search expression.
+    if (q && q.trim()) {
+      params.push(q.trim().toLowerCase());
+      const searchParamIndex = params.length;
+      query += ` AND strpos(lower(concat_ws(' ',
+        id::text, memo, NULLIF(description, ''),
+        NULLIF(customer_name, ''), NULLIF(customer_email, '')
+      )), $${searchParamIndex}) > 0`;
     }
 
     query += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
@@ -355,7 +389,7 @@ export class InvoiceService {
     if (result.rows.length === 0) {
       const existing = await this.db.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
       if (existing.rows.length === 0) {
-        throw new Error('Invoice not found or already processed');
+        throw new Error('Invoice not found');
       }
       const row = existing.rows[0];
       if (

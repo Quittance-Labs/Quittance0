@@ -121,6 +121,21 @@ describe('VerificationCache', () => {
     assert.equal(await cache.get('inv-1', TX_HASH_A), null);
   });
 
+  it('drops a previously cached VERIFY_UNAVAILABLE instead of replaying it', async () => {
+    const cache = new VerificationCache();
+    const key = 'verify:inv-1:' + TX_HASH_A;
+    (cache as any).memoryCache.set(key, {
+      invoiceId: 'inv-1',
+      txHash: TX_HASH_A,
+      httpStatus: 503,
+      body: { success: false, code: 'VERIFY_UNAVAILABLE' },
+      expiresAt: Date.now() + 60_000,
+    });
+
+    assert.equal(await cache.get('inv-1', TX_HASH_A), null);
+    assert.equal(await cache.get('inv-1', TX_HASH_A), null);
+  });
+
   it('scopes entries to the invoice and tx hash', async () => {
     const cache = new VerificationCache();
     await cache.set('inv-1', TX_HASH_A, 200, { success: true });

@@ -1,3 +1,4 @@
+import { emitOperationalFailure } from '../observability/log-events';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { server, NETWORK_PASSPHRASE, getSellerKeypair } from '../config/stellar';
 import {
@@ -12,6 +13,7 @@ import type {
   VerifiedPayment,
 } from './payment-verification';
 import {
+  classifyHorizonFailure,
   horizonCall,
   isHorizonUnavailable,
 } from '../utils/horizon-client';
@@ -44,7 +46,7 @@ class StellarService {
     try {
       return await horizonCall(() => server.loadAccount(publicKey), { label: 'loadAccount' });
     } catch (error: any) {
-      console.error(`Error loading account ${publicKey}:`, error);
+      emitOperationalFailure('stellar.account');
       if (isHorizonUnavailable(error)) {
         throw error;
       }
@@ -87,8 +89,9 @@ class StellarService {
     try {
       txDetails = await this.getTransaction(hashCheck.value);
     } catch (error: any) {
-      console.error('Payment verification lookup error:', error);
-      if (isHorizonUnavailable(error)) {
+      emitOperationalFailure('stellar.verify');
+      // Classify before any memo/destination/amount compare (issue #556).
+      if (classifyHorizonFailure(error)) {
         // An overloaded or unreachable Horizon is not a missing transaction —
         // report the outage so the payer retries instead of a 404 that caches.
         return failure('VERIFY_UNAVAILABLE');
@@ -124,7 +127,7 @@ class StellarService {
         operations: operations.records,
       };
     } catch (error: any) {
-      console.error('Error fetching transaction:', error);
+      emitOperationalFailure('stellar.transaction');
       if (isHorizonUnavailable(error)) {
         throw error;
       }
@@ -140,7 +143,6 @@ class StellarService {
     onPayment: (payment: PaymentRecord) => void,
     onError?: (error: Error) => void
   ) {
-    console.log(`🔄 Starting payment stream for account: ${publicKey}`);
 
     const closeHandler = server
       .payments()
@@ -170,16 +172,15 @@ class StellarService {
                 createdAt: record.created_at,
               };
 
-              console.log('📥 Payment received:', payment);
               onPayment(payment);
             }
           } catch (error: any) {
-            console.error('Error processing payment:', error);
+            emitOperationalFailure('stellar.streamPayment');
             if (onError) onError(error);
           }
         },
         onerror: (error: any) => {
-          console.error('❌ Payment stream error:', error);
+          emitOperationalFailure('stellar.stream');
           if (onError) onError(error);
         },
       });
@@ -298,7 +299,7 @@ class StellarService {
 
       return paymentRecords;
     } catch (error: any) {
-      console.error('Error fetching recent payments:', error);
+      emitOperationalFailure('stellar.payments');
       throw new Error(`Failed to fetch payments: ${error.message}`);
     }
   }
@@ -344,10 +345,9 @@ class StellarService {
       const result = await horizonCall(() => server.submitTransaction(transaction), {
         label: 'submitTransaction',
       });
-      console.log('✅ Payment sent:', result.hash);
       return result.hash;
     } catch (error: any) {
-      console.error('Error sending payment:', error);
+      emitOperationalFailure('stellar.submit');
       throw new Error(`Payment failed: ${error.message}`);
     }
   }

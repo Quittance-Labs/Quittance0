@@ -210,6 +210,53 @@ test('dashboard stats reconcile a locally elapsed invoice until the next server 
   assert.equal(shown.invoices[0].status, 'EXPIRED');
 });
 
+test('newest-first ordering does not hide a pending-to-expired transition', () => {
+  const now = '2026-08-30T12:00:00.000Z';
+  const loaded = {
+    owner: ALICE,
+    invoices: [
+      invoice({ id: 'elapsed', createdAt: '2026-08-27T12:00:00.000Z', expiresAt: '2026-08-29T12:00:00.000Z' }),
+      invoice({ id: 'live', createdAt: '2026-08-28T12:00:00.000Z', expiresAt: '2026-08-31T12:00:00.000Z' }),
+      invoice({ id: 'paid', status: 'PAID', createdAt: '2026-08-29T12:00:00.000Z' }),
+      invoice({ id: 'foreign', sellerPublicKey: BOB, createdAt: '2026-08-30T00:00:00.000Z', expiresAt: '2026-08-30T01:00:00.000Z' }),
+    ],
+    stats: { total_invoices: 3, pending_invoices: 2, actionable_invoices: 2, expired_invoices: 0, paid_invoices: 1 },
+  };
+  const original = structuredClone(loaded);
+  const shown = dashboardDataFor(loaded, ALICE, now);
+
+  assert.deepEqual(shown.invoices.map(({ id, status }) => [id, status]), [
+    ['paid', 'PAID'], ['live', 'PENDING'], ['elapsed', 'EXPIRED'],
+  ], 'rendered rows must remain newest-first and seller-scoped');
+  assert.deepEqual(loaded, original, 'projection and sorting must not change loaded data');
+  assert.deepEqual(dashboardDataFor(loaded, BOB, now), emptyDashboardData());
+  assert.deepEqual(shown.stats, {
+    total_invoices: 3, pending_invoices: 1, actionable_invoices: 1, expired_invoices: 1, paid_invoices: 1,
+  }, 'the elapsed owned invoice must adjust stats even after moving to another index');
+});
+
+test('newest-first ordering does not count an already-expired row as a new expiry', () => {
+  const now = '2026-08-30T12:00:00.000Z';
+  const loaded = {
+    owner: ALICE,
+    invoices: [
+      invoice({ id: 'live', createdAt: '2026-08-27T12:00:00.000Z', expiresAt: '2026-08-31T12:00:00.000Z' }),
+      invoice({ id: 'paid', status: 'PAID', createdAt: '2026-08-28T12:00:00.000Z' }),
+      invoice({ id: 'expired', status: 'EXPIRED', createdAt: '2026-08-29T12:00:00.000Z' }),
+    ],
+    stats: { total_invoices: 3, pending_invoices: 1, actionable_invoices: 1, expired_invoices: 1, paid_invoices: 1 },
+  };
+  const original = structuredClone(loaded);
+  const shown = dashboardDataFor(loaded, ALICE, now);
+
+  assert.deepEqual(shown.invoices.map(({ id, status }) => [id, status]), [
+    ['expired', 'EXPIRED'], ['paid', 'PAID'], ['live', 'PENDING'],
+  ]);
+  assert.deepEqual(loaded, original, 'sorting must not change loaded rows or stats');
+  assert.deepEqual(shown.stats, original.stats,
+    'moving an existing EXPIRED row over a PENDING row must not change any counts');
+});
+
 test('export handles nothing to export', () => {
   assert.deepEqual(exportableInvoices([]), []);
   assert.deepEqual(exportableInvoices(null), []);

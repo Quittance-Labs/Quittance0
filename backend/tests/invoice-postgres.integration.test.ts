@@ -7,6 +7,9 @@ import { Keypair } from '@stellar/stellar-sdk';
 import { InvoiceService } from '../src/services/invoice.service.ts';
 import type { CreateInvoiceInput } from '../src/utils/validation.ts';
 import { PostgresInvoiceStorage } from '../src/storage/postgres-invoice-storage.ts';
+import { MemoryInvoiceStorage } from '../src/storage/memory-invoice-storage.ts';
+import { InvoiceMemoryService } from '../src/services/invoice-memory.service.ts';
+import { MemoryStorage } from '../src/storage/memory-storage.ts';
 import type { PayerInfo, StoredInvoice } from '../src/storage/invoice-storage.ts';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -310,5 +313,102 @@ describe('Invoice persistence on Postgres', { skip: DATABASE_URL ? false : 'DATA
       "SELECT COUNT(*)::int AS c FROM invoices WHERE memo LIKE 'INV-DEMO-%'"
     );
     assert.equal(result.rows[0].c, 4, 'seed rows should be exactly 4 after two runs (ON CONFLICT DO NOTHING)');
+  });
+
+  it('matches memory literal search for email, metacharacters and joined fields', async (t) => {
+    const pool = new Pool({ connectionString: DATABASE_URL });
+    const postgres = new PostgresInvoiceStorage(new InvoiceService(pool));
+    const raw = new MemoryStorage();
+    const memory = new MemoryInvoiceStorage(new InvoiceMemoryService(raw));
+    const seller = Keypair.random().publicKey();
+    const add = async (fields: Partial<CreateInvoiceInput>) => {
+      const invoice = await postgres.createInvoice(createInput(seller, fields));
+      raw.createInvoice(invoice);
+      return invoice;
+    };
+
+    try {
+      const matching = await add({
+        description: 'Monthly support', customerName: 'Ada Lovelace',
+        customerEmail: 'billing+search@example.test',
+      });
+      const percent = await add({ description: 'Discount 50%' });
+      const underscore = await add({ description: 'ACME_ops' });
+      const backslash = await add({ description: String.raw`C:\north` });
+      await add({ description: 'Discount 500; ACME-ops; C:north' });
+      const emptyFields = await add({ customerEmail: 'bridge@example.test' });
+      // Existing databases can contain empty strings as well as SQL NULLs.
+      await pool.query("UPDATE invoices SET description = '' WHERE id = $1", [emptyFields.id]);
+      raw.updateInvoice(emptyFields.id, { description: '' });
+
+      const cases: [string, string, string[]][] = [
+        ['trimmed case-insensitive email', '  BILLING+SEARCH@EXAMPLE.TEST  ', [matching.id]],
+        ['percent is literal', '50%', [percent.id]],
+        ['underscore is literal', 'ACME_ops', [underscore.id]],
+        ['backslash is literal', String.raw`C:\north`, [backslash.id]],
+        ['phrase spans adjacent fields', 'support Ada', [matching.id]],
+        ['empty and null fields add no extra spaces', `${emptyFields.memo} bridge@example.test`, [emptyFields.id]],
+        ['description', 'monthly', [matching.id]],
+        ['public id', matching.id, [matching.id]],
+        ['memo', matching.memo, [matching.id]],
+        ['no match', 'absent-search-needle', []],
+      ];
+      for (const [name, q, expectedIds] of cases) {
+        await t.test(name, async () => {
+          const memoryIds = (await memory.getInvoicesBySeller(seller, undefined, 50, 0, q)).map(row => row.id);
+          const postgresIds = (await postgres.getInvoicesBySeller(seller, undefined, 50, 0, q)).map(row => row.id);
+          assert.deepEqual(memoryIds, expectedIds, `memory: ${name}`);
+          assert.deepEqual(postgresIds, expectedIds, `postgres: ${name}`);
+        });
+      }
+    } finally {
+      await pool.query('DELETE FROM invoices WHERE seller_public_key = $1', [seller]);
+      await pool.end();
+    }
+  });
+
+  it('preserves seller, status and pagination parity with literal search', async () => {
+    const pool = new Pool({ connectionString: DATABASE_URL });
+    const postgres = new PostgresInvoiceStorage(new InvoiceService(pool));
+    const raw = new MemoryStorage();
+    const memory = new MemoryInvoiceStorage(new InvoiceMemoryService(raw));
+    const seller = Keypair.random().publicKey();
+    const otherSeller = Keypair.random().publicKey();
+    let timestamp = Date.now() - 10_000;
+    const add = async (sellerPublicKey: string, description: string) => {
+      const invoice = await postgres.createInvoice(createInput(sellerPublicKey, { description }));
+      const createdAt = new Date(timestamp += 1_000);
+      await pool.query('UPDATE invoices SET created_at = $1 WHERE id = $2', [createdAt, invoice.id]);
+      raw.createInvoice(invoice);
+      raw.updateInvoice(invoice.id, { createdAt });
+      return invoice;
+    };
+
+    try {
+      const older = await add(seller, 'Older 50% invoice');
+      const cancelled = await add(seller, 'Cancelled 50% invoice');
+      await postgres.cancelInvoice(cancelled.id, seller);
+      await memory.cancelInvoice(cancelled.id, seller);
+      const foreign = await add(otherSeller, 'Foreign 50% invoice');
+      const newer = await add(seller, 'Newer 50% invoice');
+      const decoy = await add(seller, 'Newest 500 invoice');
+
+      for (const storage of [memory, postgres]) {
+        const ids = async (wallet: string, status?: string, limit = 50, offset = 0, q = '50%') =>
+          (await storage.getInvoicesBySeller(wallet, status, limit, offset, q)).map(row => row.id);
+        assert.deepEqual(await ids(seller, 'PENDING', 1, 0), [newer.id], storage.mode);
+        assert.deepEqual(await ids(seller, 'PENDING', 1, 1), [older.id], storage.mode);
+        assert.deepEqual(await ids(seller, 'PENDING', 1, 2), [], storage.mode);
+        assert.deepEqual(await ids(seller, 'CANCELLED'), [cancelled.id], storage.mode);
+        assert.deepEqual(await ids(seller), [newer.id, cancelled.id, older.id], storage.mode);
+        assert.deepEqual(await ids(otherSeller, 'PENDING'), [foreign.id], storage.mode);
+        assert.deepEqual(await ids(seller, 'PENDING', 50, 0, '  '), [decoy.id, newer.id, older.id], storage.mode);
+      }
+    } finally {
+      const sellers = [seller, otherSeller];
+      await pool.query('DELETE FROM payment_events WHERE invoice_id IN (SELECT id FROM invoices WHERE seller_public_key = ANY($1))', [sellers]);
+      await pool.query('DELETE FROM invoices WHERE seller_public_key = ANY($1)', [sellers]);
+      await pool.end();
+    }
   });
 });
