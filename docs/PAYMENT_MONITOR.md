@@ -151,6 +151,19 @@ schema replay, a fresh database connection, and preservation of other audit
 events. It is skipped when no PostgreSQL test database is configured; the
 memory replay check does not establish PostgreSQL durability.
 
+### Recorded PostgreSQL acceptance
+
+On 2026-10-04, `claimable-event-postgres.integration.test.ts` passed on source
+`66f18e99a62c8373b5e487100d99f49368e2576f`: **1 passed, 0 failed, 0 skipped**.
+The native runner used Node 24.21.0, npm 11.19.0 and PostgreSQL 16.15. Test time
+was 93.757396 ms; total process time was 413.141959 ms. The case exercised
+concurrent writes, schema replay, a new connection, pending invoice state,
+a distinct balance ID, and preservation of unrelated audit events.
+
+[Native run 37204455112, job 111442631510](https://github.com/woahwhattheheck/bounty-concierge/actions/runs/37204455112/job/111442631510)
+retains the source checkout and output. Its Q585 PostgreSQL step succeeded;
+the combined workflow later failed in a separate Q584 Horizon 404 fixture.
+
 ## Failure matrix and restart safety
 
 | Failure | Cursor effect | Retry or operator signal | Invoice effect |

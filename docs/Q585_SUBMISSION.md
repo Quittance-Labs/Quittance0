@@ -37,6 +37,14 @@ The committed [receipt bundle](backend/tests/fixtures/monitor-testnet-receipts.j
 
 The strict-send capture has **no memo**. Its unchanged destination mapping is tested separately from an explicitly synthetic memo-bearing derivative. The legacy path rows also remain labeled synthetic. No live Quittance invoice or newly submitted transaction is asserted.
 
-## PostgreSQL rollout and remaining check
+## PostgreSQL rollout and acceptance
 
-Apply `db/schema.sql` before enabling this monitor so `payment_events_claimable_balance_unique` exists. The new `claimable-event-postgres.integration.test.ts` checks concurrent writers, schema replay and a fresh connection in its own schema when `DATABASE_URL` is provided. A PostgreSQL server was unavailable in this local run, so that database-specific acceptance remains pending; the passing memory replay test is not claimed as PostgreSQL durability.
+Apply `db/schema.sql` before enabling this monitor so `payment_events_claimable_balance_unique` exists. The `claimable-event-postgres.integration.test.ts` acceptance checks concurrent writers, schema replay and a fresh connection in its own schema when `DATABASE_URL` is provided.
+
+This check passed on implementation head `66f18e99a62c8373b5e487100d99f49368e2576f` in [native run 37204455112, job 111442631510](https://github.com/woahwhattheheck/bounty-concierge/actions/runs/37204455112/job/111442631510), using Node 24.21.0, npm 11.19.0 and PostgreSQL 16.15. Result: **1 test passed, 0 failed, 0 skipped**; 93.757396 ms test time, 413.141959 ms total. Command, from `backend` with the isolated runner database configured:
+
+```sh
+node --import tsx --test tests/claimable-event-postgres.integration.test.ts
+```
+
+The combined workflow subsequently failed in a separate Q584 Horizon 404 fixture. The Q585 PostgreSQL acceptance step itself succeeded.
