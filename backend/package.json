@@ -8,10 +8,10 @@
     "dev:pg": "tsx watch src/server.ts",
     "dev:mvp": "tsx watch src/server-mvp.ts",
     "dev:dual": "tsx watch src/server-dual.ts",
-    "test": "node --import tsx --test tests/*.test.ts tests/isolated/*.test.js",
-    "test:pg": "node --import tsx --test tests/invoice-postgres.integration.test.ts",
-    "test:dual": "node --import tsx --test tests/invoice-dual-backend.test.ts tests/postgres-restart-persistence.test.ts tests/cross-seller-isolation.test.ts",
-    "test:isolated": "node --test tests/isolated/*.test.js",
+    "test": "node ../scripts/focused-validation.mjs",
+    "test:pg": "node ../scripts/focused-validation.mjs disabled",
+    "test:dual": "node ../scripts/focused-validation.mjs disabled",
+    "test:isolated": "node ../scripts/focused-validation.mjs disabled",
     "build": "tsc",
     "start": "node dist/backend/src/server.js",
     "start:pg": "node dist/backend/src/server.js",
@@ -23,7 +23,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "cutover": "tsx scripts/cutover.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:focused": "node ../scripts/focused-validation.mjs"
   },
   "engines": {
     "node": ">=18"

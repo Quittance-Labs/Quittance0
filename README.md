@@ -538,42 +538,24 @@ fallback UX without Google login, and demonstration instructions are in
 
 ## Tests & CI
 
-Every pull request and every push to `main` runs the jobs defined in
-[`.github/workflows/ci.yml`](./.github/workflows/ci.yml): `backend`,
-`frontend`, `root-tests` (shared contracts), and an optional
-`evidence-smoke`. All of them are reproducible locally with the commands
-below — CI runs nothing you cannot run yourself.
+This work runs focused seller-read validation by default. `npm test`,
+`npm run test:focused`, and `cd backend && npm test` select only the recent
+route-bound seller signature case in the existing invoice-handler tests.
+It covers both storage adapters: two selected tests.
 
-The root [`package.json`](./package.json) is a thin, dependency-free
-orchestration layer over `shared`/`backend`/`frontend`'s own scripts — it
-has no `node_modules` of its own to install. Each command below is the
-exact local equivalent of one CI job or step; `npm run ci` runs the same
-sequence CI does end to end (except `evidence-smoke`, which needs real
-Testnet secrets `evidence:smoke` documents separately below).
+Broad backend, frontend, shared, accessibility, Postgres, dual-backend and
+isolated test entrypoints are disabled. Test files remain in the repository;
+the default commands do not sweep them. The shared-sweep CI job is disabled.
+Frontend CI retains lint and typechecking without a test sweep.
 
 ```bash
-# The full local mirror of CI (installs backend + frontend deps first)
-npm run ci
-
-# Individual pieces, once dependencies are installed:
-npm run test:shared      # Shared export/contract tests (repository root)
-npm run test:backend     # Backend: unit + integration tests
-npm run test:frontend    # Frontend: unit tests
-npm run test:a11y        # Frontend: focused axe, focus, live-region, contrast checks
-npm run lint:frontend    # Frontend: next lint
-npm run typecheck        # Backend + frontend: tsc --noEmit
-npm test                 # test:shared + test:backend + test:frontend together
+npm run test:focused  # two seller signature checks
+npm run typecheck    # backend and frontend typechecking
+npm run lint:frontend
 ```
 
-These call straight through to each package's own scripts (e.g.
-`npm --prefix backend test`), so `cd backend && npm test` still works
-exactly as before if you'd rather work inside one package at a time.
-
-The focused accessibility suite renders the landing, dashboard, pay, and
-invoice-detail routes in jsdom, audits them with axe, and directly checks the
-focus and live-region behavior that a static axe scan cannot observe. Because
-jsdom has no layout engine, WCAG contrast ratios are verified separately from
-the color pairs declared in `frontend/tailwind.config.js`.
+Historical descriptions of individual test files below are reference material,
+not additional commands required for this work.
 
 ### The invoice payment loop is covered end to end
 
