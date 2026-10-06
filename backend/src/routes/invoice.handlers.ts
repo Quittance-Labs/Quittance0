@@ -57,7 +57,7 @@ import {
   type CachedVerificationBody,
 } from '../middleware/verify-cache';
 import { verifySellerSignature } from '../utils/signature-verification';
-import { sellerReadMessage, SELLER_READ_CLOCK_SKEW_MS, SELLER_READ_MAX_AGE_MS } from '../../../shared/seller-read-proof';
+import { sellerReadMessage, SELLER_READ_CLOCK_SKEW_MS, SELLER_READ_MAX_AGE_MS, SELLER_SESSION_MAX_AGE_MS, SELLER_SESSION_SCOPE } from '../../../shared/seller-read-proof';
 import { classifyHorizonFailure } from '../utils/horizon-client';
 import { redactPaymentEventData } from '../utils/payment-event-redaction';
 
@@ -135,9 +135,18 @@ function hasSellerReadProof(req: Request, scope: string, sellerPublicKey: string
   const timestamp = Number(signedAt);
   const age = Date.now() - timestamp;
   if (!Number.isSafeInteger(timestamp) ||
-      age < -SELLER_READ_CLOCK_SKEW_MS || age > SELLER_READ_MAX_AGE_MS) return false;
+      age < -SELLER_READ_CLOCK_SKEW_MS || age > SELLER_SESSION_MAX_AGE_MS) return false;
+  if (age <= SELLER_READ_MAX_AGE_MS) {
+    // Fresh proof: the route-bound message or the wallet-session one.
+    return verifySellerSignature(sellerPublicKey, signature, [
+      sellerReadMessage(scope, sellerPublicKey, signedAt),
+      sellerReadMessage(SELLER_SESSION_SCOPE, sellerPublicKey, signedAt),
+    ]);
+  }
+  // An older proof must be the wallet session: one signature covers every
+  // seller read for the session's lifetime, never a single route's scope.
   return verifySellerSignature(sellerPublicKey, signature, [
-    sellerReadMessage(scope, sellerPublicKey, signedAt),
+    sellerReadMessage(SELLER_SESSION_SCOPE, sellerPublicKey, signedAt),
   ]);
 }
 
