@@ -29,10 +29,23 @@ import type { Application } from 'express';
 import { Account, Keypair, MuxedAccount } from '@stellar/stellar-sdk';
 import memoryStorage from '../src/storage/memory-storage';
 import { HORIZON_MAX_ATTEMPTS } from '../src/utils/horizon-client';
+import { sellerReadMessage } from '../../shared/seller-read-proof';
 
-const SELLER = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
+const sellerKeypair = Keypair.fromRawEd25519Seed(Buffer.alloc(32, 41));
+const SELLER = sellerKeypair.publicKey();
 const PAYER = 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H';
 const OTHER = Keypair.random().publicKey();
+
+function sellerReadHeaders(scope: string): Record<string, string> {
+  const signedAt = String(Date.now());
+  return {
+    'x-seller-signed-at': signedAt,
+    'x-seller-signature': sellerKeypair.sign(
+      Buffer.from(sellerReadMessage(scope, SELLER, signedAt))
+    ).toString('base64'),
+  };
+}
+
 /**
  * A distinct transaction hash per verification, as Stellar guarantees: a hash
  * belongs to exactly one transaction, and one transaction settles one invoice
@@ -368,8 +381,11 @@ describe('invoice payment loop', () => {
     const stored = await jsonRequest(
       port,
       'GET',
-      `/api/invoices/${invoice.id}?sellerPublicKey=${SELLER}`
+      `/api/invoices/${invoice.id}?sellerPublicKey=${SELLER}`,
+      undefined,
+      sellerReadHeaders(`invoice:${invoice.id}`)
     );
+    assert.equal(stored.status, 200);
     assert.equal(stored.body.data.payerName, 'Ada Lovelace');
     assert.equal(stored.body.data.payerEmail, 'ada@example.com');
   });
@@ -504,7 +520,9 @@ describe('invoice payment loop', () => {
     const stats = await jsonRequest(
       port,
       'GET',
-      `/api/invoices/stats?sellerPublicKey=${SELLER}`
+      `/api/invoices/stats?sellerPublicKey=${SELLER}`,
+      undefined,
+      sellerReadHeaders('stats')
     );
 
     assert.equal(stats.status, 200);

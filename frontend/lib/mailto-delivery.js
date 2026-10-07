@@ -187,14 +187,6 @@ function buildProofMailto(invoiceOrProof, baseUrl, recipientOverride) {
   if (payer) {
     lines.push(`Payer Address: ${payer}`);
   }
-  // Display names are delivery metadata, not proof-schema fields. Only include
-  // them when the caller still has the invoice record.
-  if (invoice && invoice.customerName) {
-    lines.push(`Client Name: ${invoice.customerName}`);
-  }
-  if (invoice && invoice.payerName) {
-    lines.push(`Payer Name: ${invoice.payerName}`);
-  }
   const memo = proof ? proof.payment.memo : (invoice ? invoice.memo : null);
   if (memo) {
     lines.push(`Memo: ${memo}`);

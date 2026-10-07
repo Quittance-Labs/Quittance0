@@ -8,7 +8,8 @@ import { PostgresInvoiceStorage } from '../src/storage/postgres-invoice-storage.
 import { InvoiceService } from '../src/services/invoice.service.ts';
 import memoryStorage from '../src/storage/memory-storage.ts';
 import type { InvoiceStorage } from '../src/storage/invoice-storage.ts';
-import { PUBLIC_INVOICE_FIELDS } from '../../shared/invoice.ts';
+import { PUBLIC_INVOICE_FIELDS, SELLER_ONLY_INVOICE_FIELDS } from '../../shared/invoice.ts';
+import { sellerReadMessage } from '../../shared/seller-read-proof.ts';
 
 const SELLER_A = 'GB3Q3VRHH3OQDYITTLONDLEHWQGKB27T2BEDSFHIUMOERULVXPDXRKG4';
 const SELLER_B = 'GB6IHEZ4QNOHJZRYRFLOC45P4SK3KKL6KNPI5WEG6FNVSZ2K5FS2MNY7';
@@ -299,6 +300,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
         storage,
         frontendUrl: 'http://localhost:3000',
         allowSimulate: false,
+        requireSellerReadSignature: false, // legacy route fixtures; focused signed-read case below
         stellar: { getTransaction: async () => transaction },
       });
 
@@ -401,6 +403,143 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
       assert.equal(paidListed?.payerName, payerName);
       assert.equal(paidListed?.assetIssuer, USDC_ISSUER);
       assert.equal(paidListed?.sellerEmail, sellerEmail);
+    });
+
+    it('requires a recent signature bound to the seller and read scope (#559)', async () => {
+      const { Keypair } = await import('@stellar/stellar-sdk');
+      const wallet = Keypair.random();
+      const sellerPublicKey = wallet.publicKey();
+      const invoice = await createInvoice({
+        sellerPublicKey,
+        customerEmail: 'private-client@example.com',
+      });
+      const secured = createInvoiceHandlers({ storage, requireSellerReadSignature: true });
+      const query = { sellerPublicKey };
+      const unsigned = await call(
+        secured.getInvoice,
+        createReq({ params: { id: invoice.id }, query })
+      );
+      assert.equal(unsigned.statusCode, 401);
+      assert.equal(JSON.stringify(unsigned.body).includes('private-client@example.com'), false);
+
+      const signedAt = String(Date.now());
+      const signature = wallet.sign(
+        Buffer.from(sellerReadMessage(`invoice:${invoice.id}`, sellerPublicKey, signedAt))
+      ).toString('base64');
+      const headers = {
+        'x-seller-signed-at': signedAt,
+        'x-seller-signature': signature,
+      };
+      const owned = await call(
+        secured.getInvoice,
+        createReq({ params: { id: invoice.id }, query, headers })
+      );
+      assert.equal(owned.statusCode, 200);
+      assert.equal(owned.body.data.customerEmail, 'private-client@example.com');
+
+      // A valid invoice proof cannot be replayed against list or stats.
+      const list = await call(secured.getInvoices, createReq({ query, headers }));
+      assert.equal(list.statusCode, 401);
+      const stats = await call(secured.getStats, createReq({ query, headers }));
+      assert.equal(stats.statusCode, 401);
+
+      const staleAt = String(Date.now() - 120_000);
+      const stale = wallet.sign(
+        Buffer.from(sellerReadMessage(`invoice:${invoice.id}`, sellerPublicKey, staleAt))
+      ).toString('base64');
+      const expired = await call(
+        secured.getInvoice,
+        createReq({
+          params: { id: invoice.id },
+          query,
+          headers: { 'x-seller-signed-at': staleAt, 'x-seller-signature': stale },
+        })
+      );
+      assert.equal(expired.statusCode, 401);
+
+      const publicView = await call(
+        secured.getInvoice,
+        createReq({ params: { id: invoice.id } })
+      );
+      assert.equal(publicView.statusCode, 200);
+      assert.equal(publicView.body.data.customerEmail, undefined);
+    });
+
+    it('lets one wallet-session signature cover every seller read (#586)', async () => {
+      const { Keypair } = await import('@stellar/stellar-sdk');
+      const wallet = Keypair.random();
+      const sellerPublicKey = wallet.publicKey();
+      const invoice = await createInvoice({
+        sellerPublicKey,
+        customerEmail: 'private-client@example.com',
+      });
+      const secured = createInvoiceHandlers({ storage, requireSellerReadSignature: true });
+      const query = { sellerPublicKey };
+
+      // One signature over the session scope unlocks detail, list, stats and
+      // events — the dashboard prompts once per wallet, not once per route.
+      const signedAt = String(Date.now());
+      const sessionSig = wallet.sign(
+        Buffer.from(sellerReadMessage('session', sellerPublicKey, signedAt))
+      ).toString('base64');
+      const sessionHeaders = {
+        'x-seller-signed-at': signedAt,
+        'x-seller-signature': sessionSig,
+      };
+
+      const owned = await call(
+        secured.getInvoice,
+        createReq({ params: { id: invoice.id }, query, headers: sessionHeaders })
+      );
+      assert.equal(owned.statusCode, 200);
+      assert.equal(owned.body.data.customerEmail, 'private-client@example.com');
+
+      const list = await call(secured.getInvoices, createReq({ query, headers: sessionHeaders }));
+      assert.equal(list.statusCode, 200);
+      const stats = await call(secured.getStats, createReq({ query, headers: sessionHeaders }));
+      assert.equal(stats.statusCode, 200);
+      const events = await call(
+        secured.getPaymentEvents,
+        createReq({ params: { id: invoice.id }, query, headers: sessionHeaders })
+      );
+      assert.equal(events.statusCode, 200);
+
+      // Past the 60-second route window the session proof still holds; past
+      // the session's own one-hour bound it is dead like any other signature.
+      const agedAt = String(Date.now() - 300_000);
+      const aged = wallet.sign(
+        Buffer.from(sellerReadMessage('session', sellerPublicKey, agedAt))
+      ).toString('base64');
+      const stillValid = await call(
+        secured.getInvoices,
+        createReq({ query, headers: { 'x-seller-signed-at': agedAt, 'x-seller-signature': aged } })
+      );
+      assert.equal(stillValid.statusCode, 200);
+
+      const deadAt = String(Date.now() - 3_700_000);
+      const dead = wallet.sign(
+        Buffer.from(sellerReadMessage('session', sellerPublicKey, deadAt))
+      ).toString('base64');
+      const expired = await call(
+        secured.getInvoices,
+        createReq({ query, headers: { 'x-seller-signed-at': deadAt, 'x-seller-signature': dead } })
+      );
+      assert.equal(expired.statusCode, 401);
+
+      // A session signature never becomes another wallet's proof.
+      const foreign = Keypair.random();
+      const foreignAt = String(Date.now());
+      const foreignSig = foreign.sign(
+        Buffer.from(sellerReadMessage('session', sellerPublicKey, foreignAt))
+      ).toString('base64');
+      const refused = await call(
+        secured.getInvoices,
+        createReq({
+          query,
+          headers: { 'x-seller-signed-at': foreignAt, 'x-seller-signature': foreignSig },
+        })
+      );
+      assert.equal(refused.statusCode, 401);
     });
 
     describe('seller payment-events feed (issue #515)', () => {
@@ -581,18 +720,7 @@ function runSharedBackendSuite(name: string, createStorage: () => InvoiceStorage
     });
 
     describe('public pay DTO (issue #503)', () => {
-      const PII_KEYS = [
-        'customerName',
-        'customerEmail',
-        'sellerName',
-        'sellerEmail',
-        'payerPublicKey',
-        'payerName',
-        'payerEmail',
-        'description',
-        'metadata',
-        'userId',
-      ];
+      const PII_KEYS = [...SELLER_ONLY_INVOICE_FIELDS];
 
       it('returns the public shape to an anonymous caller — no client or identity fields', async () => {
         const created = await createInvoice({

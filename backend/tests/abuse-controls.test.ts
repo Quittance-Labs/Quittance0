@@ -4,6 +4,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express, { Application } from 'express';
 import { Keypair } from '@stellar/stellar-sdk';
+import { sellerReadMessage } from '../../shared/seller-read-proof';
 import { createInvoiceRouter } from '../src/routes/invoice.routes';
 import { MemoryInvoiceStorage } from '../src/storage/memory-invoice-storage';
 import { InvoiceMemoryService } from '../src/services/invoice-memory.service';
@@ -91,10 +92,20 @@ describe('Abuse Controls Suite', () => {
   let rawStorage: MemoryStorage;
   let invoiceStorage: MemoryInvoiceStorage;
 
-  const sellerKeypair = Keypair.random();
+  const sellerKeypair = Keypair.fromRawEd25519Seed(Buffer.alloc(32, 42));
   const sellerPublicKey = sellerKeypair.publicKey();
-  const otherKeypair = Keypair.random();
+  const otherKeypair = Keypair.fromRawEd25519Seed(Buffer.alloc(32, 43));
   const otherPublicKey = otherKeypair.publicKey();
+
+  function sellerReadHeaders(scope: string): Record<string, string> {
+    const signedAt = String(Date.now());
+    return {
+      'x-seller-signed-at': signedAt,
+      'x-seller-signature': sellerKeypair.sign(
+        Buffer.from(sellerReadMessage(scope, sellerPublicKey, signedAt))
+      ).toString('base64'),
+    };
+  }
 
   before(async () => {
     rawStorage = new MemoryStorage();
@@ -108,6 +119,8 @@ describe('Abuse Controls Suite', () => {
 
     const router = createInvoiceRouter({
       storage: invoiceStorage,
+      // Keep verification-budget requests on this local lookup.
+      stellar: { getTransaction: async () => null },
       enableRateLimiting: true,
       enableConcurrencyLock: true,
       enableCeilingCheck: true,
@@ -377,11 +390,17 @@ describe('Abuse Controls Suite', () => {
   describe('Scenario 5: Listing Rate Limiting', () => {
     it('rate limits GET /invoices beyond 60 requests per minute', async () => {
       for (let i = 0; i < 60; i++) {
-        const res = await request(port, 'GET', `/api/invoices?sellerPublicKey=${sellerPublicKey}`);
+        const res = await request(
+          port, 'GET', `/api/invoices?sellerPublicKey=${sellerPublicKey}`,
+          undefined, sellerReadHeaders('invoices')
+        );
         assert.equal(res.status, 200);
       }
 
-      const excessive = await request(port, 'GET', `/api/invoices?sellerPublicKey=${sellerPublicKey}`);
+      const excessive = await request(
+        port, 'GET', `/api/invoices?sellerPublicKey=${sellerPublicKey}`,
+        undefined, sellerReadHeaders('invoices')
+      );
       assert.equal(excessive.status, 429);
       assert.equal(excessive.body.success, false);
       assert.equal(excessive.body.code, 'RATE_LIMIT_EXCEEDED');

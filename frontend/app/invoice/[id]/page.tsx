@@ -26,6 +26,7 @@ import InvoiceTimeline from '@/components/InvoiceTimeline';
 import PaymentEventsFeed from '@/components/PaymentEventsFeed';
 import { invoiceSharePath } from '@/lib/invoice-share-path';
 import { shareInvoiceByEmail } from '@/lib/export';
+import { getProofMailtoRecipient } from '@/lib/mailto-delivery';
 import { EXPECTED_WALLET_NETWORK, signInvoiceCancelMessage } from '@/lib/stellar';
 import { walletGate } from '@/lib/freighter-availability';
 import { copyWithFeedback } from '@/lib/clipboard-feedback';
@@ -489,7 +490,10 @@ export default function InvoiceDetailPage() {
               )}
 
               {effectiveStatus === 'PAID' && (
-                <PaymentReceipt invoice={invoice} />
+                <PaymentReceipt
+                  invoice={invoice}
+                  proofEmailRecipient={getProofMailtoRecipient(invoice)}
+                />
               )}
 
               {effectiveStatus === 'PENDING' && paymentInfo?.paymentAvailable !== false && (

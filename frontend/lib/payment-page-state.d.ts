@@ -6,7 +6,11 @@ export interface PayInvoice {
   status: string;
   expiresAt?: string | Date;
   paymentTxHash?: string | null;
-  [key: string]: unknown;
+  amount?: number;
+  assetCode?: string;
+  memo?: string;
+  id?: string;
+  sellerPublicKey?: string;
 }
 
 export interface PaymentState {

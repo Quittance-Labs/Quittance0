@@ -128,8 +128,13 @@ test('buildProofMailto generates a properly encoded mailto URL with proof detail
   assert.ok(mailto.includes(encodeURIComponent(`Transaction Hash: ${'a'.repeat(64)}`)));
   assert.ok(mailto.includes(encodeURIComponent(`Seller Address: ${paidInvoice.sellerPublicKey}`)));
   assert.ok(mailto.includes(encodeURIComponent(`Payer Address: ${paidInvoice.payerPublicKey}`)));
-  assert.ok(mailto.includes(encodeURIComponent('Client Name: Alice Customer')));
-  assert.ok(mailto.includes(encodeURIComponent('Payer Name: Alice Payer')));
+  // Issue #559: proof mailto bodies omit client/payer identity. The To:
+  // address may still carry the recipient for delivery; only the body is checked.
+  const proofBody = decodeURIComponent(mailto.split('body=')[1] || '');
+  assert.equal(proofBody.includes('Client Name:'), false);
+  assert.equal(proofBody.includes('Payer Name:'), false);
+  assert.equal(proofBody.includes('alice@example.com'), false);
+  assert.equal(proofBody.includes('alice.payer@example.com'), false);
   assert.ok(mailto.includes(encodeURIComponent('Verified on Stellar Blockchain')));
   assert.ok(mailto.includes(encodeURIComponent('View Proof / Payment Details: https://quittance.example.com/pay/01234567-89ab-cdef-0123-456789abcdef')));
 });
@@ -149,4 +154,25 @@ test('buildProofMailto throws when invoice is not paid or expired', () => {
     () => buildProofMailto({ ...paidInvoice, customerEmail: '', payerEmail: '' }),
     /Client or payer email is required to email payment proof/
   );
+});
+
+
+test('buildProofMailto body omits client email, payer email, and payer name (#559)', () => {
+  const mailto = buildProofMailto(
+    {
+      ...paidInvoice,
+      customerName: 'Should Not Appear',
+      customerEmail: 'client-secret@example.com',
+      payerName: 'Secret Payer',
+      payerEmail: 'payer-secret@example.com',
+    },
+    'https://quittance.example.com'
+  );
+  const body = decodeURIComponent(mailto.split('body=')[1] || '');
+  assert.equal(body.includes('Should Not Appear'), false);
+  assert.equal(body.includes('Secret Payer'), false);
+  assert.equal(body.includes('client-secret@example.com'), false);
+  assert.equal(body.includes('payer-secret@example.com'), false);
+  // Recipient To: still uses customerEmail for delivery — that is not the body.
+  assert.ok(mailto.startsWith('mailto:client-secret%40example.com?'));
 });

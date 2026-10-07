@@ -5,6 +5,10 @@
  * bundle for code that never runs in this audit — nothing here submits a
  * transaction. Stubbing it keeps the suite to a couple of seconds.
  */
+import { useWalletStore } from '@/lib/store';
+import { walletGate } from '@/lib/freighter-availability';
+import { sellerReadMessage } from '@shared/seller-read-proof';
+
 export const server = { payments: () => ({ forAccount: () => ({ cursor: () => ({ stream: () => () => {} }) }) }), submitTransaction: async () => ({ hash: 'a'.repeat(64) }) };
 export const EXPECTED_WALLET_NETWORK = 'TESTNET';
 export const NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
@@ -32,13 +36,30 @@ export const loadAccount = async () => ({
     { asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5', balance: '50.0000000' },
   ],
 });
-export const assertFreighterReady = async () => ({
-  freighterAvailable: true,
-  connected: true,
-  publicKey: 'GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ',
-  network: 'TESTNET',
-  networkPassphrase: 'Test SDF Network ; September 2015',
-});
+export const assertFreighterReady = async () => {
+  const { freighterAvailable, connected, publicKey, network, networkPassphrase } =
+    useWalletStore.getState();
+  const session = { freighterAvailable, connected, publicKey, network, networkPassphrase };
+  const gate = walletGate(session, EXPECTED_WALLET_NETWORK);
+  if (!gate.ready) throw new Error(gate.message);
+  return session;
+};
+
+export const signSellerReadMessage = async (scope, sellerPublicKey) => {
+  const session = await assertFreighterReady();
+  if (session.publicKey !== sellerPublicKey) {
+    throw new Error('Connect the invoice seller wallet to view workspace details');
+  }
+  const signedAt = String(Date.now());
+  const message = sellerReadMessage(scope, sellerPublicKey, signedAt);
+  return {
+    publicKey: sellerPublicKey,
+    signedAt,
+    // The transport fixture does not verify Ed25519. Bind its marker to the
+    // actual request without presenting it as a valid wallet signature.
+    signature: Buffer.from(`a11y-only:${message}`).toString('base64'),
+  };
+};
 export const isValidPublicKey = (pk) => {
   try { return typeof pk === 'string' && /^G[A-Z2-7]{55}$/.test(pk); } catch { return false; }
 };
@@ -69,6 +90,7 @@ const stellarExports = {
   sendPayment,
   loadAccount,
   assertFreighterReady,
+  signSellerReadMessage,
   isValidPublicKey,
   getExplorerTransactionUrl,
   describeStellarNetworkError,

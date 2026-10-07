@@ -257,3 +257,26 @@ test('a paid invoice without an address says why the proof cannot be sent', asyn
     unmount();
   }
 });
+
+test('a public receipt cannot enable proof email from injected invoice contact', async () => {
+  const invoice = invoiceFixture({
+    status: 'PAID',
+    paymentTxHash: TX_HASH,
+    paidAt: '2026-03-02T12:30:00.000Z',
+  });
+  const { container, unmount } = await render(
+    React.createElement(bundle.PaymentReceipt, { invoice })
+  );
+
+  try {
+    const button = container.querySelector('button[aria-label="Email Proof"]');
+    assert.ok(button);
+    assert.equal(button.getAttribute('aria-disabled'), 'true');
+    assert.match(container.textContent, /seller workspace/i);
+    for (const identity of [invoice.customerName, invoice.customerEmail, invoice.sellerEmail]) {
+      assert.ok(!container.textContent.includes(identity), `public receipt exposed ${identity}`);
+    }
+  } finally {
+    unmount();
+  }
+});

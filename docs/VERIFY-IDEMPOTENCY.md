@@ -13,15 +13,17 @@ Three callers reach the attribution step:
 - the payment monitor, attributing on a stream tick
 - a client retrying after a timeout, with the same transaction hash
 
-The verify path reads the invoice status, **awaits Horizon**, and only then
-marks the invoice paid. Everything that can happen between those two steps
-happens while the invoice still reads `PENDING`.
+On a cache miss, the verify handler reads the invoice status, **awaits Horizon**,
+and only then marks the invoice paid. Everything that can happen between those
+two steps happens while the invoice still reads `PENDING`.
 
 ## Two hazards, two different answers
 
-**Same invoice, twice.** Already covered before this change: after the first
-caller commits, the second is answered `400 INVOICE_ALREADY_PAID`, whether it
-races (status read before the commit) or arrives later (status read after it).
+**Same invoice, twice.** When a request reaches the verify handler, after the
+first caller commits, the second is answered `400 INVOICE_ALREADY_PAID`, whether
+it races (status read before the commit) or arrives later (status read after it).
+A matching cached success can answer the retry before it reaches that handler,
+as described below.
 
 **Same transaction, two invoices.** One payment marking two invoices `PAID`.
 This is impossible while invoice memos are unique, because the memo is what a
@@ -59,6 +61,8 @@ from the invoice that was supposed to have it.
 
 ## State machine, concurrent verify of one invoice
 
+This table describes requests that reach the handler without a cached response.
+
 | Order | Response |
 | --- | --- |
 | First caller | `200`, invoice `PAID`, `paymentTxHash` recorded |
@@ -72,6 +76,24 @@ that the responses are exactly `[200, 400]` whichever order they land in, with
 one recorded transaction hash. The re-read in the verify handler is what produced
 that answer before this change; the claim makes it structural rather than
 incidental.
+
+## Cached public verify responses
+
+A retry with the same invoice ID and transaction hash can return `200` with
+`cached: true` from the verification cache, without another Horizon lookup or
+settlement attempt. The response replays the recorded success. The already-paid responses above
+describe the handler/cache-miss path.
+
+New cached successes store the same public invoice DTO returned by a fresh
+verification. Success data read from older Redis or in-memory entries is also
+projected through the shared `PUBLIC_INVOICE_FIELDS` allowlist in
+`shared/invoice.ts` before delivery. Workspace-only fields such as client contact
+details and payer identity therefore stay out of the public verify response,
+including when the cached entry predates this repair.
+
+The cache key, TTL rules, HTTP statuses, and error-response policy are unchanged.
+The response keeps its existing success metadata and `cached: true` marker; the
+projection applies to successful invoice data. No cache flush is required.
 
 ## Rejection codes
 

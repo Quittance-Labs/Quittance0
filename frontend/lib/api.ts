@@ -7,6 +7,7 @@ import {
 } from './api-runtime.js';
 import { resolveVerificationError } from './verification.js';
 import { resolveStellarNetwork } from '@shared/network';
+import { SELLER_SESSION_MAX_AGE_MS, SELLER_SESSION_SCOPE } from '@shared/seller-read-proof';
 import { createBrowserRequestId } from './request-correlation-id.ts';
 
 /**
@@ -61,6 +62,48 @@ api.interceptors.response.use(
   }
 );
 
+type SellerReadProof = { publicKey: string; signedAt: string; signature: string };
+const sellerSessionProofs = new Map<string, SellerReadProof>();
+const pendingSellerSessionProofs = new Map<string, Promise<SellerReadProof>>();
+
+/**
+ * One wallet signature per session, never put in a URL. The dashboard's list,
+ * stats, detail and events reads share it instead of prompting per route
+ * every minute (issue #586's direction); the backend still honours
+ * route-scoped proofs for their 60-second window.
+ */
+async function sellerReadHeaders(sellerPublicKey: string) {
+  const { assertFreighterReady, signSellerReadMessage } = await import('@/lib/stellar');
+  const session = await assertFreighterReady();
+  if (session.publicKey !== sellerPublicKey) {
+    throw new Error('Connect the invoice seller wallet to view workspace details');
+  }
+  const cached = sellerSessionProofs.get(sellerPublicKey);
+  if (cached && Date.now() - Number(cached.signedAt) < SELLER_SESSION_MAX_AGE_MS - 15_000) {
+    return {
+      'X-Seller-Signed-At': cached.signedAt,
+      'X-Seller-Signature': cached.signature,
+    };
+  }
+  let pending = pendingSellerSessionProofs.get(sellerPublicKey);
+  if (!pending) {
+    pending = signSellerReadMessage(SELLER_SESSION_SCOPE, sellerPublicKey);
+    pendingSellerSessionProofs.set(sellerPublicKey, pending);
+  }
+  try {
+    const proof = await pending;
+    sellerSessionProofs.set(sellerPublicKey, proof);
+    return {
+      'X-Seller-Signed-At': proof.signedAt,
+      'X-Seller-Signature': proof.signature,
+    };
+  } finally {
+    if (pendingSellerSessionProofs.get(sellerPublicKey) === pending) {
+      pendingSellerSessionProofs.delete(sellerPublicKey);
+    }
+  }
+}
+
 export const invoiceApi = {
   create: async (data: {
     amount: number;
@@ -85,17 +128,18 @@ export const invoiceApi = {
   },
 
   getById: async (id: string, sellerPublicKey?: string | null) => {
-    // Workspace fields (client contact, payer identity) are only returned when
-    // the caller presents the invoice's own seller key — issue #503. The pay
-    // page calls this without a key and receives the public pay DTO.
+    // The pay page calls this without seller proof and receives the public DTO.
+    const headers = sellerPublicKey
+      ? await sellerReadHeaders(sellerPublicKey)
+      : undefined;
     const response = await api.get(`/invoices/${id}`, {
       params: sellerPublicKey ? { sellerPublicKey } : undefined,
+      headers,
     });
     return response.data;
   },
 
-  // Invoice history is scoped to the connected Freighter wallet, so the seller
-  // key is required for list and stats calls.
+  // Invoice history requires signed proof from the connected seller wallet.
   getAll: async (params: {
     sellerPublicKey: string;
     status?: string;
@@ -103,7 +147,8 @@ export const invoiceApi = {
     offset?: number;
     q?: string;
   }) => {
-    const response = await api.get('/invoices', { params });
+    const headers = await sellerReadHeaders(params.sellerPublicKey);
+    const response = await api.get('/invoices', { params, headers });
     return response.data;
   },
 
@@ -112,11 +157,12 @@ export const invoiceApi = {
     return response.data;
   },
 
-  // Seller-only audit feed (issue #515): rejected verifies and monitor
-  // rejections for this invoice. Requires the invoice's own seller key.
+  // Seller-only audit feed (issue #515) requires the invoice wallet's proof.
   getPaymentEvents: async (id: string, sellerPublicKey: string) => {
+    const headers = await sellerReadHeaders(sellerPublicKey);
     const response = await api.get(`/invoices/${id}/events`, {
       params: { sellerPublicKey },
+      headers,
     });
     return response.data;
   },
@@ -141,8 +187,10 @@ export const invoiceApi = {
   },
 
   getStats: async (sellerPublicKey: string) => {
+    const headers = await sellerReadHeaders(sellerPublicKey);
     const response = await api.get('/invoices/stats', {
       params: { sellerPublicKey },
+      headers,
     });
     return response.data;
   },

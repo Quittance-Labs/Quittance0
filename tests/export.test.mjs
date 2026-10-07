@@ -37,7 +37,7 @@ test('escapeHtml encodes characters that can create HTML markup or attributes', 
   );
 });
 
-test('generateInvoicePDF renders user-supplied proof fields as literal text', () => {
+test('generateInvoicePDF escapes permitted proof fields and omits private metadata', () => {
   const invoice = {
     id: 'invoice-<id>',
     amount: 25,
@@ -53,7 +53,7 @@ test('generateInvoicePDF renders user-supplied proof fields as literal text', ()
     createdAt: '2026-07-25T10:00:00.000Z',
     expiresAt: '2026-08-25T10:00:00.000Z',
     paidAt: '2026-07-25T11:00:00.000Z',
-    memo: 'Memo <memo>',
+    memo: 'Memo <memo> <script>globalThis.compromised = true</script> and <b>bold</b>',
     sellerPublicKey: 'GSELLER<seller-key>',
     payerPublicKey: 'GPAYER<payer-key>',
     paymentTxHash: 'hash<transaction-hash>',
@@ -64,13 +64,6 @@ test('generateInvoicePDF renders user-supplied proof fields as literal text', ()
   for (const value of [
     invoice.id,
     invoice.assetCode,
-    invoice.description,
-    invoice.customerName,
-    invoice.customerEmail,
-    invoice.sellerName,
-    invoice.sellerEmail,
-    invoice.payerName,
-    invoice.payerEmail,
     invoice.memo,
     invoice.sellerPublicKey,
     invoice.payerPublicKey,
@@ -78,6 +71,19 @@ test('generateInvoicePDF renders user-supplied proof fields as literal text', ()
   ]) {
     assert.ok(html.includes(escapeHtml(value)));
     assert.ok(!html.includes(value));
+  }
+
+  for (const value of [
+    invoice.description,
+    invoice.customerName,
+    invoice.customerEmail,
+    invoice.sellerName,
+    invoice.sellerEmail,
+    invoice.payerName,
+    invoice.payerEmail,
+  ]) {
+    assert.ok(!html.includes(value));
+    assert.ok(!html.includes(escapeHtml(value)));
   }
 
   assert.ok(html.includes('&lt;script&gt;globalThis.compromised = true&lt;/script&gt;'));

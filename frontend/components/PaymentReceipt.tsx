@@ -9,7 +9,7 @@ import { formatAssetLabel } from '@/lib/asset-code-display';
 import { openInvoicePDF, emailPaymentProof } from '@/lib/export';
 import { buildQuittanceProof, type QuittanceProof } from '@/lib/quittance-proof';
 import { reportProofHandoff } from '@/lib/proof-handoff';
-import { canSendProofEmail, getProofMailtoRecipient, resolveInvoiceNetwork } from '@/lib/mailto-delivery';
+import { isValidEmailFormat, resolveInvoiceNetwork } from '@/lib/mailto-delivery';
 import { toast } from 'sonner';
 import type { PayPageInvoice } from './pay-page.types';
 import { buildHorizonTxUrl, resolveExplorerNetwork } from '@/lib/explorer-tx-link';
@@ -20,6 +20,8 @@ import { buildHorizonTxUrl, resolveExplorerNetwork } from '@/lib/explorer-tx-lin
 interface PaymentReceiptProps {
   invoice: PayPageInvoice;
   proof?: QuittanceProof;
+  /** Supplied only by the seller workspace after its access check. */
+  proofEmailRecipient?: string;
 }
 
 function latePaymentWarning(invoice: PayPageInvoice): { title: string; body: string } | null {
@@ -38,7 +40,7 @@ function latePaymentWarning(invoice: PayPageInvoice): { title: string; body: str
   return null;
 }
 
-export default function PaymentReceipt({ invoice, proof: proofProp }: PaymentReceiptProps) {
+export default function PaymentReceipt({ invoice, proof: proofProp, proofEmailRecipient }: PaymentReceiptProps) {
   const proof = proofProp ?? (() => {
     const result = buildQuittanceProof(invoice as any, {
       network: resolveInvoiceNetwork(invoice as any),
@@ -54,11 +56,7 @@ export default function PaymentReceipt({ invoice, proof: proofProp }: PaymentRec
 
   const handleEmailProof = () => {
     try {
-      emailPaymentProof(
-        (proof ?? invoice) as any,
-        undefined,
-        invoice.customerEmail || invoice.payerEmail
-      );
+      emailPaymentProof((proof ?? invoice) as any, undefined, proofRecipient);
       toast.success('Opening email client');
     } catch (err: any) {
       toast.error(err?.message || 'No recipient email on this invoice');
@@ -82,9 +80,6 @@ PAYMENT DETAILS
 ───────────────────────────────────────
 
 Amount Paid: ${displayAmount} ${displayAssetLabel}
-${invoice.description ? `Description: ${invoice.description}` : ''}
-${invoice.customerName ? `Customer: ${invoice.customerName}` : ''}
-${invoice.customerEmail ? `Email: ${invoice.customerEmail}` : ''}
 
 ───────────────────────────────────────
 TRANSACTION DETAILS
@@ -94,7 +89,7 @@ Transaction Hash:
 ${txHash || ''}
 
 From (Payer):
-${payerKey || 'N/A'}
+On-chain counterparty (see transaction)
 
 To (Recipient):
 ${sellerKey}
@@ -126,7 +121,6 @@ Stellar Blockchain Payment System
   const settledDate = proof ? proof.settledAt : (invoice.settledAt || invoice.paidAt);
   const txHash = proof ? proof.payment.txHash : invoice.paymentTxHash;
   const sellerKey = proof ? proof.seller : invoice.sellerPublicKey;
-  const payerKey = proof ? proof.payer : invoice.payerPublicKey;
   const memoValue = proof ? proof.payment.memo : invoice.memo;
   const explorerUrl = (proof && proof.payment.explorerUrl)
     ? proof.payment.explorerUrl
@@ -134,9 +128,6 @@ Stellar Blockchain Payment System
         invoice.paymentTxHash,
         resolveExplorerNetwork(invoice)
       );
-  const canEmail = canSendProofEmail(invoice as any);
-  const proofRecipient = getProofMailtoRecipient(invoice as any);
-  const emailReasonId = 'receipt-email-reason';
 
   const displayAssetLabel = formatAssetLabel({
     assetCode: displayAssetCode,
@@ -151,7 +142,11 @@ Stellar Blockchain Payment System
    * a real transaction id, so the row is only rendered when there is
    * something to link to.
    */
-
+  // Public DTOs never supply contact. The access-checked seller caller passes
+  // its delivery recipient separately from the canonical proof document.
+  const proofRecipient = proofEmailRecipient?.trim() || '';
+  const canEmail = displayStatus === 'PAID' && isValidEmailFormat(proofRecipient);
+  const emailReasonId = 'receipt-email-reason';
 
   return (
     /*
@@ -207,12 +202,6 @@ Stellar Blockchain Payment System
           </div>
         </div>
 
-        {invoice.description && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-xs text-gray-600 mb-1">Payment For</p>
-            <p className="text-gray-800 font-medium">{invoice.description}</p>
-          </div>
-        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-gray-50 rounded-lg p-4">
@@ -228,45 +217,8 @@ Stellar Blockchain Payment System
           </div>
         </div>
 
-        {(invoice.sellerName || invoice.sellerEmail) && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
-            <p className="text-sm text-blue-700 font-semibold">Seller Information</p>
-            {invoice.sellerName && (
-              <div>
-                <p className="text-xs text-blue-700">Name</p>
-                <p className="text-sm text-blue-800">{invoice.sellerName}</p>
-              </div>
-            )}
-            {invoice.sellerEmail && (
-              <div>
-                <p className="text-xs text-blue-700">Email</p>
-                <p className="text-sm text-blue-800">{invoice.sellerEmail}</p>
-              </div>
-            )}
-          </div>
-        )}
 
-        {invoice.sellerName && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-            <p className="text-sm text-blue-700 font-semibold">Paid to</p>
-            <p className="text-lg font-bold text-blue-800">{invoice.sellerName}</p>
-            {invoice.sellerEmail && (
-              <p className="text-sm text-blue-700">{invoice.sellerEmail}</p>
-            )}
-          </div>
-        )}
 
-        {(invoice.payerName || invoice.payerEmail) && (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-            <p className="text-sm text-green-700 font-semibold">Paid by</p>
-            {invoice.payerName && (
-              <p className="text-lg font-bold text-green-800">{invoice.payerName}</p>
-            )}
-            {invoice.payerEmail && (
-              <p className="text-sm text-green-700">{invoice.payerEmail}</p>
-            )}
-          </div>
-        )}
       </div>
 
       {txHash ? (
@@ -279,12 +231,6 @@ Stellar Blockchain Payment System
             <p className="text-xs font-mono text-gray-900 break-all">{txHash}</p>
           </div>
 
-          {payerKey && (
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-xs text-gray-600 mb-1">From (Payer Address)</p>
-              <p className="text-xs font-mono text-gray-900 break-all">{payerKey}</p>
-            </div>
-          )}
 
           <div className="bg-gray-50 rounded-lg p-4">
             <p className="text-xs text-gray-600 mb-1">To (Recipient Address)</p>
@@ -325,7 +271,9 @@ Stellar Blockchain Payment System
         </button>
         {!canEmail && (
           <p id={emailReasonId} className="field-hint text-center">
-            Unavailable: this invoice has no client email.
+            {proofEmailRecipient === undefined
+              ? 'This public receipt has no client email. Connect the invoice wallet in the seller workspace to email proof.'
+              : 'No client email is recorded for this invoice.'}
           </p>
         )}
 
