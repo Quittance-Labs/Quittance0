@@ -12,7 +12,7 @@ if(mode!=='seller-session'){
   process.stderr.write('Unknown focused validation target.\n');
   process.exit(2);
 }
-const pattern='requires a recent signature bound to the seller and read scope';
+const pattern='requires a recent signature bound to the seller and read scope|lets one wallet-session signature cover every seller read';
 const run=spawnSync(process.execPath,['--import','tsx','--test','--test-reporter=spec','--test-name-pattern',pattern,'tests/invoice-handlers.test.ts'],{
   cwd:resolve(root,'backend'),stdio:'inherit',env:{...process.env,NODE_ENV:'test',STELLAR_NETWORK:'TESTNET',STELLAR_HORIZON_URL:'http://127.0.0.1:1'}
 });
