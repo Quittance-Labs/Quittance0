@@ -9,6 +9,7 @@ import type {
   PaymentMonitorCheckpointStore,
 } from '../src/services/payment-monitor-checkpoint';
 import type { StoredInvoice } from '../src/storage/invoice-storage';
+import { withPaymentTransactions } from './fixtures/payment-page-source';
 
 const SELLER_KEY = 'GAA5INZB2GO3FJN4VXJYJSSIQXN4EKQTZWTR6R566TR3IMTXHSUDORLI';
 const OTHER_SELLER = 'GBZXN7PIRZGNMHGA72UDEL52OQK6ICNJPF37ACNO42P7J7W4TX225656';
@@ -83,14 +84,14 @@ function createInvoiceStore(initial: StoredInvoice[]) {
   };
 }
 
-const EMPTY_SOURCE: PaymentPageSource = {
+const EMPTY_SOURCE: PaymentPageSource = withPaymentTransactions({
   async getLatestPaymentCursor() {
     return '100';
   },
   async getPaymentsPage() {
     return [];
   },
-};
+});
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -153,7 +154,7 @@ describe('Payment monitor restart hydration (issue #502)', () => {
     const invoice = createMockInvoice('inv-restart', 'MEMO-RESTART', 42);
     const store = createInvoiceStore([invoice]);
 
-    const source: PaymentPageSource = {
+    const source: PaymentPageSource = withPaymentTransactions({
       async getLatestPaymentCursor() {
         return '100';
       },
@@ -177,7 +178,7 @@ describe('Payment monitor restart hydration (issue #502)', () => {
           },
         ];
       },
-    };
+    });
 
     const monitor = new PaymentMonitorService({
       account: SELLER_KEY,

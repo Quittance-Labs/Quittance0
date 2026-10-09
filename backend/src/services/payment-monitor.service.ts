@@ -1,5 +1,5 @@
 import path from 'node:path';
-import stellarService, { PaymentPageRecord, PaymentRecord } from './stellar.service';
+import stellarService, { ClaimableBalanceRecord, PaymentPageRecord, PaymentRecord } from './stellar.service';
 import invoiceService, { InvoiceService, Queryable } from './invoice.service';
 import { SELLER_PUBLIC_KEY, STELLAR_NETWORK } from '../config/stellar';
 import { pool } from '../config/database';
@@ -8,7 +8,6 @@ import { canonicalAmount } from '../utils/safe-amount-compare';
 import { PaymentClaimError } from '../domain/payment-attribution';
 import { IllegalStateTransitionError } from '../domain/invoice-lifecycle';
 import {
-  parseSettlementTime,
   SettlementTimeUnavailableError,
 } from '../domain/invoice-settlement';
 import { monitorBackoffMs } from '../utils/monitor-retry-backoff';
@@ -29,6 +28,7 @@ import {
 export interface PaymentPageSource {
   getPaymentsPage(account: string, cursor: string, limit: number): Promise<PaymentPageRecord[]>;
   getLatestPaymentCursor(account: string): Promise<string>;
+  getTransaction: typeof stellarService.getTransaction;
 }
 
 export interface MonitorInvoiceService {
@@ -445,6 +445,7 @@ export class PaymentMonitorService {
 
     let cursor = checkpoint.cursor;
     let processed = 0;
+    const handledTransactions = new Set<string>();
     for (let pageNumber = 0; pageNumber < this.maxPagesPerRun; pageNumber += 1) {
       // getPaymentsPage goes through horizonCall; a timeout/429/connection
       // failure throws and tick() applies the shared backoff before any
@@ -459,9 +460,14 @@ export class PaymentMonitorService {
           continue;
         }
 
-        if (record.payment) {
+        if (record.payment && !handledTransactions.has(record.payment.txHash)) {
+          // A complete transaction is verified once even when several of its
+          // operations occur in this run. Each record still earns a checkpoint.
           await this.handlePayment(record.payment);
+          handledTransactions.add(record.payment.txHash);
         }
+
+        if (record.claimableBalance) await this.handleClaimableBalance(record.claimableBalance);
 
         await this.checkpoints.save({
           account: this.account,
@@ -494,6 +500,22 @@ export class PaymentMonitorService {
       lastPollAt: this.lastPollAt,
     };
     return { processed, cursor, bootstrapped: false };
+  }
+
+  private async handleClaimableBalance(balance: ClaimableBalanceRecord): Promise<void> {
+    if (!balance.memo || balance.memoType?.toLowerCase().replace(/^memo_/, '') !== 'text') return;
+    const invoice = await this.invoices.getInvoiceByMemo(balance.memo);
+    if (!invoice || invoice.status !== 'PENDING' || invoice.sellerPublicKey !== balance.claimant) return;
+    // Storage enforces uniqueness by invoice + balance id across cursor replay.
+    // This is a claim opportunity, never proof that funds reached the seller.
+    await this.invoices.logPaymentEvent(invoice.id, 'CLAIMABLE_BALANCE_RECEIVED', {
+      balanceId: balance.balanceId,
+      amount: balance.amount,
+      asset: balance.asset,
+      predicate: balance.predicate,
+      txHash: balance.txHash,
+      source: 'payment-monitor',
+    });
   }
 
   private async handlePayment(payment: PaymentRecord): Promise<void> {
@@ -534,7 +556,7 @@ export class PaymentMonitorService {
     // Payment records only reach here after Horizon returned them through
     // horizonCall. tick() classifies timeout/429/connection failures and
     // backs off — this compare never runs on an outage (issue #556).
-    const isNative = payment.assetCode === 'XLM' && !payment.assetIssuer;
+    const txDetails = await this.source.getTransaction(payment.txHash, payment.transaction);
     const startedAt = Date.now();
     const context = this.buildLogContext();
     emitEvent('info', 'payment.verify.started', context, {
@@ -545,17 +567,9 @@ export class PaymentMonitorService {
 
     const verification = verifyHorizonPayment({
       txHash: payment.txHash,
-      network: this.network,
-      transaction: { memo: payment.memo, memo_type: payment.memoType },
-      operations: [{
-        type: 'payment',
-        from: payment.from,
-        to: payment.to,
-        amount: payment.amount,
-        asset_type: isNative ? 'native' : 'credit_alphanum12',
-        asset_code: isNative ? undefined : payment.assetCode,
-        asset_issuer: payment.assetIssuer,
-      }],
+      network: txDetails.network ?? this.network,
+      transaction: txDetails.transaction,
+      operations: txDetails.operations,
       expected: {
         memo: invoice.memo,
         amount: invoice.amount,
@@ -585,22 +599,24 @@ export class PaymentMonitorService {
           expectedAmount: canonicalAmount(invoice.amount) ?? String(invoice.amount),
           receivedAmount: payment.amount,
           payerPublicKey: payment.from,
+          operationType: payment.operationType,
         }
       );
       return;
     }
 
-    const settledAt = parseSettlementTime(payment.createdAt) ?? verification.value.settledAt;
+    const settledAt = verification.value.settledAt;
     if (!settledAt) {
       throw new SettlementTimeUnavailableError();
     }
 
     try {
-      await this.saveTransaction(payment, invoice.id);
+      const selectedPayment = { ...payment, ...verification.value };
+      await this.saveTransaction(selectedPayment, invoice.id);
       await this.invoices.markAsPaid(
         invoice.id,
         payment.txHash,
-        payment.from,
+        verification.value.from,
         undefined,
         { settledAt, destinationMuxedId: verification.value.toMuxedId }
       );

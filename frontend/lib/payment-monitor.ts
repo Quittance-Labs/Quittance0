@@ -3,7 +3,7 @@
  * Monitors Stellar blockchain for incoming payments to user's wallet
  */
 
-import { server } from './stellar';
+import { isPaymentOperation, server } from './stellar';
 import { canonicalAmount } from './stroop-amount.js';
 import { explorerSegmentFor, resolveStellarNetwork } from '@shared/network';
 import { toast } from 'sonner';
@@ -56,46 +56,73 @@ class PaymentMonitor {
     this.callbacks.set(publicKey, onPayment ? [onPayment] : []);
 
     try {
+      let streamActive = true;
+      const pendingPaymentIds = new Set<string>();
+      const deliveredPaymentIds = new Set<string>();
       const closeHandler = server
         .payments()
         .forAccount(publicKey)
         .cursor('now') // Only new payments
         .stream({
           onmessage: async (record: any) => {
+            // Horizon can replay an operation while reconnecting. Reserve its
+            // ID before the memo lookup so concurrent deliveries toast once.
+            if (!streamActive || !isPaymentOperation(record) || record.to !== publicKey) return;
+            const paymentId = record.id || record.paging_token;
+            if (
+              !paymentId ||
+              pendingPaymentIds.has(paymentId) ||
+              deliveredPaymentIds.has(paymentId)
+            ) return;
+            pendingPaymentIds.add(paymentId);
+
             try {
-              // Only process incoming payments
-              if (record.type === 'payment' && record.to === publicKey) {
-                // Fetch transaction for memo
-                const transaction = await server
-                  .transactions()
-                  .transaction(record.transaction_hash)
-                  .call();
+              // Fetch transaction for memo
+              const transaction = await server
+                .transactions()
+                .transaction(record.transaction_hash)
+                .call();
 
-                const payment: PaymentNotification = {
-                  id: record.id,
-                  hash: record.transaction_hash,
-                  from: record.from,
-                  to: record.to,
-                  amount: record.amount,
-                  assetCode: record.asset_type === 'native' ? 'XLM' : record.asset_code,
-                  memo: transaction.memo || undefined,
-                  timestamp: new Date(record.created_at),
-                };
+              if (!streamActive) return;
 
-                console.log('Payment received:', payment);
+              const payment: PaymentNotification = {
+                id: paymentId,
+                hash: record.transaction_hash,
+                from: record.from,
+                to: record.to,
+                amount: record.amount,
+                assetCode: record.asset_type === 'native' ? 'XLM' : record.asset_code,
+                memo: transaction.memo || undefined,
+                timestamp: new Date(record.created_at),
+              };
 
-                // Show toast notification
-                this.showNotification(payment);
+              console.log('Payment received:', payment);
 
-                // Call all registered callbacks
-                const callbacks = this.callbacks.get(publicKey) || [];
-                callbacks.forEach((callback) => callback(payment));
+              // Show toast notification
+              this.showNotification(payment);
+              deliveredPaymentIds.add(paymentId);
+              // Bound replay bookkeeping for wallets left open for days.
+              if (deliveredPaymentIds.size > 1000) {
+                deliveredPaymentIds.delete(deliveredPaymentIds.values().next().value!);
               }
+
+              // Call all registered callbacks
+              const callbacks = this.callbacks.get(publicKey) || [];
+              callbacks.forEach((callback) => {
+                try {
+                  callback(payment);
+                } catch (error) {
+                  console.error('Payment callback failed:', error);
+                }
+              });
             } catch (error) {
               console.error('Error processing payment:', error);
+            } finally {
+              pendingPaymentIds.delete(paymentId);
             }
           },
           onerror: (error: any) => {
+            if (!streamActive) return;
             console.error('Payment stream error:', error);
             // Horizon/stream failures are surfaced as a stable string so the
             // monitor banner reads consistently with API/verification errors.
@@ -105,6 +132,7 @@ class PaymentMonitor {
 
             // Try to reconnect after 5 seconds
             setTimeout(() => {
+              if (!streamActive) return;
               console.log('Reconnecting payment stream...');
               this.stopMonitoring(publicKey);
               this.startMonitoring(publicKey, onPayment);
@@ -112,7 +140,10 @@ class PaymentMonitor {
           },
         });
 
-      this.activeStreams.set(publicKey, closeHandler);
+      this.activeStreams.set(publicKey, () => {
+        streamActive = false;
+        closeHandler();
+      });
       
       toast.success('Payment monitoring active', {
         description: 'You will be notified of incoming payments',

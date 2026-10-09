@@ -557,8 +557,19 @@ export const checkTransactionStatus = async (
   }
 };
 
+/** Horizon uses destination-side amount/asset fields for all three shapes. */
+export const isPaymentOperation = (
+  record: { type?: string; transaction_successful?: boolean } | null | undefined
+): boolean =>
+  record?.transaction_successful !== false &&
+  (record?.type === 'payment' ||
+    record?.type === 'path_payment_strict_receive' ||
+    record?.type === 'path_payment_strict_send');
+
 /**
- * Stream payments for an account
+ * Stream payment operations for an account. Keep the Horizon record intact:
+ * amount/asset_* describe what the destination receives, not source_amount
+ * or source_asset_* spent by a path-payment sender.
  */
 export const streamPayments = (
   publicKey: string,
@@ -570,7 +581,7 @@ export const streamPayments = (
     .cursor('now')
     .stream({
       onmessage: (payment: any) => {
-        if (payment.type === 'payment') {
+        if (isPaymentOperation(payment)) {
           onPayment(payment);
         }
       },

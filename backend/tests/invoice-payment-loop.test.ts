@@ -109,9 +109,10 @@ function paymentOn(overrides: {
   assetCode?: string;
 }) {
   return (path: string) => {
-    // Match the path instead of comparing it with one constant, so each test
-    // can use its own hash.
-    if (/^\/transactions\/[0-9a-f]{64}\/operations$/.test(path)) {
+    // Horizon SDK pagination adds query parameters to the operations endpoint.
+    // Match only the URL pathname so the fixture follows the production request.
+    const pathname = new URL(path, 'http://horizon.test').pathname;
+    if (/^\/transactions\/[0-9a-f]{64}\/operations$/.test(pathname)) {
       return {
         status: 200,
         body: {
@@ -132,11 +133,11 @@ function paymentOn(overrides: {
       };
     }
 
-    if (/^\/transactions\/[0-9a-f]{64}$/.test(path)) {
+    if (/^\/transactions\/[0-9a-f]{64}$/.test(pathname)) {
       return {
         status: 200,
         body: {
-          hash: path.split('/')[2],
+          hash: pathname.split('/')[2],
           successful: true,
           ledger: 1_000_000,
           memo: overrides.memo,

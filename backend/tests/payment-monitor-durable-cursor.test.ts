@@ -6,6 +6,7 @@ import type {
   PaymentMonitorCheckpointStore,
 } from '../src/services/payment-monitor-checkpoint';
 import type { StoredInvoice } from '../src/storage/invoice-storage';
+import { withPaymentTransactions } from './fixtures/payment-page-source';
 
 const ACCOUNT = 'GSELLER';
 const PAYER = 'GPAYER';
@@ -92,7 +93,7 @@ describe('PaymentMonitorService durable cursor', () => {
     const checkpoints = new MemoryCheckpoint('10');
     const invoices = invoiceService();
     let requestedCursor = '';
-    const source: PaymentPageSource = {
+    const source: PaymentPageSource = withPaymentTransactions({
       async getLatestPaymentCursor() {
         return '10';
       },
@@ -100,7 +101,7 @@ describe('PaymentMonitorService durable cursor', () => {
         requestedCursor = cursor;
         return cursor === '10' ? [paymentRecord('11')] : [];
       },
-    };
+    });
 
     // A new service instance represents the restarted process. It receives no
     // cursor through memory; only the durable checkpoint store is shared.
@@ -128,14 +129,14 @@ describe('PaymentMonitorService durable cursor', () => {
     invoices.markAsPaid = async () => {
       throw new Error('database unavailable');
     };
-    const source: PaymentPageSource = {
+    const source: PaymentPageSource = withPaymentTransactions({
       async getLatestPaymentCursor() {
         return '20';
       },
       async getPaymentsPage() {
         return [paymentRecord('21'), paymentRecord('22')];
       },
-    };
+    });
     const monitor = new PaymentMonitorService({
       account: ACCOUNT,
       source,
@@ -151,14 +152,14 @@ describe('PaymentMonitorService durable cursor', () => {
   it('records a partial payment and advances past the handled rejection', async () => {
     const checkpoints = new MemoryCheckpoint('30');
     const invoices = invoiceService();
-    const source: PaymentPageSource = {
+    const source: PaymentPageSource = withPaymentTransactions({
       async getLatestPaymentCursor() {
         return '30';
       },
       async getPaymentsPage(_account, cursor) {
         return cursor === '30' ? [paymentRecord('31', '24.0000000')] : [];
       },
-    };
+    });
     const monitor = new PaymentMonitorService({
       account: ACCOUNT,
       source,
@@ -177,7 +178,7 @@ describe('PaymentMonitorService durable cursor', () => {
   it('anchors a first run at the latest token without an unbounded history scan', async () => {
     const checkpoints = new MemoryCheckpoint();
     let pageCalls = 0;
-    const source: PaymentPageSource = {
+    const source: PaymentPageSource = withPaymentTransactions({
       async getLatestPaymentCursor() {
         return '999';
       },
@@ -185,7 +186,7 @@ describe('PaymentMonitorService durable cursor', () => {
         pageCalls += 1;
         return [];
       },
-    };
+    });
     const monitor = new PaymentMonitorService({
       account: ACCOUNT,
       source,

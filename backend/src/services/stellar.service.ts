@@ -1,22 +1,33 @@
 import { emitOperationalFailure } from '../observability/log-events';
 import * as StellarSdk from '@stellar/stellar-sdk';
-import { server, NETWORK_PASSPHRASE, getSellerKeypair } from '../config/stellar';
+import { server, NETWORK_PASSPHRASE, STELLAR_NETWORK, getSellerKeypair } from '../config/stellar';
 import {
   checkTxHash,
   failure,
   verifyHorizonPayment,
+  normalizePaymentOperation,
+  destinationMatches,
 } from './payment-verification';
 import { fitsStellarTextMemo } from '../../../shared/memo';
 import type {
   ExpectedPayment,
   VerificationResult,
   VerifiedPayment,
+  HorizonOperationLike,
+  HorizonTransactionLike,
 } from './payment-verification';
 import {
   classifyHorizonFailure,
   horizonCall,
   isHorizonUnavailable,
 } from '../utils/horizon-client';
+
+export interface HorizonTransactionDetails {
+  transaction: HorizonTransactionLike;
+  operations: HorizonOperationLike[];
+  /** Network of the Horizon source, independent of a monitor's configuration. */
+  network?: string;
+}
 
 export interface PaymentRecord {
   id: string;
@@ -30,12 +41,28 @@ export interface PaymentRecord {
   memoType?: string;
   ledger: number;
   createdAt: string;
+  operationType?: string;
+  /** The observed transaction envelope; operations are fetched for memo candidates. */
+  transaction?: HorizonTransactionLike;
 }
+
+export interface ClaimableBalanceRecord {
+  balanceId: string;
+  txHash: string;
+  claimant: string;
+  memo?: string;
+  memoType?: string;
+  amount: string;
+  asset: string;
+  predicate: unknown;
+}
+
 
 export interface PaymentPageRecord {
   pagingToken: string;
   ledger?: number;
   payment?: PaymentRecord;
+  claimableBalance?: ClaimableBalanceRecord;
 }
 
 class StellarService {
@@ -111,20 +138,24 @@ class StellarService {
   /**
    * Get transaction details
    */
-  async getTransaction(txHash: string): Promise<any> {
+  async getTransaction(
+    txHash: string,
+    observedTransaction?: HorizonTransactionLike
+  ): Promise<HorizonTransactionDetails> {
     try {
-      const transaction = await horizonCall(
+      const transaction = observedTransaction ?? await horizonCall(
         () => server.transactions().transaction(txHash).call(),
         { label: 'transactions().transaction' }
       );
       const operations = await horizonCall(
-        () => server.operations().forTransaction(txHash).call(),
+        () => server.operations().forTransaction(txHash).order('asc').limit(200).call(),
         { label: 'operations().forTransaction' }
       );
 
       return {
         transaction,
         operations: operations.records,
+        network: STELLAR_NETWORK,
       };
     } catch (error: any) {
       emitOperationalFailure('stellar.transaction');
@@ -151,7 +182,8 @@ class StellarService {
       .stream({
         onmessage: async (record: any) => {
           try {
-            if (record.type === 'payment' && record.to === publicKey) {
+            const normalized = normalizePaymentOperation(record);
+            if (normalized && destinationMatches(normalized.to, publicKey)) {
               // Get transaction to retrieve memo
               const transaction = await horizonCall(
                 () => server.transactions().transaction(record.transaction_hash).call(),
@@ -161,11 +193,12 @@ class StellarService {
               const payment: PaymentRecord = {
                 id: record.id,
                 txHash: record.transaction_hash,
-                from: record.from,
-                to: record.to,
-                amount: record.amount,
-                assetCode: record.asset_type === 'native' ? 'XLM' : (record.asset_code ?? 'UNKNOWN'),
-                assetIssuer: record.asset_type === 'native' ? undefined : record.asset_issuer,
+                from: normalized.from,
+                to: normalized.to,
+                amount: normalized.amount,
+                assetCode: normalized.assetType === 'native' ? 'XLM' : (normalized.assetCode ?? 'UNKNOWN'),
+                assetIssuer: normalized.assetType === 'native' ? undefined : normalized.assetIssuer,
+                operationType: normalized.type,
                 memo: transaction.memo || undefined,
                 memoType: transaction.memo_type || undefined,
                 ledger: transaction.ledger_attr,
@@ -198,50 +231,81 @@ class StellarService {
     cursor: string,
     limit: number = 100
   ): Promise<PaymentPageRecord[]> {
+    // The operations feed includes claimable balances; its paging tokens share
+    // the payment feed's operation ordering, so existing checkpoints remain valid.
     const page = await horizonCall(
-      () =>
-        server
-          .payments()
-          .forAccount(publicKey)
-          .cursor(cursor)
-          .order('asc')
-          .limit(limit)
-          .call(),
+      () => server.operations().forAccount(publicKey).cursor(cursor).order('asc').limit(limit).call(),
       { label: 'getPaymentsPage' }
     );
 
     const records: PaymentPageRecord[] = [];
+    const transactions = new Map<string, any>();
     for (const record of page.records as any[]) {
       const pagingToken = String(record.paging_token ?? record.id);
       const base: PaymentPageRecord = { pagingToken };
-
-      if (record.type !== 'payment' || record.to !== publicKey) {
+      const normalized = normalizePaymentOperation(record);
+      const unsupportedTo = record.type === 'create_account' ? record.account
+        : record.type === 'account_merge' ? record.into ?? record.to : undefined;
+      const claimant = record.type === 'create_claimable_balance'
+        ? record.claimants?.find((entry: any) => entry.destination === publicKey) : undefined;
+      if (!(normalized && destinationMatches(normalized.to, publicKey))
+          && !(unsupportedTo && destinationMatches(unsupportedTo, publicKey)) && !claimant) {
         records.push(base);
         continue;
       }
 
-      const transaction = await horizonCall(
-        () => server.transactions().transaction(record.transaction_hash).call(),
-        { label: 'getPaymentsPage tx lookup' }
-      );
-      const ledger = Number((transaction as any).ledger_attr ?? (transaction as any).ledger);
-      records.push({
-        pagingToken,
-        ledger: Number.isFinite(ledger) ? ledger : undefined,
-        payment: {
+      let transaction = transactions.get(record.transaction_hash);
+      if (!transaction) {
+        transaction = await horizonCall(
+          () => server.transactions().transaction(record.transaction_hash).call(),
+          { label: 'getPaymentsPage tx lookup' }
+        );
+        transactions.set(record.transaction_hash, transaction);
+      }
+      const ledger = Number(transaction.ledger_attr ?? transaction.ledger);
+      base.ledger = Number.isFinite(ledger) ? ledger : undefined;
+
+      if (claimant) {
+        // Horizon's create operation omits balance_id. Its immutable creation
+        // effect supplies the actual id, including after a balance is claimed.
+        if (transaction.memo) {
+          const effects = await horizonCall(
+            () => server.effects().forOperation(String(record.id)).limit(200).call(),
+            { label: 'claimable balance creation effects' }
+          );
+          const effect = (effects.records as any[]).find((entry) => entry.type === 'claimable_balance_created');
+          if (!effect?.balance_id) throw new Error('Claimable balance creation effect is unavailable');
+          base.claimableBalance = {
+            balanceId: effect.balance_id,
+            txHash: record.transaction_hash,
+            claimant: publicKey,
+            memo: transaction.memo,
+            memoType: transaction.memo_type,
+            amount: record.amount,
+            asset: record.asset,
+            predicate: claimant.predicate,
+          };
+        }
+      } else {
+        base.payment = {
           id: String(record.id),
           txHash: record.transaction_hash,
-          from: record.from,
-          to: record.to,
-          amount: record.amount,
-          assetCode: record.asset_type === 'native' ? 'XLM' : (record.asset_code ?? 'UNKNOWN'),
-          assetIssuer: record.asset_type === 'native' ? undefined : record.asset_issuer,
-          memo: (transaction as any).memo || undefined,
-          memoType: (transaction as any).memo_type || undefined,
+          from: normalized?.from ?? record.from ?? record.funder ?? record.source_account,
+          to: normalized?.to ?? unsupportedTo,
+          amount: normalized?.amount ?? record.starting_balance ?? '',
+          assetCode: normalized
+            ? normalized.assetType === 'native' ? 'XLM' : (normalized.assetCode ?? 'UNKNOWN')
+            : 'XLM',
+          assetIssuer: normalized?.assetType === 'native' ? undefined : normalized?.assetIssuer,
+          memo: transaction.memo || undefined,
+          memoType: transaction.memo_type || undefined,
           ledger: Number.isFinite(ledger) ? ledger : 0,
-          createdAt: record.created_at,
-        },
-      });
+          createdAt: transaction.created_at ?? record.created_at,
+          operationType: record.type,
+          transaction,
+        };
+      }
+      records.push(base);
     }
     return records;
   }
@@ -249,7 +313,7 @@ class StellarService {
   /** Anchor a brand-new monitor at the latest known operation. */
   async getLatestPaymentCursor(publicKey: string): Promise<string> {
     const page = await horizonCall(
-      () => server.payments().forAccount(publicKey).order('desc').limit(1).call(),
+      () => server.operations().forAccount(publicKey).order('desc').limit(1).call(),
       { label: 'getLatestPaymentCursor' }
     );
     const latest = (page.records as any[])[0];
@@ -275,7 +339,8 @@ class StellarService {
       const paymentRecords: PaymentRecord[] = [];
 
       for (const record of payments.records) {
-        if (record.type === 'payment') {
+        const normalized = normalizePaymentOperation(record);
+        if (normalized) {
           const transaction = await horizonCall(
             () => server.transactions().transaction(record.transaction_hash).call(),
             { label: 'getRecentPayments tx lookup' }
@@ -284,11 +349,12 @@ class StellarService {
           paymentRecords.push({
             id: record.id,
             txHash: record.transaction_hash,
-            from: record.from,
-            to: record.to,
-            amount: record.amount,
-            assetCode: record.asset_type === 'native' ? 'XLM' : (record.asset_code ?? 'UNKNOWN'),
-            assetIssuer: record.asset_type === 'native' ? undefined : record.asset_issuer,
+            from: normalized.from,
+            to: normalized.to,
+            amount: normalized.amount,
+            assetCode: normalized.assetType === 'native' ? 'XLM' : (normalized.assetCode ?? 'UNKNOWN'),
+            assetIssuer: normalized.assetType === 'native' ? undefined : normalized.assetIssuer,
+            operationType: normalized.type,
             memo: transaction.memo || undefined,
             memoType: transaction.memo_type || undefined,
             ledger: transaction.ledger_attr,

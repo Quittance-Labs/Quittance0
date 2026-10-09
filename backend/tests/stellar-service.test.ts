@@ -27,18 +27,27 @@ describe('StellarService - Horizon Read Consolidation', () => {
     }
   });
 
-  it('verifies payment with a non-existent 64-character hash returns TRANSACTION_NOT_FOUND', async () => {
-    const nonExistentHash = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-    const result = await stellarService.verifyPayment(nonExistentHash, {
-      memo: 'INV-123',
-      amount: 10,
-      destination: 'GABC',
-      assetCode: 'XLM',
+  it('returns TRANSACTION_NOT_FOUND for a confirmed Horizon 404', async (t) => {
+    t.mock.method(stellarService, 'getTransaction', async () => {
+      throw Object.assign(new Error('Horizon response'), { response: { status: 404 } });
     });
-
+    const result = await stellarService.verifyPayment(
+      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      { memo: 'INV-123', amount: 10, destination: 'GABC', assetCode: 'XLM' },
+    );
     assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.equal(result.code, 'TRANSACTION_NOT_FOUND');
-    }
+    if (!result.ok) assert.equal(result.code, 'TRANSACTION_NOT_FOUND');
+  });
+
+  it('returns VERIFY_UNAVAILABLE for a confirmed Horizon 503', async (t) => {
+    t.mock.method(stellarService, 'getTransaction', async () => {
+      throw Object.assign(new Error('Horizon response'), { response: { status: 503 } });
+    });
+    const result = await stellarService.verifyPayment(
+      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      { memo: 'INV-123', amount: 10, destination: 'GABC', assetCode: 'XLM' },
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.code, 'VERIFY_UNAVAILABLE');
   });
 });

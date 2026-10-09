@@ -75,29 +75,29 @@ Verification mapping:
 
 ### 2.3 Path Payment Strict Send (`path_payment_strict_send`)
 
-The payer specifies the exact source amount sent. The destination receives `dest_amount` of the destination asset.
+The payer specifies the exact source amount sent. Horizon reports what the destination receives in `amount` and `asset_*`; `source_amount` and `source_asset_*` describe the sender. The verifier also accepts the legacy synthetic `dest_*` aliases retained by the original fixture matrix.
 
 ```json
 {
   "type": "path_payment_strict_send",
   "from": "GCUXM6OT4H6PD7R6YUS632SDK36BYKDESGS4BSHTPTPDXBCYTE6JUEJE",
   "to": "GAYF33NNNMI2Z6VNRFXQ64D4E4SF77PM46NW3ZUZEEU5X7FCHAZCMHKU",
-  "amount": "200.0000000",
+  "source_amount": "200.0000000",
   "source_asset_type": "native",
-  "dest_amount": "25.0000000",
-  "dest_min": "24.5000000",
-  "dest_asset_type": "credit_alphanum4",
-  "dest_asset_code": "USDC",
-  "dest_asset_issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+  "amount": "25.0000000",
+  "destination_min": "24.5000000",
+  "asset_type": "credit_alphanum4",
+  "asset_code": "USDC",
+  "asset_issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
   "path": []
 }
 ```
 
 Verification mapping:
 - Destination: `operation.to`
-- Amount delivered: `operation.dest_amount`
-- Asset code: `operation.dest_asset_code`
-- Asset issuer: `operation.dest_asset_issuer`
+- Amount delivered: `operation.amount`
+- Asset code: `operation.asset_code`
+- Asset issuer: `operation.asset_issuer`
 
 ---
 
@@ -222,3 +222,14 @@ The following items are outside the scope of Issue #378:
 1. Direct fiat on/off-ramp anchor integrations (SEP-24 / SEP-6).
 2. Mainnet Circle issuer deployment and automated multi-issuer swapping.
 3. Multi-currency portfolio analytics on the seller dashboard.
+
+## Monitor parity and exact public receipts
+
+The original path-payment examples above and in `usdc-verify-edge-cases.fixture.ts`
+are synthetic. Their reused ordinary-payment hash does not prove those path
+operations occurred on-chain. Exact public strict-send, strict-receive and
+claimable-balance responses, with their real transaction hashes and provenance,
+now live in `backend/tests/fixtures/monitor-testnet-receipts.json`. See
+[Payment monitor evidence](PAYMENT_MONITOR.md#reproducible-evidence) for the
+unchanged receipts, explicitly synthetic invoice replays, and the monitor/HTTP
+acceptance command.

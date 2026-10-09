@@ -146,6 +146,8 @@ export interface HorizonTransactionLike {
 
 export interface HorizonOperationLike {
   type: string;
+  account?: string;
+  into?: string;
   from?: string;
   to?: string;
   amount?: string;
@@ -416,7 +418,12 @@ export function verifyHorizonPayment(input: VerifyPaymentInput): VerificationRes
   const selection = selectInvoicePaymentOperation(operations, expected.destination);
 
   if (selection.kind === 'none') {
-    return failure('NO_PAYMENT_OPERATION');
+    const unsupported = operations.some((operation) => {
+      const to = operation.type === 'create_account' ? operation.account
+        : operation.type === 'account_merge' ? operation.into ?? operation.to : undefined;
+      return to && destinationMatches(to, expected.destination);
+    });
+    return failure(unsupported ? 'UNSUPPORTED_PAYMENT_OPERATION' : 'NO_PAYMENT_OPERATION');
   }
   if (selection.kind === 'ambiguous') {
     return failure('AMBIGUOUS_PAYMENT_OPERATION');

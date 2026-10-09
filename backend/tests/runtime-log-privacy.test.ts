@@ -113,7 +113,7 @@ describe('runtime log privacy at real HTTP and service boundaries', () => {
         const invoice = created.body.data.invoice;
         horizonResponder = url => {
           if (scenario === 'outage') return { status: 503, body: { status: 503, title: PRIVATE_MARKER, detail: `wallet=${SELLER}` } };
-          if (url.endsWith('/operations')) return { status: 200, body: { _embedded: { records: [{
+          if (new URL(url, 'http://horizon.test').pathname.endsWith('/operations')) return { status: 200, body: { _embedded: { records: [{
             id: '1', type: 'payment', from: PAYER, to: SELLER, amount: '25.0000000', asset_type: 'native',
           }] } } };
           return { status: 200, body: {

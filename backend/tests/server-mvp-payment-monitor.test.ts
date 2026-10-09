@@ -13,6 +13,7 @@ import paymentMonitorService, {
   PaymentPageSource,
 } from '../src/services/payment-monitor.service';
 import { FilePaymentMonitorCheckpointStore } from '../src/services/payment-monitor-checkpoint';
+import { withPaymentTransactions } from './fixtures/payment-page-source';
 
 const SELLER = 'GB3Q3VRHH3OQDYITTLONDLEHWQGKB27T2BEDSFHIUMOERULVXPDXRKG4';
 const PAYER = 'GB6IHEZ4QNOHJZRYRFLOC45P4SK3KKL6KNPI5WEG6FNVSZ2K5FS2MNY7';
@@ -70,14 +71,14 @@ describe('server-mvp payment monitor integration', () => {
     paymentMonitorService.configure({
       account: SELLER,
       network: 'TESTNET',
-      source: {
+      source: withPaymentTransactions({
         async getLatestPaymentCursor() {
           return 'cursor-sync-0';
         },
         async getPaymentsPage() {
           return [];
         },
-      },
+      }),
       checkpoints: new FilePaymentMonitorCheckpointStore(checkpointFile),
     });
     server = await new Promise<http.Server>((resolve, reject) => {
@@ -118,7 +119,7 @@ describe('server-mvp payment monitor integration', () => {
     });
     assert.equal(invoice.status, 'PENDING');
 
-    const source: PaymentPageSource = {
+    const source: PaymentPageSource = withPaymentTransactions({
       async getLatestPaymentCursor() {
         return 'cursor-0';
       },
@@ -142,7 +143,7 @@ describe('server-mvp payment monitor integration', () => {
           },
         ];
       },
-    };
+    });
 
     const checkpoints = new FilePaymentMonitorCheckpointStore(checkpointFile);
     await checkpoints.save({
@@ -184,7 +185,7 @@ describe('server-mvp payment monitor integration', () => {
       memo: 'MEMO-MVP-PARTIAL',
     });
 
-    const source: PaymentPageSource = {
+    const source: PaymentPageSource = withPaymentTransactions({
       async getLatestPaymentCursor() {
         return 'cursor-1';
       },
@@ -208,7 +209,7 @@ describe('server-mvp payment monitor integration', () => {
           },
         ];
       },
-    };
+    });
 
     const checkpoints = new FilePaymentMonitorCheckpointStore(checkpointFile);
     await checkpoints.save({

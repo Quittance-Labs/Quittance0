@@ -19,6 +19,7 @@ const KNOWN_CODE_FIXTURES = [
   { code: 'TRANSACTION_CLOSE_TIME_UNAVAILABLE', label: 'Close time unavailable' },
   { code: 'VERIFY_UNAVAILABLE', label: 'Verification unavailable' },
   { code: 'NO_PAYMENT_OPERATION', label: 'No payment operation' },
+  { code: 'UNSUPPORTED_PAYMENT_OPERATION', label: 'Unsupported payment operation' },
   { code: 'AMBIGUOUS_PAYMENT_OPERATION', label: 'Multiple payments to seller' },
   { code: 'MEMO_TYPE_MISMATCH', label: 'Not a text memo' },
   { code: 'MEMO_MISMATCH', label: 'Memo mismatch' },
