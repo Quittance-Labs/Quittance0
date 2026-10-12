@@ -119,12 +119,15 @@ app.use((req: Request, res: Response) => {
  * configured one, and so importing this module never starts a server.
  */
 export function startServer(port: number | string = PORT) {
-  if (SELLER_PUBLIC_KEY) {
-    try {
-      paymentMonitorService.start();
-    } catch (error) {
-      emitOperationalFailure('monitor.start', 'warn');
+  try {
+    if (SELLER_PUBLIC_KEY) {
+      console.log(`Single-seller mode: pinned account ${SELLER_PUBLIC_KEY}`);
+    } else {
+      console.log('Dynamic seller mode: monitoring accounts with active watched invoices');
     }
+    paymentMonitorService.start();
+  } catch (error) {
+    emitOperationalFailure('monitor.start', 'warn');
   }
 
   return app.listen(port, () => {

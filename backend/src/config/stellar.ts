@@ -46,21 +46,26 @@ export const SELLER_PUBLIC_KEY = process.env.SELLER_PUBLIC_KEY || '';
 export const SELLER_SECRET_KEY = process.env.SELLER_SECRET_KEY || '';
 
 // Validate configuration
-export const validateStellarConfig = () => {
-  if (!SELLER_PUBLIC_KEY || !SELLER_SECRET_KEY) {
+export const validateStellarConfig = (options?: { requireSecret?: boolean }) => {
+  const requireSecret = options?.requireSecret ?? false;
+  if (requireSecret && (!SELLER_PUBLIC_KEY || !SELLER_SECRET_KEY)) {
     throw new Error('Stellar account keys are not configured properly');
   }
 
-  try {
-    StellarSdk.Keypair.fromPublicKey(SELLER_PUBLIC_KEY);
-  } catch (error) {
-    throw new Error('Invalid SELLER_PUBLIC_KEY');
+  if (SELLER_PUBLIC_KEY) {
+    try {
+      StellarSdk.Keypair.fromPublicKey(SELLER_PUBLIC_KEY);
+    } catch (error) {
+      throw new Error('Invalid SELLER_PUBLIC_KEY');
+    }
   }
 
-  try {
-    StellarSdk.Keypair.fromSecret(SELLER_SECRET_KEY);
-  } catch (error) {
-    throw new Error('Invalid SELLER_SECRET_KEY');
+  if (requireSecret || SELLER_SECRET_KEY) {
+    try {
+      StellarSdk.Keypair.fromSecret(SELLER_SECRET_KEY);
+    } catch (error) {
+      throw new Error('Invalid SELLER_SECRET_KEY');
+    }
   }
 
   console.log(`✅ Stellar configured for ${STELLAR_NETWORK}`);

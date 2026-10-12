@@ -11,9 +11,12 @@ export interface ReadinessCheck {
     horizonUrl: boolean;
     storageReady: boolean;
     horizonPing?: boolean;
+    singleInstance?: boolean;
   };
   reasons: string[];
   missing: string[];
+  singleInstance?: boolean;
+  leaderElection?: string;
 }
 
 function normalizeOrigin(value: string): string | null {
@@ -66,6 +69,10 @@ export function deploymentReadiness(
     horizonUrl: isHttps || isDevOrTestLocal,
     storageReady: true, // In-memory MVP is immediately ready without Postgres
   };
+  const isMemory = options.storage === 'memory' || options.storage === 'in-memory';
+  if (isMemory) {
+    checks.singleInstance = true;
+  }
   const reasons: string[] = [];
   const missing: string[] = [];
 
@@ -86,7 +93,13 @@ export function deploymentReadiness(
     missing.push('STELLAR_HORIZON_URL');
   }
 
-  return { ready: Object.values(checks).every(Boolean), checks, reasons, missing };
+  return {
+    ready: Object.values(checks).every(Boolean),
+    checks,
+    reasons,
+    missing,
+    ...(isMemory ? { singleInstance: true, leaderElection: 'single-instance' } : {}),
+  };
 }
 
 export interface HorizonPingOptions {
@@ -174,11 +187,13 @@ export async function deploymentReadinessAsync(
   }
 
   const allChecksPassed = Object.values(checks).every(Boolean);
+  const isMemory = options.storage === 'memory' || options.storage === 'in-memory';
   return {
     ready: allChecksPassed,
     checks,
     reasons,
     missing,
+    ...(isMemory ? { singleInstance: true, leaderElection: 'single-instance' } : {}),
   };
 }
 

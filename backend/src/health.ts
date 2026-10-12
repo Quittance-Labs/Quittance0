@@ -38,10 +38,12 @@ export function readinessHandler(storage: string) {
       pingHorizon: pingRequested ? true : undefined,
     });
 
+    const isMemory = storage === 'memory' || storage === 'in-memory';
     res.status(readiness.ready ? 200 : 503).json({
       status: readiness.ready ? 'ready' : 'not_ready',
       service: 'Quittance API',
       storage,
+      ...(isMemory ? { leaderElection: 'single-instance', singleInstance: true } : {}),
       ...readiness,
       timestamp: new Date().toISOString(),
     });

@@ -130,11 +130,41 @@ The deterministic regression test in
 backend/tests/payment-monitor-durable-cursor.test.ts forces the same restart
 boundary with a shared durable checkpoint and asserts PENDING to PAID.
 
+## Multi-seller wallet monitoring and leader lease (Issue #582)
+
+### Multi-account watch set derivation
+
+Rather than polling only a single pinned `SELLER_PUBLIC_KEY`, the payment monitor dynamically derives the set of accounts to poll by grouping active watched invoices by `sellerPublicKey`.
+- `SELLER_PUBLIC_KEY` remains supported as an optional pinned account for single-seller deploys.
+- Accounts are dynamically added and removed from the active polling loop as invoices transition through their lifecycle.
+- When an account has no active watched invoices, it transitions to idle; its durable cursor is preserved in `payment_monitor_checkpoints` so subsequent invoices resume without rescan.
+
+### Creation-aligned cursor bootstrapping
+
+When an account is first encountered without an existing checkpoint, its cursor is bootstrapped at or before the earliest watched invoice's `createdAt` timestamp rather than anchoring to `now` (`getLatestPaymentCursor`). This ensures that payments landing on-chain between invoice creation and the account's first poll cycle are never skipped.
+
+### Fair round-robin budgeting and isolated failure backoff
+
+Accounts share the overall Horizon client concurrency and page budgets:
+- Accounts are polled in round-robin order with bounded page allowances per tick.
+- If Horizon calls for one account fail (rate-limiting, timeout, or network blip), that account enters exponential backoff (`monitorBackoffMs`) while other accounts continue polling and settling normally. A failing account delays other accounts by at most one tick.
+
+### PostgreSQL advisory lock leader lease
+
+In multi-replica environments with PostgreSQL storage:
+- Replicas coordinate leadership via session-level PostgreSQL advisory locks (`pg_try_advisory_lock(742918452)`) on a dedicated pool connection.
+- Exactly one elected process polls Horizon; other replicas continue serving HTTP requests in standby.
+- On leader shutdown or process termination, PostgreSQL immediately releases the lock, allowing a standby replica to acquire the lease and resume monitoring with no double settlement.
+- In-memory mode operates in single-instance mode and reports `singleInstance: true` and `leaderElection: 'single-instance'` in readiness probes.
+
+### Operator endpoint authentication
+
+`POST /api/payment/sync` is protected by an operator token:
+- Replicas validate the token provided in `Authorization: Bearer <token>` or `X-Operator-Token: <token>`.
+- Calls without a valid operator token return HTTP 401 Unauthorized.
+- The expected token is configured via `OPERATOR_TOKEN` or `PAYMENT_MONITOR_OPERATOR_TOKEN` (defaulting to `test-operator-token` in development/test environments).
+
 ## Follow-ups
 
-- Run one monitor per seller account when wallet-scoped automatic settlement is
-  introduced; the current environment-key monitor remains a single-account
-  deployment feature.
 - Add an alert when lastSuccessAt exceeds the invoice page's polling window.
-- Move settlement and cursor commit into one Postgres transaction if future
-  side effects become non-idempotent.
+- Move settlement and cursor commit into one Postgres transaction if future side effects become non-idempotent.

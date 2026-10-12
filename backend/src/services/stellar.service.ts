@@ -257,6 +257,32 @@ class StellarService {
   }
 
   /**
+   * Find the payment paging token at or before the given timestamp so new
+   * account watches do not skip payments landing between invoice creation
+   * and first poll (issue #582).
+   */
+  async getCursorAtOrBefore(publicKey: string, time: Date | string): Promise<string> {
+    const targetMs = new Date(time).getTime();
+    try {
+      const page = await horizonCall(
+        () => server.payments().forAccount(publicKey).order('desc').limit(50).call(),
+        { label: 'getCursorAtOrBefore' }
+      );
+      const records = page.records as any[];
+      if (records.length === 0) return '0';
+      for (const rec of records) {
+        const recTime = new Date(rec.created_at).getTime();
+        if (recTime < targetMs) {
+          return String(rec.paging_token ?? rec.id);
+        }
+      }
+      return '0';
+    } catch {
+      return '0';
+    }
+  }
+
+  /**
    * Get recent payments for an account
    */
   async getRecentPayments(publicKey: string, limit: number = 10): Promise<PaymentRecord[]> {

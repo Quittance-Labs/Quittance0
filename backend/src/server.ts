@@ -75,10 +75,11 @@ async function initialize() {
 
     if (SELLER_PUBLIC_KEY) {
       validateStellarConfig();
-      paymentMonitorService.start();
+      console.log(`Single-seller mode: pinned account ${SELLER_PUBLIC_KEY}`);
     } else {
-      console.log('Wallet-scoped mode: no SELLER_PUBLIC_KEY, payment monitor disabled');
+      console.log('Dynamic seller mode: monitoring accounts with active watched invoices');
     }
+    paymentMonitorService.start();
   } catch (error) {
     emitOperationalFailure('server.initialize');
     process.exit(1);

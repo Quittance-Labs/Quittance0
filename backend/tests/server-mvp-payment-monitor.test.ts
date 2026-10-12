@@ -22,7 +22,8 @@ function jsonRequest(
   port: number,
   method: string,
   path: string,
-  body?: unknown
+  body?: unknown,
+  customHeaders?: Record<string, string>
 ): Promise<{ status: number; body: any }> {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? undefined : JSON.stringify(body);
@@ -38,6 +39,7 @@ function jsonRequest(
           ...(payload
             ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
             : {}),
+          ...customHeaders,
         },
       },
       (response) => {
@@ -101,8 +103,20 @@ describe('server-mvp payment monitor integration', () => {
     assert.ok(typeof res.body.data.state === 'string');
   });
 
-  it('exposes POST /api/payment/sync with success response', async () => {
+  it('rejects POST /api/payment/sync without operator token', async () => {
     const res = await jsonRequest(port, 'POST', '/api/payment/sync', { limit: 25 });
+    assert.equal(res.status, 401);
+    assert.equal(res.body.success, false);
+  });
+
+  it('exposes POST /api/payment/sync with success response when operator token provided', async () => {
+    const res = await jsonRequest(
+      port,
+      'POST',
+      '/api/payment/sync',
+      { limit: 25 },
+      { authorization: 'Bearer test-operator-token' }
+    );
     assert.equal(res.status, 200);
     assert.equal(res.body.success, true);
     assert.equal(res.body.limit, 25);

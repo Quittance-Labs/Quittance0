@@ -26,7 +26,10 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { createInvoiceRouter } from './routes/invoice.routes';
 import { createPaymentMonitorRouter } from './routes/payment-monitor.routes';
-import { FilePaymentMonitorCheckpointStore } from './services/payment-monitor-checkpoint';
+import {
+  FilePaymentMonitorCheckpointStore,
+  PostgresPaymentMonitorCheckpointStore,
+} from './services/payment-monitor-checkpoint';
 import paymentMonitorService from './services/payment-monitor.service';
 import invoiceMemoryService from './services/invoice-memory.service';
 import { MemoryInvoiceStorage } from './storage/memory-invoice-storage';
@@ -62,11 +65,13 @@ if (storageMode === 'postgres') {
 paymentMonitorService.configure({
   invoices: storageMode === 'postgres' ? undefined : invoiceMemoryService,
   database: storageMode === 'postgres' ? pool : undefined,
-  checkpoints: new FilePaymentMonitorCheckpointStore(
-    process.env.PAYMENT_MONITOR_CURSOR_FILE
-      ? path.resolve(process.env.PAYMENT_MONITOR_CURSOR_FILE)
-      : path.resolve('data/payment-monitor-checkpoint.json')
-  ),
+  checkpoints: storageMode === 'postgres'
+    ? new PostgresPaymentMonitorCheckpointStore(pool)
+    : new FilePaymentMonitorCheckpointStore(
+        process.env.PAYMENT_MONITOR_CURSOR_FILE
+          ? path.resolve(process.env.PAYMENT_MONITOR_CURSOR_FILE)
+          : path.resolve('data/payment-monitor-checkpoint.json')
+      ),
 });
 
 // ── Express application ──────────────────────────────────────────────────────
@@ -144,17 +149,18 @@ async function initialize(): Promise<void> {
     }
   }
 
-  if (SELLER_PUBLIC_KEY) {
-    try {
+  try {
+    if (SELLER_PUBLIC_KEY) {
       if (storageMode === 'postgres') {
         validateStellarConfig();
       }
-      paymentMonitorService.start();
-    } catch (error) {
-      emitOperationalFailure('monitor.start', 'warn');
+      console.log(`Single-seller mode: pinned account ${SELLER_PUBLIC_KEY}`);
+    } else {
+      console.log('Dynamic seller mode: monitoring accounts with active watched invoices');
     }
-  } else {
-    console.log('Wallet-scoped mode: no SELLER_PUBLIC_KEY, payment monitor disabled');
+    paymentMonitorService.start();
+  } catch (error) {
+    emitOperationalFailure('monitor.start', 'warn');
   }
 }
 
