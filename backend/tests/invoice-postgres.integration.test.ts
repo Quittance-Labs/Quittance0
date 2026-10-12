@@ -5,6 +5,8 @@ import * as path from 'node:path';
 import { Pool } from 'pg';
 import { Keypair } from '@stellar/stellar-sdk';
 import { InvoiceService } from '../src/services/invoice.service.ts';
+import { PaymentClaimError } from '../src/domain/payment-attribution.ts';
+import { runMigrations } from '../src/db/migration-runner.ts';
 import type { CreateInvoiceInput } from '../src/utils/validation.ts';
 import { PostgresInvoiceStorage } from '../src/storage/postgres-invoice-storage.ts';
 import { MemoryInvoiceStorage } from '../src/storage/memory-invoice-storage.ts';
@@ -13,8 +15,6 @@ import { MemoryStorage } from '../src/storage/memory-storage.ts';
 import type { PayerInfo, StoredInvoice } from '../src/storage/invoice-storage.ts';
 
 const DATABASE_URL = process.env.DATABASE_URL;
-const SCHEMA_PATH = path.join(__dirname, '../../db/schema.sql');
-const SEED_PATH = path.join(__dirname, '../../db/seed.sql');
 
 const SELLER_A = Keypair.random().publicKey();
 const SELLER_B = Keypair.random().publicKey();
@@ -35,7 +35,7 @@ describe('Invoice persistence on Postgres', { skip: DATABASE_URL ? false : 'DATA
 
   before(async () => {
     adminPool = new Pool({ connectionString: DATABASE_URL });
-    await adminPool.query(fs.readFileSync(SCHEMA_PATH, 'utf-8'));
+    await runMigrations(adminPool);
   });
 
   after(async () => {
@@ -221,6 +221,32 @@ describe('Invoice persistence on Postgres', { skip: DATABASE_URL ? false : 'DATA
       await assert.rejects(
         () => service.markAsPaid(created.id, 'd'.repeat(64), PAYER, undefined, { settledAt: new Date() }),
         /Invoice not found, expired, or already processed/
+      );
+    } finally {
+      await pool.end();
+    }
+  });
+
+  it('settling one tx hash on two invoices returns the typed claim error on a migrated database', async () => {
+    const pool = new Pool({ connectionString: DATABASE_URL });
+    const service = new InvoiceService(pool);
+
+    try {
+      const sharedTxHash = 'e'.repeat(64);
+      const inv1 = await service.createInvoice(createInput(SELLER_A, { amount: 10 }));
+      const inv2 = await service.createInvoice(createInput(SELLER_A, { amount: 20 }));
+
+      await service.markAsPaid(inv1.id, sharedTxHash, PAYER, undefined, { settledAt: new Date() });
+
+      await assert.rejects(
+        () => service.markAsPaid(inv2.id, sharedTxHash, PAYER, undefined, { settledAt: new Date() }),
+        (err: any) => {
+          assert.ok(err instanceof PaymentClaimError, `Expected PaymentClaimError, got: ${err}`);
+          assert.equal(err.name, 'PaymentClaimError');
+          assert.equal(err.txHash, sharedTxHash);
+          assert.equal(err.claimedByInvoiceId, inv1.id);
+          return true;
+        }
       );
     } finally {
       await pool.end();

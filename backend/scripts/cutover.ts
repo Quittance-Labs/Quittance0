@@ -19,6 +19,7 @@ import {
   importSnapshotToPostgres,
   CutoverSnapshot,
 } from '../src/services/cutover.service';
+import { checkMigrationStatus, runMigrations } from '../src/db/migration-runner';
 
 async function main() {
   const options = {
@@ -78,6 +79,17 @@ Environment Variables:
     console.log(`[Cutover] Snapshot validation PASSED (${snapshot.count} invoices).`);
 
     const isDryRun = Boolean(values['dry-run']);
+    console.log(`[Cutover] Checking database migration status...`);
+    const status = await checkMigrationStatus(pool);
+    if (!status.ready) {
+      if (isDryRun) {
+        console.log(`[Cutover] Pending migrations detected: ${status.pendingVersions.join(', ')}`);
+      } else {
+        console.log(`[Cutover] Applying pending migrations before import...`);
+        await runMigrations(pool);
+      }
+    }
+
     console.log(`[Cutover] Executing transactional import (dry-run: ${isDryRun})...`);
 
     const result = await importSnapshotToPostgres(pool, snapshot, { dryRun: isDryRun });

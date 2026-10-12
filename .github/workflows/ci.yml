@@ -27,6 +27,21 @@ jobs:
       run:
         working-directory: backend
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: quittance_test
+          POSTGRES_USER: quittance
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     env:
       # The integration test starts its own Horizon stub on a loopback port and
       # overrides this at runtime. It is set here so the suite never reaches the
@@ -34,6 +49,8 @@ jobs:
       STELLAR_NETWORK: TESTNET
       STELLAR_HORIZON_URL: http://127.0.0.1:1
       NODE_ENV: test
+      DATABASE_URL: postgresql://quittance:password@localhost:5432/quittance_test
+      INVOICE_STORAGE: postgres
 
     steps:
       - uses: actions/checkout@v4
@@ -58,7 +75,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test
+      - name: Migrate database (run 1)
+        run: npm run db:migrate
+
+      - name: Migrate database (run 2 — idempotency check)
+        run: npm run db:migrate
+
+      - name: Test (including Postgres integration suite)
         run: npm test
 
   frontend:

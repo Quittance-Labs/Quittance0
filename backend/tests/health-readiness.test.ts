@@ -321,5 +321,31 @@ describe('Liveness and Readiness Probes (#437)', () => {
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
     });
+
+    it('returns HTTP 503 in postgres mode when DATABASE_URL is missing or migration pending', async () => {
+      const app = express();
+      process.env.NODE_ENV = 'production';
+      process.env.FRONTEND_URL = 'https://quittance.example.com';
+      process.env.STELLAR_NETWORK = 'TESTNET';
+      process.env.STELLAR_HORIZON_URL = 'https://horizon-testnet.stellar.org';
+      process.env.ALLOW_SIMULATE = 'false';
+      delete process.env.DATABASE_URL;
+
+      app.get('/api/ready', readinessHandler('postgres'));
+
+      const server = app.listen(0, '127.0.0.1');
+      await new Promise<void>((resolve) => server.once('listening', resolve));
+      const port = (server.address() as AddressInfo).port;
+
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/ready`);
+        assert.equal(res.status, 503);
+        const body = (await res.json()) as any;
+        assert.equal(body.ready, false);
+        assert.equal(body.checks.storageReady, false);
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
   });
 });

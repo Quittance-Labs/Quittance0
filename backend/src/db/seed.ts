@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { pool } from '../config/database';
+import { checkMigrationStatus, runMigrations } from './migration-runner';
 
 // SQL lives at the repo root (db/), the runner lives with the backend code so
 // `npm run db:seed` (tsx src/db/seed.ts) resolves both the script and its
@@ -20,6 +21,13 @@ async function seed() {
   console.log('🌱 Seeding sample invoices...\n');
 
   try {
+    // Ensure migrations are up to date before seeding
+    const status = await checkMigrationStatus(pool);
+    if (!status.ready) {
+      console.log('⚡ Pending migrations detected before seed, applying migrations...');
+      await runMigrations(pool);
+    }
+
     const seedPath = path.join(SQL_DIR, 'seed.sql');
     const seedSql = fs.readFileSync(seedPath, 'utf-8');
 

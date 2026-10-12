@@ -54,18 +54,20 @@ DATABASE_URL=postgresql://user:password@localhost:5432/quittance
 INVOICE_STORAGE=postgres
 ```
 
-### 2. Apply the schema (idempotent)
+### 2. Apply the schema (versioned, forward-only migrations)
 
 ```bash
 cd backend
 npm run db:migrate
 ```
 
-The migration script (`db/schema.sql`) creates the invoices, transactions,
-payment_events, and payment_monitor_checkpoints tables; adds all required
-indexes; and adds the `payment_tx_hash` uniqueness constraint.  Re-running the
-migration on an existing database is safe — every `CREATE TABLE`, `ALTER TABLE`,
-and `CREATE INDEX` statement uses `IF NOT EXISTS`.
+The migration runner (`backend/src/db/migration-runner.ts`) applies numbered,
+checksummed SQL migrations from `db/migrations/` under a PostgreSQL advisory lock
+(`pg_advisory_lock`), with each migration committed in its own transaction.
+Applied versions and SHA-256 checksums are tracked in the `schema_migrations` table.
+Re-running the migration on an existing database is safe and idempotent — already applied
+migrations are verified against stored checksums and skipped. Existing databases
+built from the legacy schema adopt baseline `0001` automatically upon detection.
 
 ### 3. Verify the schema applied cleanly
 

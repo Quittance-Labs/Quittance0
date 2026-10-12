@@ -48,9 +48,12 @@ export function simulationAllowed(env: RuntimeEnvironment = process.env): boolea
   return env.NODE_ENV !== 'production' && env.ALLOW_SIMULATE === 'true';
 }
 
+import { pool } from './database';
+import { checkMigrationStatus } from '../db/migration-runner';
+
 export function deploymentReadiness(
   env: RuntimeEnvironment = process.env,
-  options: { storage?: string } = {}
+  options: { storage?: string; storageReady?: boolean } = {}
 ): ReadinessCheck {
   const network = (env.STELLAR_NETWORK || 'TESTNET').toUpperCase();
   const horizonUrl = env.STELLAR_HORIZON_URL ||
@@ -59,12 +62,24 @@ export function deploymentReadiness(
       : 'https://horizon.stellar.org');
   const isHttps = /^https:\/\//i.test(horizonUrl);
   const isDevOrTestLocal = env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(horizonUrl);
+
+  const isPostgresSync = Boolean(
+    (options.storage && /postgres/i.test(options.storage)) ||
+    (!options.storage && env.INVOICE_STORAGE === 'postgres')
+  );
+
+  const storageReadySync = options.storageReady !== undefined
+    ? options.storageReady
+    : isPostgresSync
+      ? Boolean(env.DATABASE_URL)
+      : true;
+
   const checks: ReadinessCheck['checks'] = {
     frontendOrigins: configuredFrontendOrigins(env).length > 0,
     simulationDisabled: env.ALLOW_SIMULATE !== 'true',
     stellarNetwork: network === 'TESTNET' || network === 'PUBLIC',
     horizonUrl: isHttps || isDevOrTestLocal,
-    storageReady: true, // In-memory MVP is immediately ready without Postgres
+    storageReady: storageReadySync,
   };
   const reasons: string[] = [];
   const missing: string[] = [];
@@ -84,6 +99,10 @@ export function deploymentReadiness(
   if (!checks.horizonUrl) {
     reasons.push('STELLAR_HORIZON_URL must use HTTPS');
     missing.push('STELLAR_HORIZON_URL');
+  }
+  if (!checks.storageReady && isPostgresSync && !env.DATABASE_URL) {
+    reasons.push('DATABASE_URL is required for PostgreSQL storage');
+    missing.push('DATABASE_URL');
   }
 
   return { ready: Object.values(checks).every(Boolean), checks, reasons, missing };
@@ -145,6 +164,8 @@ export interface DeploymentReadinessOptions {
   storage?: string;
   pingHorizon?: boolean;
   timeoutMs?: number;
+  pool?: any;
+  migrationsDir?: string;
 }
 
 export async function deploymentReadinessAsync(
@@ -170,6 +191,50 @@ export async function deploymentReadinessAsync(
     checks.horizonPing = ping.ok;
     if (!ping.ok) {
       reasons.push(ping.error || 'Horizon ping check failed');
+    }
+  }
+
+  const isExplicitMemory =
+    options.storage === 'memory' ||
+    options.storage === 'in-memory' ||
+    env.INVOICE_STORAGE === 'memory';
+
+  const isPostgres = Boolean(
+    (options.storage && /postgres/i.test(options.storage)) ||
+    (!options.storage && env.INVOICE_STORAGE === 'postgres') ||
+    (!options.storage && !env.INVOICE_STORAGE && env.DATABASE_URL)
+  );
+
+  if (isPostgres && !isExplicitMemory) {
+    if (!env.DATABASE_URL && !options.pool) {
+      checks.storageReady = false;
+      if (!missing.includes('DATABASE_URL')) {
+        missing.push('DATABASE_URL');
+        reasons.push('DATABASE_URL is required for PostgreSQL storage');
+      }
+    } else {
+      try {
+        const dbPool = options.pool ?? pool;
+        const migrationStatus = await checkMigrationStatus(dbPool, {
+          migrationsDir: options.migrationsDir,
+        });
+
+        if (!migrationStatus.ready) {
+          checks.storageReady = false;
+          if (migrationStatus.pendingVersions.length > 0) {
+            reasons.push(
+              `Database schema is not up to date (pending migrations: ${migrationStatus.pendingVersions.join(', ')})`
+            );
+          } else {
+            reasons.push('Database schema is not ready');
+          }
+        } else {
+          checks.storageReady = true;
+        }
+      } catch (err: any) {
+        checks.storageReady = false;
+        reasons.push(`PostgreSQL connection failed: ${err.message || 'connection error'}`);
+      }
     }
   }
 
